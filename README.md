@@ -39,11 +39,13 @@ python -m http.server 4173
 - **Wirtschaft:** Dörfer (Gold + Rekruten), Städte (viel Gold + Rekruten, Versorgungs-Hub,
   Ausbau eines Dorfs), Minen (viel Gold, nur auf Hügeln/Gebirge), Straßen (Bewegung +
   Versorgung), Kasernen (Ausbildung + kleiner Hub).
-- **Fronten wie in HOI4:** Armeen bekommen ein Ziel (Gesamtfront oder eine bestimmte Nation)
-  und einen Modus (Verteidigen/Angriff). Divisionen verteilen sich selbstständig entlang der
-  Front, greifen an, weichen zurück, regenerieren. Armee umziehen = Truppen verlegen sich
-  von Front zu Front. Einzelne Divisionen lassen sich per Rechtsklick manuell führen
-  (auch über See — Invasionen!).
+- **Direkte Kontrolle:** Deine Truppen gehorchen dir — Rechtsklick schickt sie exakt dorthin,
+  auch mitten durch Feind- oder Neutralland (sie kämpfen sich durch) und über See (Invasionen!).
+- **Fronten wie in HOI4 (optionale Automatik):** Per Alt+Rechtsklick oder im Armeen-Tab weist
+  du Truppen einer Front zu. Armeen bekommen ein Ziel (Gesamtfront oder eine bestimmte Nation)
+  und einen Modus (Verteidigen/Angriff); zugewiesene Divisionen verteilen sich selbstständig
+  entlang der Front, greifen an, weichen zurück, regenerieren. Jeder direkte Rechtsklick-Befehl
+  holt eine Division zurück unter deine manuelle Kontrolle.
 - **Logistik:** Versorgung fließt von Hauptstadt/Städten/Kasernen über Straßen ins Land.
   Ohne Nachschub verlieren Divisionen Stärke und Moral. Küsten erhalten Not-Seeversorgung.
 - **Moral & Organisation:** Org sinkt im Kampf (bei 0: Rückzug), Moral steigt mit Siegen und
@@ -61,9 +63,8 @@ python -m http.server 4173
 | Linksklick | Feld/Division auswählen · **Strg/Shift** = zur Auswahl hinzufügen/abwählen |
 | Doppelklick auf Division | ganze Armee auswählen |
 | **S** / **M** | ausgewählte Divisionen **teilen** / gleichen Typs **vereinen** |
-| **Rechtsklick auf Neutral-/Feindland** | ausgewählte Truppen der Front zuweisen — sie verteilen sich selbst |
-| Rechtsklick auf eigenes Land | Truppen dorthin verlegen |
-| Alt+Rechtsklick | exakter Marschbefehl (Küste = Invasion per Schiff) |
+| **Rechtsklick** | Marschbefehl: Truppen ziehen exakt dorthin, kämpfen sich durch Feind-/Neutralland (Küste = Invasion per Schiff) |
+| Alt+Rechtsklick auf Neutral-/Feindland | Front zuweisen (Automatik) — Truppen verteilen sich selbst |
 | Rechtsklick ohne Auswahl auf fremde Nation | Allianz anbieten |
 | Rechts-/Mittel-Ziehen / WASD | Karte verschieben |
 | Mausrad / Minimap | Zoom / springen |

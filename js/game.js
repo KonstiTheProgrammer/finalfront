@@ -105,6 +105,12 @@ class Game {
     this._armySeq = 1;
     this._lastAutosave = performance.now();
     this._supplyDirtyIds = new Set();
+    this._frontsDirtyIds = new Set();
+    this._damagedHexes = new Set();    // Hexes mit angeschlagener Miliz (für militiaDaily)
+    this._ports = [];                  // Cache: alle Hafen-Hexes (recalcEconomy)
+    this._kasernen = [];               // Cache: alle Kasernen-Hexes (recalcEconomy)
+    this._borderCache = null;          // Cache: borderNationsOf pro Tag
+    this._hasDead = false;
     this.mapDirty = true;
     this.dirtyRect = null;
     this.labelsDirty = true;
@@ -271,8 +277,15 @@ class Game {
     return p + this.nations[id].incomePerDay * 0.15;
   }
 
-  /* Angrenzende feindliche Nationen (für UI & KI) */
+  /* Angrenzende feindliche Nationen (für UI & KI) — pro Tag gecacht,
+     das Panel fragt sonst alle 400 ms die ganze Karte ab */
   borderNationsOf(id) {
+    if (this._borderCache && this._borderCache.day === this.day) {
+      const hit = this._borderCache.map.get(id);
+      if (hit) return hit;
+    } else {
+      this._borderCache = { day: this.day, map: new Map() };
+    }
     const out = new Set();
     for (const row of this.hexes) for (const h of row) {
       if (h.owner !== id) continue;
@@ -281,7 +294,9 @@ class Game {
         if (nh && nh.owner && nh.owner !== id && this.nations[nh.owner].alive) out.add(nh.owner);
       }
     }
-    return [...out];
+    const arr = [...out];
+    this._borderCache.map.set(id, arr);
+    return arr;
   }
 
   /* ---------- Nation initialisieren (FFA: 1 Dorf, 2 Truppen) ---------- */
@@ -340,9 +355,9 @@ class Game {
     if (h.resist <= 0 || h.resist > base) h.resist = base;
   }
 
-  findBuildSpot(nation, cc, cr, pred, maxDist = 24) {
+  findBuildSpot(nation, cc, cr, pred, maxDist = 24, own = null) {
     let best = null, bestD = Infinity;
-    for (const row of this.hexes) for (const h of row) {
+    for (const h of (own || this.ownedHexes(nation))) {
       if (h.owner !== nation || h.capital) continue;
       if (!pred(h)) continue;
       const d = hexDist(h.c, h.r, cc, cr) + Math.random() * 0.7;
@@ -387,10 +402,9 @@ class Game {
     }
     let spawn = null;
     const [cc, cr] = nat.capital || [0, 0];
-    for (const row of this.hexes) for (const h of row) {
-      if (h.owner === nation && h.building === 'kaserne') {
-        if (!spawn || hexDist(h.c, h.r, cc, cr) < hexDist(spawn.c, spawn.r, cc, cr)) spawn = h;
-      }
+    for (const h of this._kasernen) {
+      if (h.owner !== nation || h.building !== 'kaserne') continue;
+      if (!spawn || hexDist(h.c, h.r, cc, cr) < hexDist(spawn.c, spawn.r, cc, cr)) spawn = h;
     }
     if (!spawn) spawn = this.hexAt(cc, cr);
     if (!spawn || spawn.owner !== nation) {
@@ -418,7 +432,9 @@ class Game {
       path: null, pathI: 0, moveProgress: 0,
       attackTarget: null,
       inCombat: false,
-      manual: false,
+      // Spieler-Divisionen starten MANUELL: sie warten auf Befehle statt
+      // automatisch zur Front zu laufen. Automatik nur auf Wunsch (Alt+Rechtsklick).
+      manual: nation === this.player,
       dead: false,
     };
     const p = hexToPixel(spawn.c, spawn.r);
@@ -438,7 +454,7 @@ class Game {
       if (!this.spawnDivision(nation, type, army, false)) break;
       n++;
     }
-    if (n > 0) { this.frontsDirty = true; this.economyDirty = true; }
+    if (n > 0) { this._frontsDirtyIds.add(nation); this.economyDirty = true; }
     return n;
   }
 
@@ -453,12 +469,13 @@ class Game {
     const target = nat.armies.find(a => a.id !== armyId);
     for (const d of this.armyDivisions(army)) d.army = target.id;
     nat.armies = nat.armies.filter(a => a.id !== armyId);
-    this.frontsDirty = true;
+    this._frontsDirtyIds.add(nation);
     return true;
   }
 
   disbandDivision(div) {
     div.dead = true;
+    this._hasDead = true;
     this.nations[div.nation].manpower += (div.str / 100) * BAL.divTypes[div.type].mp * 0.5;
     this.economyDirty = true;
   }
@@ -495,7 +512,7 @@ class Game {
       const arr = this._divIndex.get(k);
       if (arr) arr.push(twin); else this._divIndex.set(k, [twin]);
     }
-    this.frontsDirty = true;
+    this._frontsDirtyIds.add(div.nation);
     this.economyDirty = true;
     return twin;
   }
@@ -525,7 +542,11 @@ class Game {
         merged++;
       }
     }
-    if (merged) { this.frontsDirty = true; this.economyDirty = true; }
+    if (merged) {
+      this._hasDead = true;
+      if (nat) this._frontsDirtyIds.add(nat.id);
+      this.economyDirty = true;
+    }
     return merged;
   }
 
@@ -561,6 +582,8 @@ class Game {
     if (what === 'strasse') h.road = true;
     else if (what === 'stadt') { h.building = 'stadt'; this.setResist(h); }
     else { h.building = what; this.setResist(h); }
+    if (what === 'hafen') this._ports.push(h);
+    else if (what === 'kaserne') this._kasernen.push(h);
     this._supplyDirtyIds.add(nation);
     this.economyDirty = true;
     this.markDirty(h.c, h.r);
@@ -575,6 +598,8 @@ class Game {
       nat.hexCount = 0;
       nat.ports = 0;
     }
+    this._ports = [];
+    this._kasernen = [];
     for (const row of this.hexes) for (const h of row) {
       if (!h.owner) continue;
       const nat = this.nations[h.owner];
@@ -584,7 +609,8 @@ class Game {
       if (h.building === 'dorf') { nat.incomePerDay += BAL.incomeDorf; nat.mpPerDay += BAL.mpDorf; }
       else if (h.building === 'stadt') { nat.incomePerDay += BAL.incomeStadt; nat.mpPerDay += BAL.mpStadt; }
       else if (h.building === 'mine') nat.incomePerDay += h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine;
-      else if (h.building === 'hafen') nat.ports++;
+      else if (h.building === 'hafen') { nat.ports++; this._ports.push(h); }
+      else if (h.building === 'kaserne') this._kasernen.push(h);
     }
     for (const d of this.divisions) {
       if (!d.dead) this.nations[d.nation].incomePerDay -= BAL.divTypes[d.type].upkeep;
@@ -602,7 +628,34 @@ class Game {
 
   /* ---------- Versorgung ---------- */
   recalcSupply(id) {
+    // Dijkstra ab den Versorgungs-Hubs (Max-Heap) statt bis zu 90 Sweeps
+    // über alle eigenen Hexes — gleiches Ergebnis, Bruchteil der Arbeit.
     const own = this.ownedHexes(id);
+    const heap = [];
+    const hpush = (s, h) => {
+      heap.push([s, h]);
+      let i = heap.length - 1;
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (heap[p][0] >= heap[i][0]) break;
+        const t = heap[p]; heap[p] = heap[i]; heap[i] = t; i = p;
+      }
+    };
+    const hpop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, rr = l + 1; let m = i;
+          if (l < heap.length && heap[l][0] > heap[m][0]) m = l;
+          if (rr < heap.length && heap[rr][0] > heap[m][0]) m = rr;
+          if (m === i) break;
+          const t = heap[m]; heap[m] = heap[i]; heap[i] = t; i = m;
+        }
+      }
+      return top;
+    };
     for (const h of own) {
       let hub = 0;
       if (h.capital) hub = BAL.supplyHub.capital;
@@ -610,18 +663,17 @@ class Game {
       else if (h.building === 'hafen') hub = BAL.supplyHub.hafen;
       else if (h.building === 'kaserne') hub = BAL.supplyHub.kaserne;
       h.supply = hub;
+      if (hub > 0) hpush(hub, h);
     }
-    let changed = true, guard = 0;
-    while (changed && guard++ < 90) {
-      changed = false;
-      for (const h of own) {
-        const stepCost = TERRAIN[h.terrain].move * (h.road ? BAL.roadCostFactor : 1) * BAL.supplyDecay;
-        for (const [nc, nr] of neighborsOf(h.c, h.r)) {
-          const nh = this.hexAt(nc, nr);
-          if (!nh || nh.owner !== id || nh.terrain === 'water') continue;
-          const v = nh.supply - stepCost;
-          if (v > h.supply + 1e-4) { h.supply = v; changed = true; }
-        }
+    while (heap.length) {
+      const [s, h] = hpop();
+      if (s < h.supply - 1e-9) continue;   // veralteter Heap-Eintrag
+      for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+        const nh = this.hexAt(nc, nr);
+        if (!nh || nh.owner !== id || nh.terrain === 'water') continue;
+        const stepCost = TERRAIN[nh.terrain].move * (nh.road ? BAL.roadCostFactor : 1) * BAL.supplyDecay;
+        const v = s - stepCost;
+        if (v > nh.supply + 1e-4) { nh.supply = v; hpush(v, nh); }
       }
     }
     for (const h of own) {
@@ -656,8 +708,18 @@ class Game {
     return { mod: 0.35 + 0.65 * Math.min(1, s), level: s };
   }
 
-  /* ---------- Wegfindung (A* mit Binär-Heap) ---------- */
+  /* ---------- Wegfindung (A* mit Binär-Heap) ----------
+     Wiederverwendbare Puffer mit Generationszähler statt Maps —
+     spart pro Aufruf zwei Map-Allokationen über die ganze Karte. */
   findPath(nation, c1, r1, c2, r2, ownOnly) {
+    if (!this._pfGen) {
+      this._pfGen = new Int32Array(MAP_W * MAP_H);
+      this._pfG = new Float64Array(MAP_W * MAP_H);
+      this._pfCame = new Int32Array(MAP_W * MAP_H);
+      this._pfGenId = 0;
+    }
+    const gen = ++this._pfGenId;
+    const seen = this._pfGen, gScore = this._pfG, came = this._pfCame;
     const heap = [[0, 0, c1, r1]];
     const hpush = it => {
       heap.push(it);
@@ -683,9 +745,8 @@ class Game {
       }
       return top;
     };
-    const came = new Map();
-    const gScore = new Map();
-    gScore.set(c1 + r1 * MAP_W, 0);
+    const startKey = c1 + r1 * MAP_W;
+    seen[startKey] = gen; gScore[startKey] = 0; came[startKey] = -1;
     const targetKey = c2 + r2 * MAP_W;
     let found = null;
     let iter = 0;
@@ -703,14 +764,17 @@ class Game {
           step = TERRAIN.water.move;
         } else if (nh.owner === nation) {
           step = TERRAIN[nh.terrain].move * (nh.road ? BAL.roadCostFactor : 1);
-        } else if (isTarget && !ownOnly) {
-          step = TERRAIN[nh.terrain].move;
+        } else if (!ownOnly && nh.owner && this.allied(nation, nh.owner)) {
+          step = TERRAIN[nh.terrain].move;                         // Durchmarsch bei Verbündeten
+        } else if (!ownOnly && (isTarget || this.attackable(nation, nh))) {
+          step = TERRAIN[nh.terrain].move * (isTarget ? 1 : 1.6);  // Feind-/Neutralland: kämpfend passierbar
         } else continue;
         const ng = g + step;
         const nKey = nc + nr * MAP_W;
-        if (!gScore.has(nKey) || gScore.get(nKey) > ng) {
-          gScore.set(nKey, ng);
-          came.set(nKey, key);
+        if (seen[nKey] !== gen || gScore[nKey] > ng) {
+          seen[nKey] = gen;
+          gScore[nKey] = ng;
+          came[nKey] = key;
           hpush([ng + hexDist(nc, nr, c2, r2), ng, nc, nr]);
         }
       }
@@ -718,9 +782,9 @@ class Game {
     if (found === null) return null;
     const path = [];
     let cur = found;
-    while (cur !== undefined && cur !== c1 + r1 * MAP_W) {
+    while (cur >= 0 && cur !== startKey) {
       path.unshift([cur % MAP_W, Math.floor(cur / MAP_W)]);
-      cur = came.get(cur);
+      cur = came[cur];
     }
     return path;
   }
@@ -733,37 +797,42 @@ class Game {
     return nh.owner === army.target && this.hostile(army.nation, army.target);
   }
 
-  computeFront(army) {
+  computeFront(army, ownList) {
     if (army.target === 'RESERVE') { army.frontHexes = []; return; }
+    const own = ownList || this.ownedHexes(army.nation);
     const border = [];
-    for (const row of this.hexes) for (const h of row) {
-      if (h.owner !== army.nation) continue;
+    for (const h of own) {
       for (const [nc, nr] of neighborsOf(h.c, h.r)) {
         if (this.frontMatches(army, this.hexAt(nc, nr))) { border.push(h); break; }
       }
     }
     if (border.length > 2) {
-      const set = new Set(border.map(h => h.c + h.r * MAP_W));
+      const remain = new Map(border.map(h => [h.c + h.r * MAP_W, h]));
       let start = border[0], minN = Infinity;
       for (const h of border) {
         let n = 0;
-        for (const [nc, nr] of neighborsOf(h.c, h.r)) if (set.has(nc + nr * MAP_W)) n++;
+        for (const [nc, nr] of neighborsOf(h.c, h.r)) if (remain.has(nc + nr * MAP_W)) n++;
         if (n < minN) { minN = n; start = h; }
       }
       const ordered = [start];
-      const used = new Set([start.c + start.r * MAP_W]);
-      while (ordered.length < border.length) {
+      remain.delete(start.c + start.r * MAP_W);
+      while (remain.size) {
         const cur = ordered[ordered.length - 1];
-        let best = null, bestD = Infinity;
-        for (const h of border) {
-          const k = h.c + h.r * MAP_W;
-          if (used.has(k)) continue;
-          const d = hexDist(cur.c, cur.r, h.c, h.r);
-          if (d < bestD) { bestD = d; best = h; }
+        // Zusammenhängende Front: direkter Nachbar reicht (O(1) statt O(n))
+        let best = null;
+        for (const [nc, nr] of neighborsOf(cur.c, cur.r)) {
+          const cand = remain.get(nc + nr * MAP_W);
+          if (cand) { best = cand; break; }
         }
-        if (!best) break;
+        if (!best) {   // Lücke in der Front: nächstgelegenes Resthex suchen
+          let bestD = Infinity;
+          for (const h of remain.values()) {
+            const d = hexDist(cur.c, cur.r, h.c, h.r);
+            if (d < bestD) { bestD = d; best = h; }
+          }
+        }
         ordered.push(best);
-        used.add(best.c + best.r * MAP_W);
+        remain.delete(best.c + best.r * MAP_W);
       }
       army.frontHexes = ordered;
     } else {
@@ -838,12 +907,29 @@ class Game {
     return null;
   }
 
-  updateFronts() {
-    for (const nat of Object.values(this.nations)) {
-      if (!nat.alive) continue;
-      for (const a of nat.armies) { this.computeFront(a); this.distributeArmy(a); }
-    }
+  updateFrontsFor(id) {
+    const nat = this.nations[id];
+    if (!nat || !nat.alive) return;
+    const own = this.ownedHexes(id);   // 1 Kartenscan für ALLE Armeen der Nation
+    for (const a of nat.armies) { this.computeFront(a, own); this.distributeArmy(a); }
+  }
+
+  updateFronts(onlyId) {
+    if (onlyId) return this.updateFrontsFor(onlyId);
+    for (const id of Object.keys(this.nations)) this.updateFrontsFor(id);
     this.frontsDirty = false;
+    this._frontsDirtyIds.clear();
+  }
+
+  /* Täglich: Nationen gestaffelt aktualisieren statt alle auf einmal */
+  frontsTick() {
+    const ids = Object.keys(this.nations).filter(id => this.nations[id].alive);
+    ids.forEach((id, i) => {
+      if (this.frontsDirty || this._frontsDirtyIds.has(id) || (this.day + i) % 2 === 0)
+        this.updateFrontsFor(id);
+    });
+    this.frontsDirty = false;
+    this._frontsDirtyIds.clear();
   }
 
   /* ---------- Divisionen: Bewegung & Kampf ---------- */
@@ -862,7 +948,7 @@ class Game {
   releaseToArmy(div) {
     div.manual = false;
     div.path = null;
-    this.frontsDirty = true;
+    this._frontsDirtyIds.add(div.nation);
   }
 
   divisionsTick(dt) {
@@ -895,14 +981,14 @@ class Game {
           && (!div._pathRetryAt || this.dayFloat >= div._pathRetryAt)) {
           const p = this.findPath(div.nation, div.c, div.r, div.station[0], div.station[1], false);
           if (p && p.length) { div.path = p; div.pathI = 0; div.moveProgress = 0; }
-          else div._pathRetryAt = this.dayFloat + 1;
+          else div._pathRetryAt = this.dayFloat + 2.5;   // unerreichbar: A*-Fehlversuche drosseln
         }
       }
       if (div.path && div.pathI < div.path.length) {
         const [nc, nr] = div.path[div.pathI];
         const nh = this.hexAt(nc, nr);
         if (!nh) { div.path = null; continue; }
-        if (nh.owner !== div.nation && nh.terrain !== 'water') {
+        if (nh.owner !== div.nation && nh.terrain !== 'water' && !this.allied(div.nation, nh.owner)) {
           if (this.attackable(div.nation, nh)) div.attackTarget = [nc, nr];
           else div.path = null;
           continue;
@@ -918,6 +1004,7 @@ class Game {
           if (isFinal && occupied && occupied.id !== div.id) {
             div.path = null;
             if (div.manual) div.station = [div.c, div.r];
+            else div._pathRetryAt = this.dayFloat + 1;   // Ziel besetzt: nicht jeden Tick neu pfaden
             continue;
           }
           this._placeDiv(div, nc, nr);
@@ -1006,6 +1093,7 @@ class Game {
       const t = BAL.divTypes[atk.type];
       const bonus = neutral ? BAL.neutralDmgBonus : 1;
       targetHex.resist -= power * BAL.atkBase * 0.55 * t.militia * bonus * dt;
+      this._damagedHexes.add(targetHex);
       const counter = neutral ? BAL.neutralCounter : 1;
       atk.org -= BAL.atkBase * BAL.militiaCounter * terr.def * 0.35 * counter * dt;
       atk.str -= BAL.atkBase * BAL.militiaCounter * 0.06 * counter * dt;
@@ -1059,6 +1147,7 @@ class Game {
   destroyDivision(div, byNation) {
     if (div.dead) return;
     div.dead = true;
+    this._hasDead = true;
     this.economyDirty = true;
     if (byNation && this.nations[byNation]) {
       for (const d of this.divisionsOf(byNation)) {
@@ -1073,13 +1162,25 @@ class Game {
     h.owner = div.nation;
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
-    if (!this.divisionAt(h.c, h.r)) this._placeDiv(div, h.c, h.r);
+    this._damagedHexes.add(h);
+    if (!this.divisionAt(h.c, h.r)) {
+      this._placeDiv(div, h.c, h.r);
+      // Marschbefehl fortsetzen: das eroberte Hex war der nächste Wegpunkt
+      if (div.path && div.pathI < div.path.length
+        && div.path[div.pathI][0] === h.c && div.path[div.pathI][1] === h.r) {
+        div.pathI++;
+        div.moveProgress = 0;
+        if (div.pathI >= div.path.length) { div.path = null; if (div.manual) div.station = [div.c, div.r]; }
+      }
+    }
     div.attackTarget = null;
     div.moral = Math.min(BAL.moralMax, div.moral + (loser ? BAL.moralWin : BAL.moralWin * 0.3));
     div.org = Math.max(2, div.org - (loser ? 4 : 1.5));
     this.effects.push({ type: 'capture', c: h.c, r: h.r, t: performance.now() });
     this._supplyDirtyIds.add(div.nation);
-    this.frontsDirty = true;
+    this._frontsDirtyIds.add(div.nation);
+    if (loser) this._frontsDirtyIds.add(loser);
+    this._borderCache = null;
     this.economyDirty = true;
     this.labelsDirty = true;
     this.markDirty(h.c, h.r);
@@ -1141,10 +1242,13 @@ class Game {
         hh.owner = winner; hh.capital = false;
         this.setResist(hh);
         hh.resist = hh.resistMax * 0.5;
+        this._damagedHexes.add(hh);
         n++;
       }
     }
     for (const d of this.divisionsOf(loser)) d.dead = true;
+    this._hasDead = true;
+    this._borderCache = null;
     this.addLog(`🏳️ ${this.nationName(loser)} ist untergegangen${n > 0 && winner ? ` — ${this.nationName(winner)} übernimmt ${n} Provinzen` : ''}.`, true);
     this._supplyDirtyIds.add(winner);
     this.frontsDirty = true;
@@ -1244,10 +1348,8 @@ class Game {
   }
 
   tradeDaily() {
-    const ports = [];
-    for (const row of this.hexes) for (const h of row) {
-      if (h.building === 'hafen' && h.owner && this.nations[h.owner].alive) ports.push(h);
-    }
+    const ports = this._ports.filter(h =>
+      h.building === 'hafen' && h.owner && this.nations[h.owner].alive);
     for (const p of ports) {
       if (p._nextShipDay === undefined)
         p._nextShipDay = this.day + 1 + Math.floor(Math.random() * BAL.trade.shipEveryDays);
@@ -1339,10 +1441,13 @@ class Game {
   }
 
   militiaDaily() {
-    for (const row of this.hexes) for (const h of row) {
-      if (h.terrain === 'water') continue;
-      if (h.resist < h.resistMax && this.dayFloat - (h._atkT || -99) > 2)
+    // Nur angeschlagene Hexes regenerieren — statt die ganze Karte zu scannen
+    for (const h of this._damagedHexes) {
+      if (h.terrain === 'water' || h.resist >= h.resistMax) { this._damagedHexes.delete(h); continue; }
+      if (this.dayFloat - (h._atkT || -99) > 2) {
         h.resist = Math.min(h.resistMax, h.resist + BAL.militiaRegen);
+        if (h.resist >= h.resistMax) this._damagedHexes.delete(h);
+      }
     }
   }
 
@@ -1366,23 +1471,23 @@ class Game {
 
     // 1) Grundwirtschaft: die ersten Dörfer
     if (count('dorf') + count('stadt') < 3 && nat.gold >= BAL.cost.dorf) {
-      const h = this.findBuildSpot(id, cc, cr, buildable, 30);
+      const h = this.findBuildSpot(id, cc, cr, buildable, 30, own);
       if (h) return this.build(id, h, 'dorf');
     }
     // 2) Früher Hafen — Seehandel ist starkes Einkommen
     if ((nat.ports || 0) < 1 && nat.gold >= BAL.cost.hafen) {
-      const h = this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 45);
+      const h = this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 45, own);
       if (h) return this.build(id, h, 'hafen');
     }
     // 3) Kaserne(n)
     const wantKas = 1 + Math.floor(own.length / 150);
     if (count('kaserne') < wantKas && nat.gold >= BAL.cost.kaserne + 30) {
-      const h = this.findBuildSpot(id, cc, cr, buildable, 30);
+      const h = this.findBuildSpot(id, cc, cr, buildable, 30, own);
       if (h) return this.build(id, h, 'kaserne');
     }
     // 4) Dörfer nachziehen
     if (count('dorf') + count('stadt') < Math.max(3, own.length * 0.06) && nat.gold >= BAL.cost.dorf + 30) {
-      const h = this.findBuildSpot(id, cc, cr, buildable, 34);
+      const h = this.findBuildSpot(id, cc, cr, buildable, 34, own);
       if (h) return this.build(id, h, 'dorf');
     }
     // 5) Minen
@@ -1393,7 +1498,7 @@ class Game {
     // 6) Weitere Häfen
     const wantHafen = 1 + Math.floor(own.length / 220);
     if ((nat.ports || 0) < wantHafen && nat.gold >= BAL.cost.hafen + 40) {
-      const h = this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 55);
+      const h = this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 55, own);
       if (h) return this.build(id, h, 'hafen');
     }
     // 7) Stadt-Ausbau
@@ -1514,8 +1619,12 @@ class Game {
     this.shipsTick(dt);
 
     if (this.day !== prevDay) {
+      if (this._hasDead) {   // tote Divisionen aus dem Array räumen (sonst wachsen alle Schleifen ewig)
+        this.divisions = this.divisions.filter(d => !d.dead);
+        this._hasDead = false;
+      }
       if (this.economyDirty) this.recalcEconomy();
-      if (this.frontsDirty || this.day % 2 === 0) this.updateFronts();
+      this.frontsTick();
       this.supplyDaily();
       this.militiaDaily();
       this.tradeDaily();
@@ -1575,6 +1684,7 @@ class Game {
       const h = flat[i];
       h.owner = hs[0]; h.building = hs[1]; h.road = !!hs[2]; h.capital = !!hs[3];
       g.setResist(h); h.resist = hs[4];
+      if (h.terrain !== 'water' && h.resist < h.resistMax) g._damagedHexes.add(h);
     });
     for (const [id, ns] of Object.entries(s.nations)) {
       const n = g.nations[id];

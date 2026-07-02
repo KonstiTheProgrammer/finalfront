@@ -607,7 +607,11 @@ function render() {
     UI._lastMapRender = now;
     renderMapLayer();
   }
-  if (game.labelsDirty || !UI.labels) computeLabels();
+  // Labels wandern langsam — bei Eroberungen reicht ~1×/Sekunde statt jeder Frame
+  if (!UI.labels || (game.labelsDirty && now - (UI._lastLabelT || 0) > 1000)) {
+    UI._lastLabelT = now;
+    computeLabels();
+  }
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = '#101a26';
@@ -1092,7 +1096,7 @@ function mergeSelection() {
   refreshPanel();
 }
 
-/* Rechtsklick: Front zuweisen / Marschbefehl / Allianz */
+/* Rechtsklick: Marschbefehl (Standard) / Alt = Front-Automatik / Allianz */
 function onRightTap(sx, sy, alt) {
   if (UI.buildMode) { setBuildMode(null); return; }
   const w = screenToWorld(sx, sy);
@@ -1104,12 +1108,12 @@ function onRightTap(sx, sy, alt) {
 
   if (sel.length) {
     const ownOrAllied = h.owner === game.player || (h.owner && game.allied(game.player, h.owner));
-    if (alt || h.terrain === 'water' || ownOrAllied) {
-      groupMoveOrder(hx.c, hx.r);     // präziser Marschbefehl
-    } else if (h.owner === null) {
-      assignSelectionToFront('EXPAND');
+    if (alt && h.terrain !== 'water' && !ownOrAllied) {
+      // Alt+Rechtsklick = Automatik: Truppen der Front zuweisen
+      assignSelectionToFront(h.owner === null ? 'EXPAND' : h.owner);
     } else {
-      assignSelectionToFront(h.owner);
+      // Standard: direkter Marsch-/Angriffsbefehl — du steuerst selbst
+      groupMoveOrder(hx.c, hx.r);
     }
     return;
   }
@@ -1138,10 +1142,10 @@ function assignSelectionToFront(key) {
     d.army = army.id; d.manual = false; d.path = null; d.attackTarget = null;
     n++;
   }
-  game.updateFronts();
+  game.updateFronts(game.player);
   pushToast(key === 'EXPAND'
-    ? `🌍 ${n} Division(en) expandieren ins Neutralland!`
-    : `⚔️ ${n} Division(en) an die Front gegen ${game.nationName(key)}!`);
+    ? `🌍 ${n} Division(en) expandieren automatisch ins Neutralland!`
+    : `⚔️ ${n} Division(en) automatisch an die Front gegen ${game.nationName(key)}!`);
   refreshPanel();
 }
 
@@ -1202,7 +1206,7 @@ function finishBoxSelect(b, shift) {
   }
   if (UI.selectedDivs.size) {
     UI.activeTab = 'info';
-    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick auf Feind/Neutralland = Front zuweisen`);
+    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick = Marschbefehl · Alt+Rechtsklick = Front (Automatik)`);
   }
   refreshPanel();
 }
@@ -1428,7 +1432,7 @@ function panelBauen() {
 function panelArmeen() {
   const nat = game.nations[game.player];
   const borders = game.borderNationsOf(game.player).filter(b => game.hostile(game.player, b));
-  let html = `<p class="hint small">Truppen auswählen (Links-Ziehen) und per Rechtsklick auf Feind- oder Neutralland einer Front zuweisen — sie verteilen sich selbst.</p>`;
+  let html = `<p class="hint small">Du steuerst deine Truppen selbst: auswählen (Links-Ziehen), <b>Rechtsklick = Marschbefehl</b>. Armeen sind die optionale Automatik: <b>Alt+Rechtsklick</b> auf Feind-/Neutralland weist Truppen einer Front zu — sie verteilen sich dann selbst.</p>`;
   for (const a of nat.armies) {
     const divs = game.armyDivisions(a);
     const sel = UI.selectedArmy === a.id;
@@ -1509,7 +1513,7 @@ function panelInfo() {
         <div>Ø Stärke</div><div class="bar"><i style="width:${avgStr}%;background:#57c268"></i></div>
         <div>Ø Organisation</div><div class="bar"><i style="width:${avgOrg * 100}%;background:#e0b34a"></i></div>
       </div>
-      <p class="small hint">Rechtsklick auf Feind-/Neutralland = Front zuweisen · auf eigenes Land = verlegen · Alt+Rechtsklick = exakter Befehl.</p>`;
+      <p class="small hint">Rechtsklick = Marschbefehl — die Truppen kämpfen sich zum Ziel durch (übers Meer = Invasion) · Alt+Rechtsklick auf Feind-/Neutralland = Front zuweisen (Automatik).</p>`;
     if (own.length) {
       const nat = game.nations[game.player];
       html += `<label class="small">Gruppe einer Armee zuweisen:</label>
@@ -1535,8 +1539,12 @@ function panelInfo() {
       </div>
       <p class="small">${Math.round(d.str)}/100 · Org ${Math.round(d.org)}/${t.maxOrg} · Moral ${Math.round(d.moral * 100)} % · Versorgung ${Math.round(sup.level * 100)} %</p>`;
     if (d.nation === game.player) {
-      html += `<p class="small">Armee: ${army ? army.name : '—'} ${d.manual ? '· <b>manuell</b>' : ''}</p>`;
-      if (d.manual) html += `<button id="release-div" class="wide">↩ Zurück zur Armee-Kontrolle</button>`;
+      html += `<p class="small">Armee: ${army ? army.name : '—'} · ${d.manual
+        ? '<b>🎮 unter deinem Befehl</b>'
+        : '<b>🤖 Automatik</b> (verteilt sich selbst an der Front)'}</p>`;
+      html += d.manual
+        ? `<button id="release-div" class="wide">🤖 An die Armee-Automatik übergeben</button>`
+        : `<p class="small hint">Rechtsklick-Befehl holt sie zurück unter deine Kontrolle.</p>`;
       html += `<button id="disband-div" class="wide danger">Division auflösen</button>`;
     }
     return html;
@@ -1582,7 +1590,7 @@ function bindPanelActions(el) {
   }));
   el.querySelectorAll('[data-target]').forEach(s => s.addEventListener('change', () => {
     const a = game.armyById(game.player, +s.dataset.target);
-    if (a) { a.target = s.value; game.updateFronts(); }
+    if (a) { a.target = s.value; game.updateFronts(game.player); }
   }));
   el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
     const a = game.armyById(game.player, +b.dataset.armyId);
@@ -1592,8 +1600,8 @@ function bindPanelActions(el) {
     const a = game.armyById(game.player, +b.dataset.armyId);
     const n = game.trainDivisions(game.player, b.dataset.train, +b.dataset.n, a);
     if (!n) pushToast('⚠ Zu wenig Gold oder Rekruten.');
-    else pushToast(`🪖 ${n} ${BAL.divTypes[b.dataset.train].name}division(en) aufgestellt.`);
-    game.updateFronts();
+    else pushToast(`🪖 ${n} ${BAL.divTypes[b.dataset.train].name}division(en) aufgestellt — warten an der Kaserne auf deine Befehle.`);
+    game.updateFronts(game.player);
     refreshPanel(); updateTopbar();
   }));
   el.querySelectorAll('[data-selarmy]').forEach(b => b.addEventListener('click', e => {
@@ -1640,7 +1648,7 @@ function bindPanelActions(el) {
   const rd = el.querySelector('#release-div');
   if (rd) rd.addEventListener('click', () => {
     const d = game.divisions.find(x => UI.selectedDivs.has(x.id));
-    if (d) game.releaseToArmy(d);
+    if (d) { game.releaseToArmy(d); game.updateFronts(game.player); }
     refreshPanel();
   });
   const dd = el.querySelector('#disband-div');
@@ -1654,13 +1662,14 @@ function bindPanelActions(el) {
     const armyId = +el.querySelector('#group-army').value;
     let n = 0;
     for (const d of playerSelection()) { d.army = armyId; d.manual = false; d.path = null; n++; }
-    game.updateFronts();
-    pushToast(`🪖 ${n} Divisionen zugewiesen — sie verlegen zur Front.`);
+    game.updateFronts(game.player);
+    pushToast(`🪖 ${n} Divisionen zugewiesen — sie verlegen automatisch zur Front.`);
   });
   const gr = el.querySelector('#group-release');
   if (gr) gr.addEventListener('click', () => {
     for (const d of playerSelection()) game.releaseToArmy(d);
-    pushToast('↩ Divisionen wieder unter Armee-Kontrolle.');
+    game.updateFronts(game.player);
+    pushToast('🤖 Divisionen an die Armee-Automatik übergeben.');
   });
 }
 

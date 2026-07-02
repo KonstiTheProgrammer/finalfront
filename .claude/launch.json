@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "finalfront",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "4173"],
       "port": 4173
     }
