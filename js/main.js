@@ -21,9 +21,11 @@ function loop(now) {
       if (UI.activeTab === 'armeen' && !document.querySelector('#panel-content select:focus, #panel-content input:focus')) refreshPanel();
       else if (UI.activeTab === 'info') refreshPanel();
       updateUnitbar();   // Balken/Status der ausgewählten Divisionen live halten
+      updateTutorial();
       if (now - (UI._lastRankT || 0) > 2000) {
         UI._lastRankT = now;
         renderRanking();
+        advisorTick();
       }
     }
     updateLog();

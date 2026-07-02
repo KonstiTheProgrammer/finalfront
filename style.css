@@ -60,8 +60,9 @@ button.mini { padding: 1px 6px !important; font-size: 11px !important; }
 @media (max-width: 1150px) {
   #sidebar, #panel { top: 88px !important; }
   #vp-banner { top: 92px; }
+  #tutorial { top: 94px; }
   #ranking { top: 96px; }
-  #toasts { top: 140px; }
+  #toasts { top: 150px; }
   #offers { top: 300px; }
 }
 
@@ -258,6 +259,30 @@ button.peace:hover { background: #26512e; }
 /* ---------- Endstand ---------- */
 #gameover-stats { margin: 14px auto 4px; max-width: 420px; text-align: left; font-size: 13.5px; }
 #gameover-stats .rank-row { padding: 3px 0; border-bottom: 1px solid #22303f; }
+
+/* ---------- Geführtes erstes Match ---------- */
+#tutorial {
+  position: absolute; top: 50px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 24;
+  width: 470px; max-width: 82vw;
+  background: rgba(14, 22, 32, 0.96);
+  border: 1px solid #e0b04a;
+  border-radius: 10px;
+  padding: 9px 13px;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.5);
+  font-size: 13.5px;
+}
+.tut-head {
+  display: flex; justify-content: space-between; align-items: center;
+  color: #ffd75e; font-size: 11px; letter-spacing: 0.6px;
+  margin-bottom: 4px;
+}
+.tut-head button {
+  background: #223144; color: #e6e2d8;
+  border: 1px solid #3b5068; border-radius: 4px; cursor: pointer;
+}
+.tut-text { line-height: 1.5; }
 
 /* ---------- Toasts ---------- */
 #toasts {

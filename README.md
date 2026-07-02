@@ -26,6 +26,9 @@ python -m http.server 4173
   (180×205 Hexes, Miller-Projektion), alles startet neutral und grau.
 - Jede der 15 Nationen beginnt mit **einem Dorf und zwei Divisionen** und breitet sich in
   neutrales Land aus.
+- **Easy Entry:** Das erste Match führt mit 5 kontextuellen Aufgaben durch Eroberung und
+  Wirtschaftskette (inkl. vorgeschlagener Bauplätze auf der Karte); ein Berater warnt bei
+  Engpässen genau dann, wenn sie auftreten — überspringbar, erscheint nur einmal.
 - **Rundenmodus — Sieg über Hauptstädte:** Die 15 Original-Hauptstädte sind dauerhaft markierte
   **Siegpunkte**. Wer **4 davon hält, startet einen 50-Tage-Countdown**, den alle sehen — die
   perfekte Einladung für eine Gegenkoalition; fällt eine Hauptstadt zurück, stoppt er. Nach

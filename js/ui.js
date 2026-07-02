@@ -832,6 +832,23 @@ function render() {
     }
   }
 
+  // Geister-Bauplatz (Tutorial): pulsierender Vorschlag
+  if (UI._ghost) {
+    const p = hexToPixel(UI._ghost.c, UI._ghost.r);
+    const pulse = 0.5 + 0.5 * Math.sin(now / 260);
+    hexPath(ctx, p.x, p.y, HEX_SIZE + 0.5);
+    ctx.strokeStyle = `rgba(255,215,94,${0.45 + 0.45 * pulse})`;
+    ctx.lineWidth = 2.6 / zoom + 1;
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = `${12 / Math.min(zoom, 2) + 5}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.globalAlpha = 0.55 + 0.3 * pulse;
+    ctx.fillText(UI._ghost.what === 'kaserne' ? '🎪' : '🏠', p.x, p.y + 5);
+    ctx.globalAlpha = 1;
+  }
+
   // Wegpunkt-Routen der ausgewählten Divisionen
   if (UI.selectedDivs.size) {
     for (const id of UI.selectedDivs) {
@@ -1444,7 +1461,9 @@ function loadNewestSave() {
   document.getElementById('gameover').classList.add('hidden');
   game.updateFronts();
   centerOn(...game.nations[game.player].capital, 1.2);
-  refreshPanel(); updateTopbar(); updateUnitbar();
+  UI.tutorialStep = -1;   // geladene Spiele: keine Einführung
+  UI._ghost = null;
+  refreshPanel(); updateTopbar(); updateUnitbar(); updateTutorial();
   return true;
 }
 
@@ -1761,8 +1780,12 @@ function updateUnitbar() {
     const sup = game.supplyModOf(d);
     const army = d.army != null ? game.armyById(d.nation, d.army) : null;
     const wp = d.queue && d.queue.length ? ` · 📍 ${d.queue.length} Wegpunkt(e)` : '';
+    // UI-Diät: Moral als Zustand, Versorgung nur wenn sie zum Problem wird
+    const moralIcon = d.moral >= 1.05 ? '😄' : d.moral >= 0.85 ? '🙂' : d.moral >= 0.65 ? '😐' : '😟';
+    const supWarn = sup.level < 0.5
+      ? ` · <span style="color:#e0a34a">⚠️ Nachschub ${Math.round(sup.level * 100)} %</span>` : '';
     head.innerHTML = `<b>${d.name}</b><span class="small"> ${army ? army.name : ''} · ${d.manual ? '🎮 dein Befehl' : '🤖 Automatik'}${wp}</span>
-      <span class="small ub-stats">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)}/${t.maxOrg} · Moral ${Math.round(d.moral * 100)} % · Versorgung ${Math.round(sup.level * 100)} %</span>
+      <span class="small ub-stats">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)}/${t.maxOrg} · ${moralIcon}${supWarn}</span>
       <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
   } else {
     const avgStr = sel.reduce((s, d) => s + d.str, 0) / sel.length;
@@ -1776,11 +1799,12 @@ function updateUnitbar() {
   const shown = sel.slice(0, 24);
   cards.innerHTML = shown.map(d => {
     const t = BAL.divTypes[d.type];
+    const lowSup = game.supplyModOf(d).level < 0.25 ? '⚠️' : '';
     return `<div class="ucard" data-div="${d.id}" title="${d.name} — Klick: einzeln wählen, Strg/Shift: abwählen">
       <div class="ucard-type" style="border-top-color:${TYPE_STRIPE[d.type] || '#8fa0b3'}">${TYPE_SHORT[d.type] || '?'}</div>
       <div class="ubar"><i style="width:${Math.max(0, Math.min(100, d.str))}%;background:#57c268"></i></div>
       <div class="ubar"><i style="width:${Math.max(0, Math.min(100, d.org / t.maxOrg * 100))}%;background:#e0b34a"></i></div>
-      <div class="ucard-flags">${d.inCombat ? '⚔' : ''}${d.manual ? '' : '🤖'}</div>
+      <div class="ucard-flags">${d.inCombat ? '⚔' : ''}${lowSup}${d.manual ? '' : '🤖'}</div>
     </div>`;
   }).join('') + (sel.length > 24 ? `<div class="ucard-more small">+${sel.length - 24}</div>` : '');
 
@@ -1834,6 +1858,108 @@ function updateUnitbar() {
   };
 }
 
+/* =========================================================
+   GEFÜHRTES ERSTES MATCH & BERATER (Easy Entry)
+   ========================================================= */
+const TUTORIAL_STEPS = [
+  { text: 'Wähle deine Divisionen (Klick oder <b>Links-Ziehen</b>) und erobere per <b>Rechtsklick</b> graues Neutralland — hol dir 8 Provinzen!',
+    done: g => g.nations[g.player].hexCount >= 8 },
+  { text: 'Bau eine <b>🎪 Kaserne</b>: Menüleiste links → 🏗️ (Taste <b>B</b>). Sie bildet 👥 Leute zu 🎖️ Soldaten aus.',
+    ghost: 'kaserne', done: g => g.nations[g.player].trainCap > 0 },
+  { text: 'Bau ein <b>🏠 Dorf</b> — es erzeugt 👥 Leute, den Nachschub für deine Kaserne.',
+    ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.19 },
+  { text: 'Öffne das <b>🪖 Armeen-Menü</b> links und stelle eine Infanterie-Division auf (<b>+1</b>) — kostet Gold + 🎖️ Soldaten.',
+    done: g => g.divisionsOf(g.player).length >= 3 },
+  { text: 'Bau eine <b>🏙️ Stadt</b> (im Bau-Menü auf ein Dorf klicken) — sie bringt Gold <b>und</b> Leute. Danach: erobere 🏛️ Hauptstädte — <b>4 gewinnen die Runde!</b>',
+    done: g => (g.nations[g.player].staedte || 0) >= 1 },
+];
+
+function tutorialDone() {
+  try { return localStorage.getItem('finalfront_tutorial') === 'done'; } catch (e) { return true; }
+}
+function markTutorialDone() {
+  try { localStorage.setItem('finalfront_tutorial', 'done'); } catch (e) { /* egal */ }
+}
+
+function updateTutorial() {
+  const el = document.getElementById('tutorial');
+  if (!game || game.over || UI.tutorialStep == null || UI.tutorialStep < 0
+    || UI.tutorialStep >= TUTORIAL_STEPS.length) {
+    el.classList.add('hidden');
+    UI._ghost = null;
+    return;
+  }
+  if (TUTORIAL_STEPS[UI.tutorialStep].done(game)) {
+    UI.tutorialStep++;
+    UI._ghost = null;
+    UI._tutRendered = -1;
+    if (UI.tutorialStep >= TUTORIAL_STEPS.length) {
+      markTutorialDone();
+      pushToast('🎓 Einführung abgeschlossen — Europa wartet. Viel Erfolg!');
+      el.classList.add('hidden');
+      return;
+    }
+    pushToast('✅ Aufgabe geschafft!');
+  }
+  const s = TUTORIAL_STEPS[UI.tutorialStep];
+  el.classList.remove('hidden');
+  if (UI._tutRendered !== UI.tutorialStep) {
+    UI._tutRendered = UI.tutorialStep;
+    el.innerHTML = `<div class="tut-head"><span>🎓 AUFGABE ${UI.tutorialStep + 1}/${TUTORIAL_STEPS.length}</span>
+        <button class="mini" id="tut-skip" title="Einführung überspringen">✕</button></div>
+      <div class="tut-text">${s.text}</div>`;
+    el.querySelector('#tut-skip').onclick = () => {
+      markTutorialDone();
+      UI.tutorialStep = -1;
+      UI._ghost = null;
+      el.classList.add('hidden');
+      pushToast('🎓 Einführung übersprungen — ❓ oben rechts hilft jederzeit.');
+    };
+  }
+  // Geister-Bauplatz vorschlagen (für Kasernen-/Dorf-Aufgabe)
+  if (s.ghost) {
+    if (!UI._ghost || UI._ghost.what !== s.ghost || performance.now() - UI._ghost.t > 5000) {
+      const nat = game.nations[game.player];
+      const spot = game.findBuildSpot(game.player, nat.capital[0], nat.capital[1],
+        h => TERRAIN[h.terrain].buildable && !h.building, 10);
+      UI._ghost = spot ? { c: spot.c, r: spot.r, what: s.ghost, t: performance.now() } : null;
+    }
+  } else {
+    UI._ghost = null;
+  }
+}
+
+/* Berater: erklärt Engpässe in dem Moment, in dem sie auftreten */
+const ADVISOR_CHECKS = [
+  { key: 'leute', cd: 60000,
+    when: g => { const n = g.nations[g.player]; return n.trainCap > 0 && n.leute < 0.5 && n.soldaten < 15; },
+    msg: '⚠️ Deine Kasernen haben keine 👥 Leute mehr — bau Dörfer oder Städte!' },
+  { key: 'kaserne', cd: 90000,
+    when: g => { const n = g.nations[g.player]; return n.trainCap === 0 && g.day > 40 && n.gold >= BAL.cost.kaserne; },
+    msg: '💡 Ohne 🎪 Kaserne bekommst du keine Soldaten — bau eine (Menü links → 🏗️).' },
+  { key: 'stau', cd: 90000,
+    when: g => { const n = g.nations[g.player]; return n.soldaten > 30 && n.gold > 300; },
+    msg: '💡 Viele 🎖️ Soldaten warten — stelle im Armeen-Menü Divisionen auf!' },
+  { key: 'supply', cd: 90000,
+    when: g => g.divisionsOf(g.player).some(d => g.supplyModOf(d).level < 0.2),
+    msg: '⚠️ Divisionen ohne Nachschub verlieren Stärke — Straßen, Städte und Häfen versorgen.' },
+];
+
+function advisorTick() {
+  if (!game || game.over || game.paused || game.day < 10) return;
+  const now = performance.now();
+  UI._advisor = UI._advisor || {};
+  for (const c of ADVISOR_CHECKS) {
+    const last = UI._advisor[c.key];
+    if (last !== undefined && now - last < c.cd) continue;   // "nie gefeuert" ist immer fällig
+    if (c.when(game)) {
+      UI._advisor[c.key] = now;
+      pushToast(c.msg);
+      break;   // höchstens eine Warnung auf einmal
+    }
+  }
+}
+
 /* ---------- Ereignis-Log ---------- */
 let lastLogLen = 0;
 function updateLog() {
@@ -1878,9 +2004,14 @@ function startGame(nationId) {
   game._offersChanged = true;
   game.updateFronts();
   centerOn(...game.nations[nationId].capital, 1.25);
+  UI.tutorialStep = tutorialDone() ? -1 : 0;
+  UI._tutRendered = -1;
+  UI._advisor = {};
+  UI._ghost = null;
   refreshPanel();
   updateTopbar();
   updateUnitbar();
+  updateTutorial();
 }
 
 function checkGameOver() {

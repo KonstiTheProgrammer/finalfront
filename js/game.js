@@ -635,6 +635,7 @@ class Game {
       nat.trainCap = 0;      // Ausbildungskapazität der Kasernen (Leute → Soldaten)
       nat.hexCount = 0;
       nat.ports = 0;
+      nat.staedte = 0;
     }
     this._ports = [];
     this._kasernen = [];
@@ -645,7 +646,7 @@ class Game {
       nat.hexCount++;
       nat.incomePerDay += BAL.landIncomePerHex;
       if (h.building === 'dorf') nat.leutePerDay += BAL.leuteDorf;
-      else if (h.building === 'stadt') { nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; }
+      else if (h.building === 'stadt') { nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; nat.staedte++; }
       else if (h.building === 'mine') nat.incomePerDay += h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine;
       else if (h.building === 'hafen') { nat.ports++; this._ports.push(h); }
       else if (h.building === 'kaserne') { this._kasernen.push(h); nat.trainCap += BAL.trainPerKaserne; }
