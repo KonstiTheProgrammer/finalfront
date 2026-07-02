@@ -20,6 +20,7 @@ function loop(now) {
       updateTopbar();
       if (UI.activeTab === 'armeen' && !document.querySelector('#panel-content select:focus, #panel-content input:focus')) refreshPanel();
       else if (UI.activeTab === 'info') refreshPanel();
+      updateUnitbar();   // Balken/Status der ausgewählten Divisionen live halten
     }
     updateLog();
     checkGameOver();

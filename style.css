@@ -25,8 +25,15 @@ html, body {
   flex-wrap: wrap;
 }
 .tb-group { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.tb-spacer { flex: 1; }
 #tb-nation { font-weight: 600; font-size: 14px; }
-#tb-day { color: #cdd6e0; }
+#tb-day { color: #ffd75e; font-weight: 600; }
+#tb-datebox {
+  background: rgba(10, 15, 22, 0.85);
+  border: 1px solid #3b5068; border-radius: 7px;
+  padding: 3px 8px; gap: 9px;
+}
+#tb-datebox .speed { display: flex; gap: 3px; }
 .chip {
   display: inline-block; width: 12px; height: 12px;
   border-radius: 3px; border: 1px solid rgba(0,0,0,0.5);
@@ -48,23 +55,54 @@ html, body {
 #panel button:disabled { opacity: 0.45; cursor: default; }
 button.mini { padding: 1px 6px !important; font-size: 11px !important; }
 
-/* ---------- Seitenpanel ---------- */
-#panel {
-  position: absolute; top: 44px; right: 0; bottom: 0;
-  width: 308px;
-  background: rgba(14, 20, 28, 0.93);
-  border-left: 1px solid #2c3a4c;
-  display: flex; flex-direction: column;
+/* ---------- Linke Menüleiste (HOI4-Stil) ---------- */
+/* Schmale Fenster: Topbar umbricht auf 2 Zeilen → linke UI tiefer ansetzen */
+@media (max-width: 1150px) {
+  #sidebar, #panel { top: 88px !important; }
+  #toasts { top: 96px; }
+}
+
+#sidebar {
+  position: absolute; top: 44px; left: 0; bottom: 0;
+  width: 52px;
+  background: linear-gradient(90deg, rgba(11,16,23,0.97), rgba(14,20,28,0.9));
+  border-right: 1px solid #2c3a4c;
+  display: flex; flex-direction: column; align-items: center;
+  padding-top: 10px; gap: 6px;
   z-index: 9;
 }
-#tabs { display: flex; border-bottom: 1px solid #2c3a4c; }
-#tabs button {
-  flex: 1; border: none; border-radius: 0;
-  background: transparent; padding: 9px 2px;
-  border-bottom: 2px solid transparent;
-  font-size: 12px;
+#sidebar button {
+  width: 40px; height: 40px;
+  font-size: 19px; line-height: 1; padding: 0;
+  background: #1a2634; color: #e6e2d8;
+  border: 1px solid #2c3a4c; border-radius: 7px;
+  cursor: pointer;
+  transition: background .12s;
 }
-#tabs button.active { border-bottom-color: #e0b04a; background: rgba(224,176,74,0.08); color: #ffd75e; }
+#sidebar button:hover { background: #2f4560; }
+#sidebar button.active {
+  background: rgba(224, 176, 74, 0.16);
+  border-color: #e0b04a;
+  box-shadow: inset 3px 0 0 #e0b04a;
+}
+
+/* ---------- Ausklappbares Panel (von links) ---------- */
+#panel {
+  position: absolute; top: 44px; left: 52px; bottom: 0;
+  width: 308px;
+  background: rgba(14, 20, 28, 0.93);
+  border-right: 1px solid #2c3a4c;
+  display: flex; flex-direction: column;
+  z-index: 9;
+  box-shadow: 8px 0 22px rgba(0,0,0,0.35);
+}
+#panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid #2c3a4c;
+  color: #ffd75e; font-size: 14px;
+  background: rgba(10, 15, 22, 0.6);
+}
 #panel-content { padding: 12px; overflow-y: auto; flex: 1; font-size: 13px; }
 #panel-content h3 { margin-bottom: 8px; font-size: 15px; }
 #panel-content p { margin-bottom: 6px; }
@@ -137,9 +175,9 @@ button.war:hover { background: #5c2626; }
 button.peace { border-color: #2f6a3a; }
 button.peace:hover { background: #26512e; }
 
-/* ---------- Minimap ---------- */
+/* ---------- Minimap (unten rechts) ---------- */
 #minimap {
-  position: absolute; left: 10px; bottom: 10px;
+  position: absolute; right: 10px; bottom: 10px;
   border: 1px solid #3b5068; border-radius: 6px;
   background: #152638;
   z-index: 8;
@@ -147,13 +185,16 @@ button.peace:hover { background: #26512e; }
   box-shadow: 0 4px 16px rgba(0,0,0,0.5);
 }
 
-/* ---------- Log ---------- */
+/* ---------- Log (rechts über der Minimap) ---------- */
 #log {
-  position: absolute; left: 276px; bottom: 10px;
-  width: 420px; max-width: calc(100vw - 600px);
+  position: absolute; right: 10px; bottom: 246px;
+  width: min(340px, 30vw);
   font-size: 12px;
   z-index: 8;
   pointer-events: none;
+}
+@media (max-width: 980px) {
+  #log { display: none; }   /* sehr schmale Fenster: Log ausblenden statt zerquetschen */
 }
 #log div {
   background: rgba(12, 17, 24, 0.82);
@@ -191,7 +232,7 @@ button.peace:hover { background: #26512e; }
 
 /* ---------- Bündnisangebote ---------- */
 #offers {
-  position: absolute; top: 52px; right: 330px;
+  position: absolute; top: 84px; right: 12px;
   z-index: 24;
   display: flex; flex-direction: column; gap: 6px;
 }
@@ -206,6 +247,65 @@ button.peace:hover { background: #26512e; }
   animation: toast-in 0.25s ease-out;
 }
 .offer button { padding: 3px 8px; font-size: 12px; }
+
+/* ---------- Einheiten-Leiste unten (HOI4-Stil) ---------- */
+#unitbar {
+  position: absolute; bottom: 8px; left: 50%;
+  transform: translateX(-50%);
+  min-width: 360px; max-width: 680px;
+  background: linear-gradient(180deg, rgba(16,22,30,0.96), rgba(11,16,23,0.97));
+  border: 1px solid #3b5068; border-top: 2px solid #e0b04a;
+  border-radius: 9px;
+  padding: 7px 11px 9px;
+  z-index: 12;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+  font-size: 12.5px;
+}
+#unitbar-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 6px; flex-wrap: wrap;
+}
+#unitbar-head .ub-stats { margin-left: auto; }
+#unitbar-head button {
+  background: #223144; color: #e6e2d8;
+  border: 1px solid #3b5068; border-radius: 5px; cursor: pointer;
+}
+#unitbar-cards {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  margin-bottom: 7px;
+  max-height: 100px; overflow-y: auto;
+}
+.ucard {
+  width: 47px;
+  background: #1c2836;
+  border: 1px solid #3b5068; border-radius: 4px;
+  padding: 0 3px 3px;
+  cursor: pointer;
+}
+.ucard:hover { border-color: #e0b04a; }
+.ucard-type {
+  font-size: 9px; font-weight: 700; text-align: center;
+  color: #cfd8e3; letter-spacing: 0.5px;
+  border-top: 2px solid #8fa0b3; border-radius: 3px 3px 0 0;
+  padding-top: 2px; margin: 0 -3px 1px;
+}
+.ubar { height: 4px; background: #10161f; border-radius: 2px; overflow: hidden; margin-top: 2px; }
+.ubar i { display: block; height: 100%; }
+.ucard-flags { font-size: 9px; text-align: right; height: 11px; line-height: 11px; }
+.ucard-more { display: flex; align-items: center; justify-content: center; width: 47px; }
+#unitbar-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#unitbar-actions button {
+  padding: 4px 9px; font-size: 12px;
+  background: #223144; color: #e6e2d8;
+  border: 1px solid #3b5068; border-radius: 5px;
+  cursor: pointer;
+}
+#unitbar-actions button:hover { background: #2f4560; }
+#unitbar-actions select {
+  background: #1a2634; color: #e6e2d8;
+  border: 1px solid #3b5068; border-radius: 5px;
+  padding: 4px; max-width: 150px;
+}
 
 /* ---------- Tooltip ---------- */
 #tooltip {
