@@ -1,5 +1,7 @@
 # FINAL FRONT — Europa in Flammen
 
+**▶ Direkt im Browser spielen:** https://konstitheprogrammer.github.io/finalfront/
+
 Echtzeit-Strategiespiel im Browser: eine Hexfeld-Karte Europas, Wirtschaftsaufbau,
 HOI4-artiges Frontlinien-System mit Logistik und Moral. Kein Build-Step, kein Framework —
 reines HTML/CSS/JavaScript.
