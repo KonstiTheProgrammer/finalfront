@@ -179,6 +179,21 @@ function drawTerrainArt(ctx, h, x, y, detailed) {
   }
 }
 
+/* Fluss: blaue Tönung + geschwungene Wasserlinie */
+function drawRiverAt(ctx, p, detailed) {
+  hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
+  ctx.fillStyle = 'rgba(58, 132, 200, 0.30)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(36, 104, 172, 0.6)';
+  ctx.lineWidth = detailed ? 2 : 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(p.x - 6.5, p.y + 1.5);
+  ctx.quadraticCurveTo(p.x - 2.5, p.y - 3, p.x + 0.5, p.y + 0.5);
+  ctx.quadraticCurveTo(p.x + 3.5, p.y + 3.5, p.x + 6.5, p.y - 1);
+  ctx.stroke();
+}
+
 function drawBuilding(ctx, h, x, y, detailed) {
   ctx.save();
   ctx.translate(x, y);
@@ -384,6 +399,7 @@ function renderMapLayer() {
     if (h.terrain === 'water') continue;
     const p = hexToPixel(c, r);
     fillHex(ctx, h, p);
+    if (h.river) drawRiverAt(ctx, p, false);
     drawTerrainArt(ctx, h, p.x, p.y, false);
   }
   ctx.strokeStyle = 'rgba(88,68,44,0.95)';
@@ -442,6 +458,10 @@ function renderOverviewRegion(c0, r0, c1, r1, rx, ry, rw, rh) {
       ctx.fill();
     } else if (h.terrain === 'hills') {
       ctx.fillStyle = 'rgba(50,42,28,0.08)';
+      ctx.fill();
+    }
+    if (h.river) {
+      ctx.fillStyle = 'rgba(50, 122, 194, 0.42)';
       ctx.fill();
     }
   }
@@ -653,6 +673,7 @@ function render() {
       if (h.terrain === 'water') continue;
       const p = hexToPixel(c, r);
       fillHex(ctx, h, p);
+      if (h.river) drawRiverAt(ctx, p, true);
       drawTerrainArt(ctx, h, p.x, p.y, true);
     }
     ctx.strokeStyle = 'rgba(88,68,44,0.95)';
@@ -695,6 +716,31 @@ function render() {
       hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
       ctx.fillStyle = `hsla(${lvl * 120}, 75%, 48%, 0.4)`;
       ctx.fill();
+    }
+  }
+
+  // Kessel: eingeschlossene Gebiete rot markieren
+  if (game._pockets && game._pockets.length && zoom >= 0.4) {
+    const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+    for (const pk of game._pockets) {
+      if (pk.cx < UI.cam.x - 200 || pk.cx > UI.cam.x + UI.canvas.width / zoom + 200
+        || pk.cy < UI.cam.y - 200 || pk.cy > UI.cam.y + UI.canvas.height / zoom + 200) continue;
+      ctx.fillStyle = `rgba(255, 58, 40, ${0.10 + 0.06 * pulse})`;
+      for (const h of pk.hexes) {
+        const p = hexToPixel(h.c, h.r);
+        hexPath(ctx, p.x, p.y, HEX_SIZE + 0.4);
+        ctx.fill();
+      }
+      if (zoom >= 0.7) {
+        ctx.font = `800 ${11 / Math.min(zoom, 1.8) + 3}px 'Segoe UI', sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.lineWidth = 3 / zoom + 1;
+        ctx.strokeStyle = `rgba(30, 8, 6, ${0.7 + 0.2 * pulse})`;
+        ctx.fillStyle = `rgba(255, 96, 80, ${0.75 + 0.25 * pulse})`;
+        const label = pk.divCount > 0 ? `⚔ KESSEL (${pk.divCount})` : '⚔ KESSEL';
+        ctx.strokeText(label, pk.cx, pk.cy);
+        ctx.fillText(label, pk.cx, pk.cy);
+      }
     }
   }
 
@@ -1319,9 +1365,11 @@ function updateTooltip(sx, sy) {
   if (!UI.hoverHex || !game || UI._overUI) { tip.style.display = 'none'; return; }
   const h = game.hexAt(UI.hoverHex.c, UI.hoverHex.r);
   if (!h) { tip.style.display = 'none'; return; }
-  let html = `<b>${TERRAIN[h.terrain].name}</b>`;
+  let html = `<b>${TERRAIN[h.terrain].name}</b>${h.river ? ' · 🌊 <b>Fluss</b> <span class="tt-dim">(langsam · Angriffe geschwächt · Straße = Brücke)</span>' : ''}`;
+  if (h._pocket) html += ' · <span style="color:#ff6050"><b>⚔ KESSEL</b></span>';
   if (h.owner) {
     html += ` — <span style="color:${NATION_DEFS[h.owner].color}">${game.nationName(h.owner)}</span>`;
+    if (game.isTraitor(h.owner)) html += ' 🐍';
     if (game.allied(game.player, h.owner)) html += ' 🤝';
     if (h.capital) html += ' ★';
     if (h.vp) html += ' · <b>🏛️ Siegpunkt-Hauptstadt</b>';
@@ -1469,7 +1517,9 @@ function updateTopbar() {
   if (!game) return;
   const nat = game.nations[game.player];
   document.getElementById('tb-nation').innerHTML =
-    `<span class="chip" style="background:${game.nationColor(game.player)}"></span>${game.nationName(game.player)}`;
+    `<span class="chip" style="background:${game.nationColor(game.player)}"></span>${game.nationName(game.player)}`
+    + (game.isTraitor(game.player)
+      ? ` <span title="Verräter! Noch ${game.nations[game.player].traitorUntil - game.day} Tage geächtet: kein Handel, keine Bündnisse.">🐍</span>` : '');
   const inc = nat.incomePerDay * (nat.econMult || 1);
   document.getElementById('tb-gold').textContent =
     `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
@@ -1524,7 +1574,7 @@ function rankRowHtml(place, id) {
   return `<div class="rank-row ${id === game.player ? 'me' : ''}">
     <span class="rank-pl">${place}.</span>
     <span class="chip" style="background:${game.nationColor(id)}"></span>
-    <span class="rank-name">${game.nationName(id)}</span>
+    <span class="rank-name">${game.nationName(id)}${game.isTraitor(id) ? ' 🐍' : ''}</span>
     <span class="rank-vp">🏛️ ${n.vp || 0}</span>
     <span class="rank-hex">${n.hexCount}</span>
   </div>`;
@@ -1646,7 +1696,7 @@ function panelNationen() {
     const isAlly = game.allied(game.player, id);
     html += `<div class="diplo-row ${n.alive ? '' : 'dead'}">
       <span class="chip" style="background:${game.nationColor(id)}"></span>
-      <div class="diplo-info"><b>${game.nationName(id)}${isAlly ? ' 🤝' : ''}</b>
+      <div class="diplo-info"><b>${game.nationName(id)}${isAlly ? ' 🤝' : ''}${game.isTraitor(id) ? ' 🐍' : ''}</b>
         <span class="small">${n.alive ? `${n.hexCount} Provinzen · ${game.divisionsOf(id).length} Div.` : '☠ untergegangen'}</span></div>
       ${n.alive ? (isAlly
         ? `<button data-unally="${id}" class="danger">💔 Lösen</button>`

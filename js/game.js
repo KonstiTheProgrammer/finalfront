@@ -69,6 +69,10 @@ const BAL = {
   moralBaselinePull: 0.03,
   // Bewegung (Hexes/Tag)
   moveSpeed: 4.0,
+  // Flüsse: Übergänge sind langsam und gefährlich — Straßen überbrücken sie
+  river: { moveFactor: 1.6, attackFrom: 0.6, attackInto: 0.85 },
+  // Verrat: Ex-Verbündeten schnell angreifen macht dich öffentlich zum Verräter
+  traitor: { window: 25, duration: 60 },
   // Politik
   maxAllies: 2,
   offerLifetime: 40,
@@ -138,6 +142,9 @@ class Game {
     this._kasernen = [];               // Cache: alle Kasernen-Hexes (recalcEconomy)
     this._borderCache = null;          // Cache: borderNationsOf pro Tag
     this._hasDead = false;
+    this._pockets = [];                // erkannte Kessel (für Anzeige & Meldungen)
+    this._pocketKeys = new Set();
+    this._exAllies = {};               // 'Initiator>Opfer' -> Tag der Bündnisauflösung
     this.mapDirty = true;
     this.dirtyRect = null;
     this.labelsDirty = true;
@@ -255,6 +262,7 @@ class Game {
   tradePartners(a, b) {
     if (a === b || !this.nations[a] || !this.nations[b]) return false;
     if (!this.nations[a].alive || !this.nations[b].alive) return false;
+    if (this.isTraitor(a) || this.isTraitor(b)) return false;   // Verräter sind vom Handel ausgeschlossen
     if (this.allied(a, b)) return true;
     const heat = this.warHeat[[a, b].sort().join('|')];
     return heat === undefined || this.day - heat > BAL.trade.warCooldown;
@@ -291,6 +299,7 @@ class Game {
 
   allianceDecide(from, to) {
     const nTo = this.nations[to];
+    if (this.isTraitor(from)) return false;   // mit Verrätern verbündet sich niemand
     if (nTo.allies.size >= BAL.maxAllies) return false;
     if (this.nationPower(from) < this.nationPower(to) * 0.35) return false;
     // Nicht mit dem eigenen Angriffsziel verbünden
@@ -305,12 +314,28 @@ class Game {
     this.frontsDirty = true;
   }
 
-  dissolveAlliance(a, b) {
+  dissolveAlliance(a, b, initiator) {
     if (!this.allied(a, b)) return;
     this.nations[a].allies.delete(b);
     this.nations[b].allies.delete(a);
+    // Wer aktiv auflöst und den Ex-Verbündeten bald angreift, wird Verräter
+    if (initiator) this._exAllies[initiator + '>' + (initiator === a ? b : a)] = this.day;
     this.addLog(`💔 Die Allianz zwischen ${this.nationName(a)} und ${this.nationName(b)} ist zerbrochen.`, a === this.player || b === this.player);
     this.frontsDirty = true;
+  }
+
+  isTraitor(id) {
+    return !!this.nations[id] && this.nations[id].traitorUntil > this.day;
+  }
+
+  _checkBetrayal(attacker, victim) {
+    if (!victim || attacker === victim || !this.nations[attacker]) return;
+    const rec = this._exAllies[attacker + '>' + victim];
+    if (rec === undefined || this.day - rec > BAL.traitor.window) return;
+    if (this.isTraitor(attacker)) return;
+    this.nations[attacker].traitorUntil = this.day + BAL.traitor.duration;
+    delete this._exAllies[attacker + '>' + victim];
+    this.addLog(`🐍 ${this.nationName(attacker)} bricht den Bund und fällt ${this.nationName(victim)} in den Rücken — VERRÄTER! ${BAL.traitor.duration} Tage geächtet: kein Handel, keine Bündnisse, Freiwild für alle.`, true);
   }
 
   resolveOffer(from, accept) {
@@ -378,6 +403,7 @@ class Game {
       capital: null,
       divNameSeq: 1,
       hexCount: 1,
+      traitorUntil: -999,
       incomePerDay: 0, leutePerDay: 0, trainCap: 0,
       _lastAttacker: null, _lastAttackedDay: -99, _atkToastDay: -99,
     };
@@ -749,7 +775,8 @@ class Game {
       for (const [nc, nr] of neighborsOf(h.c, h.r)) {
         const nh = this.hexAt(nc, nr);
         if (!nh || nh.owner !== id || nh.terrain === 'water') continue;
-        const stepCost = TERRAIN[nh.terrain].move * (nh.road ? BAL.roadCostFactor : 1) * BAL.supplyDecay;
+        const stepCost = TERRAIN[nh.terrain].move
+          * (nh.road ? BAL.roadCostFactor : (nh.river ? BAL.river.moveFactor : 1)) * BAL.supplyDecay;
         const v = s - stepCost;
         if (v > nh.supply + 1e-4) { nh.supply = v; hpush(v, nh); }
       }
@@ -841,11 +868,13 @@ class Game {
           if (ownOnly) continue;
           step = TERRAIN.water.move;
         } else if (nh.owner === nation) {
-          step = TERRAIN[nh.terrain].move * (nh.road ? BAL.roadCostFactor : 1);
+          // Straße überbrückt den Fluss (Brücke), sonst bremst er
+          step = TERRAIN[nh.terrain].move * (nh.road ? BAL.roadCostFactor : (nh.river ? BAL.river.moveFactor : 1));
         } else if (!ownOnly && nh.owner && this.allied(nation, nh.owner)) {
-          step = TERRAIN[nh.terrain].move;                         // Durchmarsch bei Verbündeten
+          step = TERRAIN[nh.terrain].move * (nh.river ? BAL.river.moveFactor : 1);   // Durchmarsch bei Verbündeten
         } else if (!ownOnly && (isTarget || this.attackable(nation, nh))) {
-          step = TERRAIN[nh.terrain].move * (isTarget ? 1 : 1.6);  // Feind-/Neutralland: kämpfend passierbar
+          step = TERRAIN[nh.terrain].move * (isTarget ? 1 : 1.6)
+            * (nh.river ? BAL.river.moveFactor : 1);               // Feind-/Neutralland: kämpfend passierbar
         } else continue;
         const ng = g + step;
         const nKey = nc + nr * MAP_W;
@@ -1099,7 +1128,8 @@ class Game {
           continue;
         }
         const step = nh.terrain === 'water' ? TERRAIN.water.move
-          : TERRAIN[nh.terrain].move * (nh.road && nh.owner === div.nation ? BAL.roadCostFactor : 1);
+          : TERRAIN[nh.terrain].move * (nh.road && nh.owner === div.nation
+            ? BAL.roadCostFactor : (nh.river ? BAL.river.moveFactor : 1));
         const t = BAL.divTypes[div.type];
         div.moveProgress += (BAL.moveSpeed * t.speed / step) * dt;
         if (div.moveProgress >= 1) {
@@ -1152,6 +1182,7 @@ class Game {
       if (nh.building) score += 4;
       if (nh.capital) score += 10;
       if (nh.vp) score += 12;   // Siegpunkt-Hauptstädte sind das Rundenziel
+      if (nh.river) score -= 3; // Flussübergänge meiden, wenn es Alternativen gibt
       if (this._atkCount && this._atkCount.get(nc + nr * MAP_W)) score += 6;
       if (score > bestScore) { bestScore = score; best = nh; }
     }
@@ -1172,6 +1203,9 @@ class Game {
     const rand = 0.85 + this.rand() * 0.3;
     let power = this.attackPower(atk) * rand / terr.def;
     if (seaAssault) power *= BAL.seaAssaultMalus;
+    // Flussübergang: Angriff aus dem Fluss heraus oder in ihn hinein ist geschwächt
+    if (fromHex && fromHex.river) power *= BAL.river.attackFrom;
+    else if (targetHex.river) power *= BAL.river.attackInto;
     const neutral = targetHex.owner === null;
 
     const def = this.divisionAt(targetHex.c, targetHex.r);
@@ -1185,7 +1219,10 @@ class Game {
 
     if (def && !def.dead) {
       def.inCombat = true;
-      if (def.nation !== atk.nation) this.warHeat[[atk.nation, def.nation].sort().join('|')] = this.day;
+      if (def.nation !== atk.nation) {
+        this.warHeat[[atk.nation, def.nation].sort().join('|')] = this.day;
+        this._checkBetrayal(atk.nation, def.nation);
+      }
       const dRand = 0.85 + this.rand() * 0.3;
       const defT = BAL.divTypes[def.type];
       const defPower = this.attackPower(def) * defT.defF * dRand;
@@ -1298,6 +1335,7 @@ class Game {
     if (loser) {
       this._supplyDirtyIds.add(loser);
       this.warHeat[[div.nation, loser].sort().join('|')] = this.day;
+      this._checkBetrayal(div.nation, loser);
       const ln = this.nations[loser];
       ln._lastAttacker = div.nation;
       ln._lastAttackedDay = this.day;
@@ -1370,6 +1408,62 @@ class Game {
   checkElimination(loser, winner) {
     if (!loser || !this.nations[loser] || !this.nations[loser].alive) return;
     if (this.ownedHexes(loser).length === 0) this.surrender(loser, winner);
+  }
+
+  /* ---------- Kessel: eingeschlossene Gebietsteile sichtbar machen ---------- */
+  pocketsDaily() {
+    for (const p of this._pockets) for (const h of p.hexes) h._pocket = false;
+    const pockets = [];
+    const byOwner = new Map();
+    for (const row of this.hexes) for (const h of row) {
+      if (!h.owner || h.terrain === 'water') continue;
+      let arr = byOwner.get(h.owner);
+      if (!arr) byOwner.set(h.owner, arr = []);
+      arr.push(h);
+    }
+    for (const [id, own] of byOwner) {
+      if (!this.nations[id] || !this.nations[id].alive || own.length < 2) continue;
+      const seen = new Set();
+      for (const start of own) {
+        const sk = start.c + start.r * MAP_W;
+        if (seen.has(sk)) continue;
+        seen.add(sk);
+        const comp = [start];
+        let hasHub = false, minKey = sk;
+        for (let i = 0; i < comp.length; i++) {
+          const h = comp[i];
+          if (h.capital || h.building === 'stadt' || h.building === 'hafen' || h.building === 'kaserne') hasHub = true;
+          for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+            const nh = this.hexAt(nc, nr);
+            if (!nh || nh.owner !== id || nh.terrain === 'water') continue;
+            const k = nc + nr * MAP_W;
+            if (!seen.has(k)) { seen.add(k); comp.push(nh); if (k < minKey) minKey = k; }
+          }
+        }
+        if (hasHub) continue;   // Hauptgebiet bzw. versorgter Landesteil — kein Kessel
+        let divCount = 0, sx = 0, sy = 0;
+        const compSet = new Set(comp.map(h => h.c + h.r * MAP_W));
+        for (const d of this.divisions) {
+          if (!d.dead && d.nation === id && compSet.has(d.c + d.r * MAP_W)) divCount++;
+        }
+        for (const h of comp) {
+          const p = hexToPixel(h.c, h.r);
+          sx += p.x; sy += p.y;
+          h._pocket = true;
+        }
+        pockets.push({ owner: id, hexes: comp, cx: sx / comp.length, cy: sy / comp.length, divCount, key: id + ':' + minKey });
+      }
+    }
+    // Neu entstandene Kessel melden
+    for (const p of pockets) {
+      if (this._pocketKeys.has(p.key)) continue;
+      if (p.owner === this.player && p.divCount > 0)
+        this.addLog(`⚠️ KESSEL! ${p.divCount} deiner Divisionen sind eingeschlossen — ausbrechen oder Verbindung freikämpfen!`, true);
+      else if (p.divCount >= 2)
+        this.addLog(`⚔️ Kessel! ${p.divCount} Divisionen von ${this.nationName(p.owner)} sind eingeschlossen.`);
+    }
+    this._pocketKeys = new Set(pockets.map(p => p.key));
+    this._pockets = pockets;
   }
 
   /* ---------- Rundenmodus: Sieg über Hauptstädte ---------- */
@@ -1750,6 +1844,7 @@ class Game {
       const size = Math.sqrt(this.nations[b].hexCount / Math.max(1, nat.hexCount));
       let score = r * Math.min(2, Math.max(0.5, size));
       score *= 1 + (this.nations[b].vp || 0) * 0.1;
+      if (this.isTraitor(b)) score *= 1.35;                           // Verräter sind Freiwild
       if (this.vpLeader === b) score *= 1.6;                          // Countdown stoppen!
       else if ((this.nations[b].vp || 0) >= BAL.round.vpToWin - 1) score *= 1.8;  // Beinahe-Sieger bremsen
       if (score > vScore) { vScore = score; vRatio = r; victim = b; }
@@ -1789,7 +1884,7 @@ class Game {
     // Verbünde dich mit jemand Starkem, der nicht die Bedrohung ist
     const cands = Object.keys(this.nations)
       .filter(x => x !== id && x !== threat && this.nations[x].alive && !this.allied(id, x)
-        && this.nations[x].allies.size < BAL.maxAllies)
+        && this.nations[x].allies.size < BAL.maxAllies && !this.isTraitor(x))
       .sort((a, b) => this.nationPower(b) - this.nationPower(a));
     if (cands.length) this.offerAlliance(id, cands[0]);
   }
@@ -1849,6 +1944,7 @@ class Game {
       this.tradeDaily();
       this.aiDaily();
       this.vpDaily();
+      this.pocketsDaily();
       // Abgelaufene Bündnisangebote entfernen
       const before = this.allianceOffers.length;
       this.allianceOffers = this.allianceOffers.filter(o => this.day - o.day < BAL.offerLifetime);
@@ -1875,9 +1971,11 @@ class Game {
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
       cmds: this._replayCapable ? this.cmdLog : undefined,
       warHeat: this.warHeat,
+      exAllies: this._exAllies,
       hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist)]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
         alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), soldaten: +n.soldaten.toFixed(2),
+        traitorUntil: n.traitorUntil,
         allies: [...n.allies], capital: n.capital, divNameSeq: n.divNameSeq,
         armies: n.armies.map(a => ({ id: a.id, name: a.name, target: a.target, mode: a.mode })),
       }])),
@@ -1920,6 +2018,7 @@ class Game {
       // v3-Spielstände: alter Rekruten-Pool wird auf Leute/Soldaten aufgeteilt
       n.leute = ns.leute !== undefined ? ns.leute : (ns.manpower !== undefined ? ns.manpower * 0.6 : 20);
       n.soldaten = ns.soldaten !== undefined ? ns.soldaten : (ns.manpower !== undefined ? ns.manpower * 0.4 : 10);
+      n.traitorUntil = ns.traitorUntil !== undefined ? ns.traitorUntil : -999;
       n.allies = new Set(ns.allies); n.capital = ns.capital; n.divNameSeq = ns.divNameSeq;
       n.armies = ns.armies.map(a => ({ ...a, nation: id, frontHexes: [] }));
     }
@@ -1936,6 +2035,7 @@ class Game {
     g.allianceOffers = [];
     g.ships = [];
     g.warHeat = s.warHeat || {};
+    g._exAllies = s.exAllies || {};
     g.vpLeader = s.vpLeader || null;
     g.vpDeadline = s.vpDeadline || 0;
     g.vpRecount();
@@ -2090,7 +2190,7 @@ Game.prototype._commands = {
     return this.offerAlliance(this.player, to);
   },
   unally(other) {
-    this.dissolveAlliance(this.player, other);
+    this.dissolveAlliance(this.player, other, this.player);
   },
   answerOffer(from, accept) {
     this.resolveOffer(from, accept);

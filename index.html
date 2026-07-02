@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -126,16 +126,17 @@
         <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — deine Truppen ziehen exakt dorthin und kämpfen sich durch Feind-/Neutralland (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte anhängen</b> (werden der Reihe nach abgelaufen) · <b>Alt+Rechtsklick auf Neutral-/Feindland = Front zuweisen</b> (Automatik: Truppen verteilen sich selbst und greifen an)</li>
         <li><b>Karte:</b> Rechts-/Mittel-Ziehen oder WASD = verschieben · Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
         <li><b>Expansion:</b> Neutralland (grau) gehört niemandem — erobere es! Wähle deine Divisionen und schick sie per Rechtsklick los (oder Alt+Rechtsklick für automatische Expansion).</li>
+        <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
         <li><b>Sieg — halte 4 Hauptstädte:</b> Die 15 Original-Hauptstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>4 davon hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine Hauptstadt zurück, stoppt er. Nach <b>1000 Tagen</b> gewinnt sonst, wer die meisten Hauptstädte (dann Provinzen) hält. Ab Tag 700 beginnt die <b>Endphase</b>: Milizen ermüden, der Aufholbonus schwindet — die Karte konsolidiert sich.</li>
         <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>30 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Nationen unter 30 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
-        <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab.</li>
+        <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab. <b>Verrat:</b> Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen angreift, ist 60 Tage <b>🐍 Verräter</b> — kein Handel, keine neuen Bündnisse, bevorzugtes Ziel aller.</li>
         <li><b>Bauen:</b> Menüleiste links → 🏗 (oder Taste <b>B</b>) → Gebäude wählen → auf die Karte klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
         <li><b>Wirtschaftskette:</b> 🏠 Dörfer erzeugen <b>👥 Leute</b> · 🏙️ Städte erzeugen Leute <b>und</b> Gold · ⛏️ Minen und 🚢 Häfen bringen Gold · 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> — neue Divisionen und Verstärkung kosten Gold + Soldaten · 🛣️ Straßen = Bewegung + Versorgung</li>
         <li><b>Seehandel:</b> Baue einen <b>🚢 Hafen an einem Ufer</b> — er schickt Handelsschiffe zu Häfen anderer Nationen, und <b>beide Seiten verdienen Gold</b> pro Ankunft (längere Routen = mehr). Kein Handel mit Nationen, mit denen du gerade kämpfst; Verbündete handeln immer. Häfen sind zudem Versorgungs-Hubs.</li>
         <li><b>Truppentypen:</b> Infanterie (billig), Garde (Elite), Panzer (schnell), Artillerie (knackt Verteidigung &amp; Miliz).</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
-        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet, Küsten evakuieren über See.</li>
+        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert — Küsten evakuieren über See.</li>
         <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
         <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
       </ul>
@@ -143,10 +144,10 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=17"></script>
-  <script src="js/map.js?v=17"></script>
-  <script src="js/game.js?v=17"></script>
-  <script src="js/ui.js?v=17"></script>
-  <script src="js/main.js?v=17"></script>
+  <script src="js/mapdata.js?v=18"></script>
+  <script src="js/map.js?v=18"></script>
+  <script src="js/game.js?v=18"></script>
+  <script src="js/ui.js?v=18"></script>
+  <script src="js/main.js?v=18"></script>
 </body>
 </html>

@@ -106,11 +106,13 @@ function buildMap() {
   for (let r = 0; r < MAP_H; r++) {
     const rowStr = GENMAP.rows[r] || '';
     const arr = [];
+    const riverStr = (GENMAP.rivers && GENMAP.rivers[r]) || '';
     for (let c = 0; c < MAP_W; c++) {
       const terrain = TERRAIN_CODE[rowStr[c]] || 'water';
       arr.push({
         c, r,
         terrain,
+        river: terrain !== 'water' && riverStr[c] === 'r',   // echte Flüsse (Natural Earth)
         owner: null,           // FFA: alles Land startet neutral
         building: null,
         road: false,

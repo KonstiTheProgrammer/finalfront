@@ -24,6 +24,13 @@ python -m http.server 4173
   open-meteo.com). Alpen, Karpaten und Kaukasus liegen dort, wo sie wirklich sind; die
   Nationen spawnen an den echten Koordinaten ihrer Hauptstädte. Über **20.000 Landprovinzen**
   (180×205 Hexes, Miller-Projektion), alles startet neutral und grau.
+- **🌊 Echte Flüsse** (Natural Earth): Rhein, Donau, Weichsel & Co. sind natürliche
+  Verteidigungslinien — Übergänge sind langsam, Angriffe über den Fluss um bis zu 40 %
+  geschwächt, Straßen wirken als Brücken. Erzeugen: `node tools/genrivers.js`.
+- **⚔ Kessel:** Vom Nachschub abgeschnittene Gebietsteile werden rot markiert und gemeldet —
+  Einkesselungen sind sichtbar, lehrbar und der Signature-Move des Spiels.
+- **🐍 Verräter-System:** Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen
+  angreift, ist 60 Tage öffentlich geächtet — kein Handel, keine Bündnisse, Freiwild.
 - Jede der 15 Nationen beginnt mit **einem Dorf und zwei Divisionen** und breitet sich in
   neutrales Land aus.
 - **Easy Entry:** Das erste Match führt mit 5 kontextuellen Aufgaben durch Eroberung und
