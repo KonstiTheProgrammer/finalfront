@@ -821,6 +821,40 @@ function render() {
     }
   }
 
+  // Wegpunkt-Routen der ausgewählten Divisionen
+  if (UI.selectedDivs.size) {
+    for (const id of UI.selectedDivs) {
+      const d = game.divisions.find(x => x.id === id && !x.dead);
+      if (!d || d.nation !== game.player) continue;
+      const pts = [];
+      if (d.path && d.pathI < d.path.length) pts.push(d.path[d.path.length - 1]);
+      if (d.queue) for (const q of d.queue) pts.push(q);
+      if (!pts.length) continue;
+      ctx.strokeStyle = 'rgba(120,215,255,0.7)';
+      ctx.lineWidth = 1.7 / zoom + 0.6;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      for (const [qc, qr] of pts) { const p = hexToPixel(qc, qr); ctx.lineTo(p.x, p.y); }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const rad = 4.5 / Math.min(zoom, 2) + 1;
+      pts.forEach(([qc, qr], i) => {
+        const p = hexToPixel(qc, qr);
+        ctx.fillStyle = 'rgba(20,40,60,0.9)';
+        ctx.strokeStyle = 'rgba(120,215,255,0.95)';
+        ctx.lineWidth = 1.2 / zoom + 0.4;
+        ctx.beginPath(); ctx.arc(p.x, p.y, rad, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#cfeaff';
+        ctx.font = `bold ${8.5 / Math.min(zoom, 2) + 2}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), p.x, p.y + 0.5);
+        ctx.textBaseline = 'alphabetic';
+      });
+    }
+  }
+
   // Auswahl-Markierungen
   if (UI.selectedHex) {
     const p = hexToPixel(UI.selectedHex.c, UI.selectedHex.r);
@@ -998,7 +1032,7 @@ function bindInput() {
     if (e.button === 2) {
       const wasPan = UI.drag && UI.drag.pan && UI.drag.moved;
       UI.drag = null;
-      if (!wasPan) onRightTap(e.clientX, e.clientY, e.altKey);
+      if (!wasPan) onRightTap(e.clientX, e.clientY, e.altKey, e.shiftKey);
       return;
     }
     if (e.button === 1) UI.drag = null;
@@ -1096,8 +1130,8 @@ function mergeSelection() {
   refreshPanel();
 }
 
-/* Rechtsklick: Marschbefehl (Standard) / Alt = Front-Automatik / Allianz */
-function onRightTap(sx, sy, alt) {
+/* Rechtsklick: Marschbefehl (Standard) / Shift = Wegpunkt / Alt = Front-Automatik / Allianz */
+function onRightTap(sx, sy, alt, shift) {
   if (UI.buildMode) { setBuildMode(null); return; }
   const w = screenToWorld(sx, sy);
   const hx = pixelToHex(w.x, w.y);
@@ -1108,12 +1142,17 @@ function onRightTap(sx, sy, alt) {
 
   if (sel.length) {
     const ownOrAllied = h.owner === game.player || (h.owner && game.allied(game.player, h.owner));
-    if (alt && h.terrain !== 'water' && !ownOrAllied) {
+    const hostileOwned = h.owner && !ownOrAllied;
+    if (hostileOwned && h.terrain !== 'water' && game.day < BAL.graceDays) {
+      pushToast(`⏳ Schonfrist: Angriffe auf Nationen erst in ${BAL.graceDays - game.day} Tagen.`);
+      return;
+    }
+    if (alt && !shift && h.terrain !== 'water' && !ownOrAllied) {
       // Alt+Rechtsklick = Automatik: Truppen der Front zuweisen
       assignSelectionToFront(h.owner === null ? 'EXPAND' : h.owner);
     } else {
-      // Standard: direkter Marsch-/Angriffsbefehl — du steuerst selbst
-      groupMoveOrder(hx.c, hx.r);
+      // Standard: direkter Marsch-/Angriffsbefehl · Shift = Wegpunkt anhängen
+      groupMoveOrder(hx.c, hx.r, shift);
     }
     return;
   }
@@ -1139,7 +1178,7 @@ function assignSelectionToFront(key) {
   army.mode = 'attack';
   let n = 0;
   for (const d of playerSelection()) {
-    d.army = army.id; d.manual = false; d.path = null; d.attackTarget = null;
+    d.army = army.id; d.manual = false; d.path = null; d.attackTarget = null; d.queue = [];
     n++;
   }
   game.updateFronts(game.player);
@@ -1206,12 +1245,12 @@ function finishBoxSelect(b, shift) {
   }
   if (UI.selectedDivs.size) {
     UI.activeTab = 'info';
-    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick = Marschbefehl · Alt+Rechtsklick = Front (Automatik)`);
+    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick = Marsch · Shift = Wegpunkte · Alt = Front-Automatik`);
   }
   refreshPanel();
 }
 
-function groupMoveOrder(c, r) {
+function groupMoveOrder(c, r, queue) {
   const divs = playerSelection();
   if (!divs.length) return;
   const targets = [[c, r]];
@@ -1229,7 +1268,7 @@ function groupMoveOrder(c, r) {
     frontier = next;
   }
   divs.sort((a, b) => hexDist(a.c, a.r, c, r) - hexDist(b.c, b.r, c, r));
-  divs.forEach((d, i) => game.moveOrder(d, ...targets[Math.min(i, targets.length - 1)]));
+  divs.forEach((d, i) => game.moveOrder(d, ...targets[Math.min(i, targets.length - 1)], queue));
   game.effects.push({ type: 'capture', c, r, t: performance.now() - 400 });
 }
 
@@ -1376,7 +1415,7 @@ function updateTopbar() {
   const nat = game.nations[game.player];
   document.getElementById('tb-nation').innerHTML =
     `<span class="chip" style="background:${game.nationColor(game.player)}"></span>${game.nationName(game.player)}`;
-  const inc = nat.incomePerDay;
+  const inc = nat.incomePerDay * (nat.econMult || 1);
   document.getElementById('tb-gold').textContent =
     `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
   document.getElementById('tb-mp').textContent =
@@ -1513,7 +1552,7 @@ function panelInfo() {
         <div>Ø Stärke</div><div class="bar"><i style="width:${avgStr}%;background:#57c268"></i></div>
         <div>Ø Organisation</div><div class="bar"><i style="width:${avgOrg * 100}%;background:#e0b34a"></i></div>
       </div>
-      <p class="small hint">Rechtsklick = Marschbefehl — die Truppen kämpfen sich zum Ziel durch (übers Meer = Invasion) · Alt+Rechtsklick auf Feind-/Neutralland = Front zuweisen (Automatik).</p>`;
+      <p class="small hint">Rechtsklick = Marschbefehl — die Truppen kämpfen sich zum Ziel durch (übers Meer = Invasion) · Shift+Rechtsklick = Wegpunkte anhängen · Alt+Rechtsklick auf Feind-/Neutralland = Front zuweisen (Automatik).</p>`;
     if (own.length) {
       const nat = game.nations[game.player];
       html += `<label class="small">Gruppe einer Armee zuweisen:</label>
@@ -1661,7 +1700,7 @@ function bindPanelActions(el) {
   if (ga) ga.addEventListener('click', () => {
     const armyId = +el.querySelector('#group-army').value;
     let n = 0;
-    for (const d of playerSelection()) { d.army = armyId; d.manual = false; d.path = null; n++; }
+    for (const d of playerSelection()) { d.army = armyId; d.manual = false; d.path = null; d.queue = []; n++; }
     game.updateFronts(game.player);
     pushToast(`🪖 ${n} Divisionen zugewiesen — sie verlegen automatisch zur Front.`);
   });

@@ -70,6 +70,11 @@ const BAL = {
   // Politik
   maxAllies: 2,
   offerLifetime: 40,
+  // Balance / Fairness (Multiplayer-tauglich)
+  graceDays: 30,              // Schonfrist: so lange keine Angriffe auf Nationen
+  catchupMax: 0.35,           // Einkommensbonus kleiner Nationen (bis +35 %)
+  leaderMalus: 0.25,          // Einkommensmalus des Spitzenreiters (bis -25 %)
+  smallNationDefense: 1.5,    // Miliz-Bonus für Nationen unter 30 Provinzen
   // Sieg
   winLandShare: 0.55,
 };
@@ -127,6 +132,8 @@ class Game {
     this.recalcAllSupply();
     this.updateFronts();
     this.addLog(`🌍 Europa liegt brach, ${dateStr(0)}. Du führst ${this.nationName(playerNationId)} — breite dich aus!`, true);
+    if (BAL.graceDays > 0)
+      this.addLog(`⏳ Schonfrist: ${BAL.graceDays} Tage lang nur Expansion ins Neutralland — danach ist jeder angreifbar!`, true);
   }
 
   /* ---------- Hilfen ---------- */
@@ -208,10 +215,11 @@ class Game {
     return heat === undefined || this.day - heat > BAL.trade.warCooldown;
   }
 
-  /* Darf 'nation' das Hex angreifen? (Neutral: immer) */
+  /* Darf 'nation' das Hex angreifen? (Neutral: immer; Nationen erst nach der Schonfrist) */
   attackable(nation, h) {
     if (!h || h.terrain === 'water') return false;
     if (h.owner === null) return true;
+    if (this.day < BAL.graceDays) return false;   // Schonfrist: nur Expansion
     return this.hostile(nation, h.owner);
   }
 
@@ -348,9 +356,14 @@ class Game {
   setResist(h) {
     let base;
     if (!h.owner) base = BAL.militiaResistNeutral;
-    else if (h.capital) base = BAL.militiaResistHauptstadt;
-    else if (h.building === 'stadt') base = BAL.militiaResistStadt;
-    else base = BAL.militiaResist;
+    else {
+      if (h.capital) base = BAL.militiaResistHauptstadt;
+      else if (h.building === 'stadt') base = BAL.militiaResistStadt;
+      else base = BAL.militiaResist;
+      // Heimatverteidigung: kleine Nationen sind zäher — schützt vor frühem Aus
+      const nat = this.nations[h.owner];
+      if (nat && nat.alive && nat.hexCount < 30) base *= BAL.smallNationDefense;
+    }
     h.resistMax = base;
     if (h.resist <= 0 || h.resist > base) h.resist = base;
   }
@@ -430,6 +443,7 @@ class Game {
       army: army ? army.id : null,
       station: null,
       path: null, pathI: 0, moveProgress: 0,
+      queue: [],
       attackTarget: null,
       inCombat: false,
       // Spieler-Divisionen starten MANUELL: sie warten auf Befehle statt
@@ -503,6 +517,7 @@ class Game {
       str: half, org: div.org, moral: div.moral,
       army: div.army, station: null,
       path: null, pathI: 0, moveProgress: 0,
+      queue: [],
       attackTarget: null, inCombat: false,
       manual: div.manual, dead: false,
     };
@@ -619,9 +634,19 @@ class Game {
   }
 
   economyTick(dt) {
+    // Aufholmechanik: kleine Nationen verdienen mehr, der Spitzenreiter weniger —
+    // hält das Feld zusammen (Multiplayer-Fairness, bremst Snowballing)
+    let sum = 0, cnt = 0;
+    for (const nat of Object.values(this.nations)) if (nat.alive) { sum += nat.hexCount; cnt++; }
+    const avg = Math.max(1, sum / Math.max(1, cnt));
     for (const nat of Object.values(this.nations)) {
       if (!nat.alive) continue;
-      nat.gold = Math.max(0, nat.gold + nat.incomePerDay * dt);
+      const rel = nat.hexCount / avg;
+      let mult = 1;
+      if (rel < 1) mult = 1 + Math.min(BAL.catchupMax, (1 - rel) * 0.5);
+      else mult = 1 - Math.min(BAL.leaderMalus, (rel - 1) * 0.1);
+      nat.econMult = nat.incomePerDay > 0 ? mult : 1;
+      nat.gold = Math.max(0, nat.gold + nat.incomePerDay * nat.econMult * dt);
       nat.manpower += nat.mpPerDay * dt;
     }
   }
@@ -911,7 +936,14 @@ class Game {
     const nat = this.nations[id];
     if (!nat || !nat.alive) return;
     const own = this.ownedHexes(id);   // 1 Kartenscan für ALLE Armeen der Nation
-    for (const a of nat.armies) { this.computeFront(a, own); this.distributeArmy(a); }
+    for (const a of nat.armies) {
+      // Front nur für Armeen mit automatisch geführten Divisionen — sonst
+      // erscheint eine sinnlose Linie, obwohl niemand ihr folgt
+      const hasAuto = this.divisions.some(d => !d.dead && d.nation === id && d.army === a.id && !d.manual);
+      if (!hasAuto) { a.frontHexes = []; continue; }
+      this.computeFront(a, own);
+      this.distributeArmy(a);
+    }
   }
 
   updateFronts(onlyId) {
@@ -933,11 +965,20 @@ class Game {
   }
 
   /* ---------- Divisionen: Bewegung & Kampf ---------- */
-  moveOrder(div, c, r) {
+  moveOrder(div, c, r, queue) {
     const h = this.hexAt(c, r);
     if (!h) return;
     div.manual = true;
-    div.attackTarget = null;
+    if (queue) {
+      // Shift: Wegpunkt anhängen — wird abgearbeitet, sobald die Division frei ist
+      if (div.path || div.attackTarget || (div.queue && div.queue.length)) {
+        (div.queue = div.queue || []).push([c, r]);
+        return;
+      }
+    } else {
+      div.queue = [];              // neuer Befehl ersetzt die Warteschlange
+      div.attackTarget = null;
+    }
     const path = this.findPath(div.nation, div.c, div.r, c, r, false);
     if (path) { div.path = path; div.pathI = 0; div.moveProgress = 0; }
     else if (div.nation === this.player) {
@@ -948,6 +989,7 @@ class Game {
   releaseToArmy(div) {
     div.manual = false;
     div.path = null;
+    div.queue = [];
     this._frontsDirtyIds.add(div.nation);
   }
 
@@ -973,6 +1015,16 @@ class Game {
         } else {
           this.resolveCombat(div, th, dt);
           continue;
+        }
+      }
+
+      // Wegpunkt-Warteschlange: nächstes Ziel anpacken, sobald die Division frei ist
+      if (!div.path && !div.attackTarget && div.queue && div.queue.length) {
+        const [qc, qr] = div.queue.shift();
+        if (qc !== div.c || qr !== div.r) {
+          const p = this.findPath(div.nation, div.c, div.r, qc, qr, false);
+          if (p && p.length) { div.path = p; div.pathI = 0; div.moveProgress = 0; }
+          else if (div.nation === this.player) this.addLog(`⚠ ${div.name}: Wegpunkt nicht erreichbar — übersprungen.`);
         }
       }
 
@@ -1520,7 +1572,8 @@ class Game {
 
   aiTrain(id) {
     const nat = this.nations[id];
-    const cap = Math.floor(3 + Math.max(0, nat.incomePerDay) / 4 + nat.hexCount / 60);
+    // Flacherer Verlauf: Riesenreiche stellen nicht mehr endlos Divisionen auf
+    const cap = Math.floor(4 + Math.max(0, nat.incomePerDay) / 5 + nat.hexCount / 90);
     const divs = this.divisionsOf(id);
     if (divs.length >= cap) return;
     let type = 'inf';
@@ -1544,6 +1597,12 @@ class Game {
     if (!army) return;
     const myPow = this.nationPower(id);
 
+    // 0) Schonfrist: nur expandieren
+    if (this.day < BAL.graceDays) {
+      army.target = 'EXPAND';
+      army.mode = 'attack';
+      return;
+    }
     // 1) Unter Beschuss? Verteidigen/zurückschlagen
     if (this.day - nat._lastAttackedDay < 10 && nat._lastAttacker
       && this.nations[nat._lastAttacker].alive && this.hostile(id, nat._lastAttacker)) {
@@ -1552,12 +1611,15 @@ class Game {
       army.mode = ratio > 0.85 ? 'attack' : 'defend';
       return;
     }
-    // 2) Lohnendes Opfer in Reichweite?
+    // 2) Lohnendes Opfer in Reichweite? Große Ziele bevorzugen —
+    //    das bremst Spitzenreiter und verhindert Dogpiling auf Sterbende.
     const borders = this.borderNationsOf(id).filter(b => this.hostile(id, b));
-    let victim = null, vRatio = 0;
+    let victim = null, vRatio = 0, vScore = -Infinity;
     for (const b of borders) {
       const r = myPow / Math.max(0.1, this.nationPower(b));
-      if (r > vRatio) { vRatio = r; victim = b; }
+      const size = Math.sqrt(this.nations[b].hexCount / Math.max(1, nat.hexCount));
+      const score = r * Math.min(2, Math.max(0.5, size));
+      if (score > vScore) { vScore = score; vRatio = r; victim = b; }
     }
     const aggression = NATION_DEFS[id].aggression;
     if (victim && vRatio > 1.4 && this.divisionsOf(id).length >= 5 && Math.random() < aggression + 0.25) {
@@ -1623,6 +1685,8 @@ class Game {
         this.divisions = this.divisions.filter(d => !d.dead);
         this._hasDead = false;
       }
+      if (prevDay < BAL.graceDays && this.day >= BAL.graceDays)
+        this.addLog('⚔️ Die Schonfrist ist vorbei — ganz Europa ist jetzt angreifbar!', true);
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
       this.supplyDaily();
@@ -1684,7 +1748,6 @@ class Game {
       const h = flat[i];
       h.owner = hs[0]; h.building = hs[1]; h.road = !!hs[2]; h.capital = !!hs[3];
       g.setResist(h); h.resist = hs[4];
-      if (h.terrain !== 'water' && h.resist < h.resistMax) g._damagedHexes.add(h);
     });
     for (const [id, ns] of Object.entries(s.nations)) {
       const n = g.nations[id];
@@ -1698,7 +1761,7 @@ class Game {
       const p = hexToPixel(ds.c, ds.r);
       g.divisions.push({
         ...ds, x: p.x, y: p.y, station: null, path: null, pathI: 0,
-        moveProgress: 0, attackTarget: null, inCombat: false, dead: false,
+        moveProgress: 0, queue: [], attackTarget: null, inCombat: false, dead: false,
       });
     }
     g.log = [];
@@ -1709,7 +1772,15 @@ class Game {
     g.addLog('💾 Spielstand geladen.');
     g.economyDirty = true; g.labelsDirty = true; g.frontsDirty = true;
     g.markDirtyAll();
-    g.recalcEconomy(); g.recalcAllSupply(); g.updateFronts();
+    g.recalcEconomy();
+    // Miliz-Obergrenzen mit korrekten Nationsgrößen neu setzen (Heimatverteidigung)
+    g._damagedHexes.clear();
+    for (const h of flat) {
+      if (h.terrain === 'water') continue;
+      g.setResist(h);
+      if (h.resist < h.resistMax) g._damagedHexes.add(h);
+    }
+    g.recalcAllSupply(); g.updateFronts();
     return g;
   }
 }

@@ -26,7 +26,12 @@ python -m http.server 4173
   (180×205 Hexes, Miller-Projektion), alles startet neutral und grau.
 - Jede der 15 Nationen beginnt mit **einem Dorf und zwei Divisionen** und breitet sich in
   neutrales Land aus.
-- **Keine Kriegserklärungen:** Jeder Nicht-Verbündete ist jederzeit angreifbar — du auch.
+- **Keine Kriegserklärungen:** Jeder Nicht-Verbündete ist angreifbar — du auch. In den ersten
+  **30 Tagen gilt eine Schonfrist** (nur Expansion ins Neutralland), damit alle fair starten.
+- **Fair & Multiplayer-tauglich balanciert:** Aufholmechanik (kleine Nationen bis +35 %
+  Einkommen, Spitzenreiter bis −25 %), Heimatverteidigungs-Bonus für Nationen unter
+  30 Provinzen, und die KI bevorzugt große Gegner statt Sterbende zu überrennen —
+  Snowballing wird gebremst, Aufholen bleibt möglich.
 - **Allianzen:** Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Angebot; die Gegenseite
   muss annehmen. Angebote an dich erscheinen als Banner. Max. 2 Allianzen.
 - **4 Truppentypen:** Infanterie (billig, hält die Linie), Garde (Elite), Panzer (schnell,
@@ -64,6 +69,7 @@ python -m http.server 4173
 | Doppelklick auf Division | ganze Armee auswählen |
 | **S** / **M** | ausgewählte Divisionen **teilen** / gleichen Typs **vereinen** |
 | **Rechtsklick** | Marschbefehl: Truppen ziehen exakt dorthin, kämpfen sich durch Feind-/Neutralland (Küste = Invasion per Schiff) |
+| **Shift+Rechtsklick** | Wegpunkt anhängen — Truppen laufen die Punkte der Reihe nach ab |
 | Alt+Rechtsklick auf Neutral-/Feindland | Front zuweisen (Automatik) — Truppen verteilen sich selbst |
 | Rechtsklick ohne Auswahl auf fremde Nation | Allianz anbieten |
 | Rechts-/Mittel-Ziehen / WASD | Karte verschieben |
