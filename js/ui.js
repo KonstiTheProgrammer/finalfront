@@ -1306,9 +1306,12 @@ function updateTooltip(sx, sy) {
     if (h.cityName) html += ` · <b>${h.cityName}</b>`;
     if (h.building) {
       html += `<br>${buildingName(h.building)}`;
-      const inc = h.building === 'dorf' ? BAL.incomeDorf : h.building === 'stadt' ? BAL.incomeStadt
-        : h.building === 'mine' ? (h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine) : 0;
-      if (inc) html += ` <span class="tt-dim">(+${inc} Gold/Tag)</span>`;
+      const eff = h.building === 'dorf' ? `+${BAL.leuteDorf}k Leute/Tag`
+        : h.building === 'stadt' ? `+${BAL.incomeStadt} Gold · +${BAL.leuteStadt}k Leute/Tag`
+        : h.building === 'mine' ? `+${h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine} Gold/Tag`
+        : h.building === 'kaserne' ? `bildet ${BAL.trainPerKaserne}k Leute/Tag zu Soldaten aus`
+        : '';
+      if (eff) html += ` <span class="tt-dim">(${eff})</span>`;
       if (h.building === 'hafen') {
         const partners = Object.keys(game.nations).filter(x => x !== h.owner
           && game.nations[x].alive && (game.nations[x].ports || 0) > 0
@@ -1447,7 +1450,9 @@ function updateTopbar() {
   document.getElementById('tb-gold').textContent =
     `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
   document.getElementById('tb-mp').textContent =
-    `${nat.manpower.toFixed(1)}k (+${nat.mpPerDay.toFixed(2)})`;
+    `${nat.leute.toFixed(1)}k (+${nat.leutePerDay.toFixed(2)})`;
+  document.getElementById('tb-sold').textContent =
+    `${nat.soldaten.toFixed(1)}k (+${Math.min(nat.trainCap, nat.leute > 0.1 ? nat.trainCap : 0).toFixed(2)})`;
   document.getElementById('tb-div').textContent = `${game.divisionsOf(game.player).length}`;
   const share = Math.round(nat.hexCount / game.totalLand * 100);
   document.getElementById('tb-prov').textContent = `${nat.hexCount} (${share} %)`;
@@ -1483,11 +1488,11 @@ function refreshPanel() {
 function panelBauen() {
   let html = `<p class="hint">Bau-Modus wählen, dann auf die Karte klicken — Straßen lassen sich <b>ziehen</b>. Rechtsklick/Esc beendet.</p>`;
   const items = [
-    ['dorf', '🏠 Dorf', `+${BAL.incomeDorf} Gold, +${BAL.mpDorf}k Rekruten/Tag`],
-    ['stadt', '🏙️ Stadt', `Dorf-Ausbau: +${BAL.incomeStadt} Gold, Versorgungs-Hub`],
-    ['mine', '⛏️ Mine', `+${BAL.incomeMine}–${BAL.incomeMineBerg} Gold (Hügel/Gebirge)`],
-    ['hafen', '🚢 Hafen', `Seehandel: Schiffe bringen beiden Seiten Gold · Versorgungs-Hub · nur am Ufer`],
-    ['kaserne', '🎪 Kaserne', `Ausbildung + kleiner Versorgungs-Hub`],
+    ['dorf', '🏠 Dorf', `erzeugt Leute: +${BAL.leuteDorf}k/Tag`],
+    ['stadt', '🏙️ Stadt', `Dorf-Ausbau: +${BAL.incomeStadt} Gold und +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub`],
+    ['mine', '⛏️ Mine', `erzeugt Gold: +${BAL.incomeMine}–${BAL.incomeMineBerg}/Tag (Hügel/Gebirge)`],
+    ['hafen', '🚢 Hafen', `bringt Gold per Seehandel (beide Seiten verdienen) · Versorgungs-Hub · nur am Ufer`],
+    ['kaserne', '🎪 Kaserne', `bildet ${BAL.trainPerKaserne}k Leute/Tag zu 🎖️ Soldaten aus — Divisionen kosten Gold + Soldaten`],
     ['strasse', '🛣️ Straße', `Bewegung + Versorgung — ziehbar!`],
   ];
   for (const [key, label, desc] of items) {
@@ -1547,7 +1552,7 @@ function panelArmeen() {
         <div class="train-grid">
           ${['inf', 'gar', 'pz', 'art'].map(ty => {
             const t = BAL.divTypes[ty];
-            return `<div class="train-row"><span>${t.name}<br><span class="small">${t.gold} G · ${t.mp}k</span></span>
+            return `<div class="train-row"><span>${t.name}<br><span class="small">${t.gold} G · ${t.mp}k 🎖️</span></span>
               <span><button data-train="${ty}" data-n="1" data-army-id="${a.id}">+1</button>
               <button data-train="${ty}" data-n="5" data-army-id="${a.id}">+5</button></span></div>`;
           }).join('')}
@@ -1634,7 +1639,7 @@ function bindPanelActions(el) {
   el.querySelectorAll('[data-train]').forEach(b => b.addEventListener('click', () => {
     const a = game.armyById(game.player, +b.dataset.armyId);
     const n = game.trainDivisions(game.player, b.dataset.train, +b.dataset.n, a);
-    if (!n) pushToast('⚠ Zu wenig Gold oder Rekruten.');
+    if (!n) pushToast('⚠ Zu wenig Gold oder 🎖️ Soldaten — Kasernen bilden Leute zu Soldaten aus.');
     else pushToast(`🪖 ${n} ${BAL.divTypes[b.dataset.train].name}division(en) aufgestellt — warten an der Kaserne auf deine Befehle.`);
     game.updateFronts(game.player);
     refreshPanel(); updateTopbar();
@@ -1736,7 +1741,7 @@ function updateUnitbar() {
     <button id="ub-merge" title="Gleiche Typen vereinen (M)">🔗 Vereinen</button>
     <select id="ub-army" title="Ziel-Armee für die Automatik">${nat.armies.map(a => `<option value="${a.id}">${a.name}</option>`).join('')}</select>
     <button id="ub-assign" title="Divisionen verteilen sich selbstständig an der Front dieser Armee">🤖 Automatik</button>
-    <button id="ub-disband" class="danger" title="Ausgewählte Divisionen auflösen (50 % Rekruten zurück)">🗑</button>`;
+    <button id="ub-disband" class="danger" title="Ausgewählte Divisionen auflösen (50 % der Soldaten zurück)">🗑</button>`;
   if (topArmy) actions.querySelector('#ub-army').value = topArmy[0];
 
   document.getElementById('ub-close').onclick = () => { UI.selectedDivs.clear(); updateUnitbar(); };

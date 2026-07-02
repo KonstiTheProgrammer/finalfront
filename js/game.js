@@ -9,15 +9,17 @@
 const BAL = {
   // Spielgeschwindigkeit: deutlich entschleunigt, damit man reagieren kann
   daysPerSec: [0, 0.5, 1, 2.5, 6],
-  // Wirtschaft (pro Tag)
-  baseIncome: 2.0,
-  incomeDorf: 1.0,
+  // Wirtschaftskette (pro Tag):
+  //   Dorf → Leute · Stadt → Leute + Gold · Mine/Hafen → Gold
+  //   Kaserne bildet Leute zu Soldaten aus · Divisionen kosten Gold + Soldaten
+  baseIncome: 2.5,                    // Staatskasse (Grundeinkommen)
   incomeStadt: 4.0,
   incomeMine: 6.0,
   incomeMineBerg: 8.0,
-  landIncomePerHex: 0.006,            // Territorium zahlt Steuern
-  mpDorf: 0.06,
-  mpStadt: 0.16,
+  landIncomePerHex: 0.008,            // Territorium zahlt Steuern
+  leuteDorf: 0.10,                    // Dorf: nur Leute
+  leuteStadt: 0.20,                   // Stadt: Leute UND Gold
+  trainPerKaserne: 0.25,              // Ausbildung: Leute → Soldaten pro Kaserne
   // Baukosten
   cost: { strasse: 25, dorf: 60, mine: 120, kaserne: 150, hafen: 180, stadt: 250 },
   // Seehandel
@@ -324,7 +326,8 @@ class Game {
       id,
       alive: true,
       gold: 200,
-      manpower: 25,
+      leute: 20,        // Bevölkerungs-Pool (aus Dörfern/Städten)
+      soldaten: 12,     // ausgebildete Soldaten (aus Kasernen) — Divisionen kosten Soldaten
       allies: new Set(),
       armies: [],
       ai: id !== this.player,
@@ -332,7 +335,7 @@ class Game {
       capital: null,
       divNameSeq: 1,
       hexCount: 1,
-      incomePerDay: 0, mpPerDay: 0,
+      incomePerDay: 0, leutePerDay: 0, trainCap: 0,
       _lastAttacker: null, _lastAttackedDay: -99, _atkToastDay: -99,
     };
     this.nations[id] = nat;
@@ -410,8 +413,8 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return null;
     if (!free) {
-      if (nat.gold < t.gold || nat.manpower < t.mp) return null;
-      nat.gold -= t.gold; nat.manpower -= t.mp;
+      if (nat.gold < t.gold || nat.soldaten < t.mp) return null;
+      nat.gold -= t.gold; nat.soldaten -= t.mp;
     }
     let spawn = null;
     const [cc, cr] = nat.capital || [0, 0];
@@ -490,7 +493,7 @@ class Game {
   disbandDivision(div) {
     div.dead = true;
     this._hasDead = true;
-    this.nations[div.nation].manpower += (div.str / 100) * BAL.divTypes[div.type].mp * 0.5;
+    this.nations[div.nation].soldaten += (div.str / 100) * BAL.divTypes[div.type].mp * 0.5;
     this.economyDirty = true;
   }
 
@@ -552,7 +555,7 @@ class Game {
         a.str = Math.min(BAL.maxStr, sum);
         a.org = Math.min(BAL.divTypes[a.type].maxOrg, (a.org * a.str + b.org * b.str) / Math.max(1, a.str + b.str) + 4);
         a.moral = Math.max(a.moral, b.moral);
-        if (overflow > 0 && nat) nat.manpower += overflow * BAL.reinforceMpCost;
+        if (overflow > 0 && nat) nat.soldaten += overflow * BAL.reinforceMpCost;
         b.dead = true;
         merged++;
       }
@@ -609,7 +612,8 @@ class Game {
   recalcEconomy() {
     for (const nat of Object.values(this.nations)) {
       nat.incomePerDay = BAL.baseIncome;
-      nat.mpPerDay = 0;
+      nat.leutePerDay = 0;
+      nat.trainCap = 0;      // Ausbildungskapazität der Kasernen (Leute → Soldaten)
       nat.hexCount = 0;
       nat.ports = 0;
     }
@@ -621,11 +625,11 @@ class Game {
       if (!nat) continue;
       nat.hexCount++;
       nat.incomePerDay += BAL.landIncomePerHex;
-      if (h.building === 'dorf') { nat.incomePerDay += BAL.incomeDorf; nat.mpPerDay += BAL.mpDorf; }
-      else if (h.building === 'stadt') { nat.incomePerDay += BAL.incomeStadt; nat.mpPerDay += BAL.mpStadt; }
+      if (h.building === 'dorf') nat.leutePerDay += BAL.leuteDorf;
+      else if (h.building === 'stadt') { nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; }
       else if (h.building === 'mine') nat.incomePerDay += h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine;
       else if (h.building === 'hafen') { nat.ports++; this._ports.push(h); }
-      else if (h.building === 'kaserne') this._kasernen.push(h);
+      else if (h.building === 'kaserne') { this._kasernen.push(h); nat.trainCap += BAL.trainPerKaserne; }
     }
     for (const d of this.divisions) {
       if (!d.dead) this.nations[d.nation].incomePerDay -= BAL.divTypes[d.type].upkeep;
@@ -647,7 +651,10 @@ class Game {
       else mult = 1 - Math.min(BAL.leaderMalus, (rel - 1) * 0.1);
       nat.econMult = nat.incomePerDay > 0 ? mult : 1;
       nat.gold = Math.max(0, nat.gold + nat.incomePerDay * nat.econMult * dt);
-      nat.manpower += nat.mpPerDay * dt;
+      nat.leute += nat.leutePerDay * dt;
+      // Kasernen bilden aus: Leute → Soldaten (begrenzt durch Kapazität & Bevölkerung)
+      const conv = Math.min(nat.trainCap * dt, nat.leute);
+      if (conv > 0) { nat.leute -= conv; nat.soldaten += conv; }
     }
   }
 
@@ -1473,10 +1480,10 @@ class Game {
 
       if (!div.inCombat) {
         div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * sup.mod * div.moral * dt);
-        if (div.str < BAL.maxStr && sup.level > 0.4 && nat.manpower > 0.5) {
-          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat.manpower / BAL.reinforceMpCost);
+        if (div.str < BAL.maxStr && sup.level > 0.4 && nat.soldaten > 0.5) {
+          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat.soldaten / BAL.reinforceMpCost);
           div.str += pts;
-          nat.manpower -= pts * BAL.reinforceMpCost;
+          nat.soldaten -= pts * BAL.reinforceMpCost;
         }
       }
       div.moral += (1.0 - div.moral) * BAL.moralBaselinePull * dt;
@@ -1521,46 +1528,43 @@ class Game {
     const count = w => own.filter(h => h.building === w).length;
     const buildable = x => TERRAIN[x.terrain].buildable && !x.building;
 
-    // 1) Grundwirtschaft: die ersten Dörfer
-    if (count('dorf') + count('stadt') < 3 && nat.gold >= BAL.cost.dorf) {
-      const h = this.findBuildSpot(id, cc, cr, buildable, 30, own);
-      if (h) return this.build(id, h, 'dorf');
-    }
-    // 2) Früher Hafen — Seehandel ist starkes Einkommen
-    if ((nat.ports || 0) < 1 && nat.gold >= BAL.cost.hafen) {
-      const h = this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 45, own);
-      if (h) return this.build(id, h, 'hafen');
-    }
-    // 3) Kaserne(n)
-    const wantKas = 1 + Math.floor(own.length / 150);
-    if (count('kaserne') < wantKas && nat.gold >= BAL.cost.kaserne + 30) {
-      const h = this.findBuildSpot(id, cc, cr, buildable, 30, own);
-      if (h) return this.build(id, h, 'kaserne');
-    }
-    // 4) Dörfer nachziehen
-    if (count('dorf') + count('stadt') < Math.max(3, own.length * 0.06) && nat.gold >= BAL.cost.dorf + 30) {
-      const h = this.findBuildSpot(id, cc, cr, buildable, 34, own);
-      if (h) return this.build(id, h, 'dorf');
-    }
-    // 5) Minen
-    const mineSpots = own.filter(h => (h.terrain === 'hills' || h.terrain === 'mountain') && !h.building);
-    if (mineSpots.length && nat.gold >= BAL.cost.mine + 60) {
-      return this.build(id, mineSpots[0], 'mine');
-    }
-    // 6) Weitere Häfen
+    // Neue Wirtschaftskette: Dörfer geben KEIN Gold mehr. Die KI verfolgt
+    // EIN Sparziel nach dem anderen — sonst verzettelt sie sich in billigen
+    // Bauten und erreicht Stadt (270 G) oder Kaserne nie (Oszillation).
+    const doerfer = count('dorf'), staedte = count('stadt');
+    const kasernen = count('kaserne');
+    const wantKas = 1 + (staedte >= 1 ? Math.floor(own.length / 100) : 0);
+    const wantStadt = 1 + Math.floor(own.length / 120);
     const wantHafen = 1 + Math.floor(own.length / 220);
-    if ((nat.ports || 0) < wantHafen && nat.gold >= BAL.cost.hafen + 40) {
-      const h = this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 55, own);
-      if (h) return this.build(id, h, 'hafen');
+    // Genug Dörfer, um die Kasernen zu füttern (1 Kaserne frisst 0.25k/Tag)
+    const wantDorf = Math.max(2, Math.floor(own.length * 0.025), kasernen * 3 - staedte * 2);
+    const mineSpots = own.filter(h => (h.terrain === 'hills' || h.terrain === 'mountain') && !h.building);
+    const spotNear = maxDist => () => this.findBuildSpot(id, cc, cr, buildable, maxDist, own);
+
+    const plan = [];
+    if (doerfer + staedte < 2) plan.push(['dorf', spotNear(30)]);
+    if (kasernen < wantKas) plan.push(['kaserne', spotNear(30)]);
+    if (staedte < wantStadt)
+      plan.push(['stadt', () => own.find(h => h.building === 'dorf') || null]);
+    // Leute-Mangel (< 20 Tage Ausbildungs-Reserve): Dörfer VOR Minen ziehen,
+    // sonst verhungern die Kasernen reicher Minen-Nationen
+    if (nat.leute < nat.trainCap * 20 && doerfer + staedte < wantDorf)
+      plan.push(['dorf', spotNear(34)]);
+    if (mineSpots.length)
+      plan.push(['mine', () => mineSpots[0]]);
+    if ((nat.ports || 0) < wantHafen)
+      plan.push(['hafen', () => this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 55, own)]);
+    if (doerfer + staedte < wantDorf) plan.push(['dorf', spotNear(34)]);
+
+    for (const [what, findSpot] of plan) {
+      const spot = findSpot();
+      if (!spot) continue;                    // unbaubar (z. B. Binnenland ohne Küste) → nächstes Ziel
+      if (nat.gold < BAL.cost[what]) return;  // sparen aufs wichtigste erreichbare Ziel
+      return this.build(id, spot, what);
     }
-    // 7) Stadt-Ausbau
-    if (nat.gold >= BAL.cost.stadt + 150) {
-      const dorf = own.find(h => h.building === 'dorf');
-      if (dorf) return this.build(id, dorf, 'stadt');
-    }
-    // 8) Straße Richtung Front
+    // 8) Straße Richtung Front — nur vom Überschuss, Divisionen gehen vor
     const army = nat.armies[0];
-    if (army && army.frontHexes.length && nat.gold >= BAL.cost.strasse + 40) {
+    if (army && army.frontHexes.length && nat.gold >= BAL.cost.strasse + 350) {
       const f = army.frontHexes[Math.floor(army.frontHexes.length / 2)];
       const path = this.findPath(id, cc, cr, f.c, f.r, true);
       if (path) for (const [pc, pr] of path) {
@@ -1573,7 +1577,8 @@ class Game {
   aiTrain(id) {
     const nat = this.nations[id];
     // Flacherer Verlauf: Riesenreiche stellen nicht mehr endlos Divisionen auf
-    const cap = Math.floor(4 + Math.max(0, nat.incomePerDay) / 5 + nat.hexCount / 90);
+    // (Einkommens-Term gedeckelt — sonst fluten Minen-Nationen die Karte)
+    const cap = Math.floor(4 + Math.min(10, Math.max(0, nat.incomePerDay) / 5) + nat.hexCount / 90);
     const divs = this.divisionsOf(id);
     if (divs.length >= cap) return;
     let type = 'inf';
@@ -1583,9 +1588,11 @@ class Game {
     else if (nat.gold > 500 && roll < 0.5) type = 'gar';
     const tt = BAL.divTypes[type];
     const underAttack = this.day - nat._lastAttackedDay < 12;
-    // In Friedenszeiten Wirtschaft vor Masse: Gold für Gebäude übrig lassen
-    const buffer = underAttack ? 10 : 140;
-    if (nat.gold >= tt.gold + buffer && nat.manpower >= tt.mp) {
+    // In Friedenszeiten Wirtschaft vor Masse: erst bauen (Stadt = 270 G),
+    // Divisionen nur vom Überschuss. Ausnahme: Armee stark dezimiert
+    // (Nachkriegs-Wiederaufbau) — dann zügig nachrüsten.
+    const buffer = underAttack ? 10 : (divs.length < cap * 0.5 ? 60 : 220);
+    if (nat.gold >= tt.gold + buffer && nat.soldaten >= tt.mp) {
       this.spawnDivision(id, type, nat.armies[0], false);
       this.economyDirty = true;
     }
@@ -1713,12 +1720,12 @@ class Game {
   /* ---------- Speichern / Laden ---------- */
   serialize() {
     return JSON.stringify({
-      v: 3, day: this.day, dayFloat: this.dayFloat, player: this.player,
+      v: 4, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
       warHeat: this.warHeat,
       hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist)]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
-        alive: n.alive, gold: Math.round(n.gold), manpower: +n.manpower.toFixed(2),
+        alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), soldaten: +n.soldaten.toFixed(2),
         allies: [...n.allies], capital: n.capital, divNameSeq: n.divNameSeq,
         armies: n.armies.map(a => ({ id: a.id, name: a.name, target: a.target, mode: a.mode })),
       }])),
@@ -1732,7 +1739,7 @@ class Game {
   static deserialize(json) {
     let s;
     try { s = JSON.parse(json); } catch (e) { return null; }
-    if (!s || s.v !== 3 || !Array.isArray(s.hexes) || s.hexes.length !== MAP_W * MAP_H) return null;
+    if (!s || (s.v !== 3 && s.v !== 4) || !Array.isArray(s.hexes) || s.hexes.length !== MAP_W * MAP_H) return null;
     if (!NATION_DEFS[s.player]) return null;
     const g = new Game(s.player);
     g.divisions = [];
@@ -1752,7 +1759,10 @@ class Game {
     for (const [id, ns] of Object.entries(s.nations)) {
       const n = g.nations[id];
       if (!n) continue;
-      n.alive = ns.alive; n.gold = ns.gold; n.manpower = ns.manpower;
+      n.alive = ns.alive; n.gold = ns.gold;
+      // v3-Spielstände: alter Rekruten-Pool wird auf Leute/Soldaten aufgeteilt
+      n.leute = ns.leute !== undefined ? ns.leute : (ns.manpower !== undefined ? ns.manpower * 0.6 : 20);
+      n.soldaten = ns.soldaten !== undefined ? ns.soldaten : (ns.manpower !== undefined ? ns.manpower * 0.4 : 10);
       n.allies = new Set(ns.allies); n.capital = ns.capital; n.divNameSeq = ns.divNameSeq;
       n.armies = ns.armies.map(a => ({ ...a, nation: id, frontHexes: [] }));
     }

@@ -41,9 +41,10 @@ python -m http.server 4173
   bringen mehr). Kein Handel mit Nationen, mit denen du in den letzten Tagen gekämpft hast;
   Verbündete handeln immer. Häfen sind außerdem Versorgungs-Hubs (Küsteninvasionen!).
 - Verliert eine Nation ihre Hauptstadt, verlegt sie sie — ist das Reich zu klein, geht es unter.
-- **Wirtschaft:** Dörfer (Gold + Rekruten), Städte (viel Gold + Rekruten, Versorgungs-Hub,
-  Ausbau eines Dorfs), Minen (viel Gold, nur auf Hügeln/Gebirge), Straßen (Bewegung +
-  Versorgung), Kasernen (Ausbildung + kleiner Hub).
+- **Wirtschaftskette:** 🏠 Dörfer erzeugen **Leute**, 🏙️ Städte erzeugen Leute **und** Gold
+  (Ausbau eines Dorfs, Versorgungs-Hub), ⛏️ Minen bringen Gold (nur Hügel/Gebirge), 🚢 Häfen
+  bringen Gold per Seehandel. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue Divisionen
+  und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
 - **Direkte Kontrolle:** Deine Truppen gehorchen dir — Rechtsklick schickt sie exakt dorthin,
   auch mitten durch Feind- oder Neutralland (sie kämpfen sich durch) und über See (Invasionen!).
 - **Fronten wie in HOI4 (optionale Automatik):** Per Alt+Rechtsklick oder im Armeen-Tab weist

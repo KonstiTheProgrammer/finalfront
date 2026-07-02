@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -13,7 +13,8 @@
   <div id="topbar">
     <div class="tb-group" id="tb-nation"></div>
     <div class="tb-group" title="Gold (Einkommen/Tag)">🪙 <span id="tb-gold">0</span></div>
-    <div class="tb-group" title="Rekruten (Zuwachs/Tag)">👥 <span id="tb-mp">0</span></div>
+    <div class="tb-group" title="Leute (Zuwachs/Tag) — kommen aus Dörfern und Städten">👥 <span id="tb-mp">0</span></div>
+    <div class="tb-group" title="Soldaten (Ausbildung/Tag) — Kasernen bilden Leute zu Soldaten aus; Divisionen kosten Gold + Soldaten">🎖️ <span id="tb-sold">0</span></div>
     <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
     <div class="tb-group" title="Provinzen (Anteil Europas)">🗺️ <span id="tb-prov">0</span></div>
     <div class="tb-spacer"></div>
@@ -113,6 +114,7 @@
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Nationen unter 30 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
         <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab.</li>
         <li><b>Bauen:</b> Menüleiste links → 🏗 (oder Taste <b>B</b>) → Gebäude wählen → auf die Karte klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
+        <li><b>Wirtschaftskette:</b> 🏠 Dörfer erzeugen <b>👥 Leute</b> · 🏙️ Städte erzeugen Leute <b>und</b> Gold · ⛏️ Minen und 🚢 Häfen bringen Gold · 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> — neue Divisionen und Verstärkung kosten Gold + Soldaten · 🛣️ Straßen = Bewegung + Versorgung</li>
         <li><b>Seehandel:</b> Baue einen <b>🚢 Hafen an einem Ufer</b> — er schickt Handelsschiffe zu Häfen anderer Nationen, und <b>beide Seiten verdienen Gold</b> pro Ankunft (längere Routen = mehr). Kein Handel mit Nationen, mit denen du gerade kämpfst; Verbündete handeln immer. Häfen sind zudem Versorgungs-Hubs.</li>
         <li><b>Truppentypen:</b> Infanterie (billig), Garde (Elite), Panzer (schnell), Artillerie (knackt Verteidigung &amp; Miliz).</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
@@ -124,10 +126,10 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=13"></script>
-  <script src="js/map.js?v=13"></script>
-  <script src="js/game.js?v=13"></script>
-  <script src="js/ui.js?v=13"></script>
-  <script src="js/main.js?v=13"></script>
+  <script src="js/mapdata.js?v=14"></script>
+  <script src="js/map.js?v=14"></script>
+  <script src="js/game.js?v=14"></script>
+  <script src="js/ui.js?v=14"></script>
+  <script src="js/main.js?v=14"></script>
 </body>
 </html>
