@@ -1130,17 +1130,24 @@ function keyboardPan(dt) {
 
 function paintBuild(sx, sy) {
   if (!UI.buildMode) return;
+  if (game._replayCmds) { replayBlockedToast(); return; }
   const w = screenToWorld(sx, sy);
   const hx = pixelToHex(w.x, w.y);
   if (!hx) return;
   const h = game.hexAt(hx.c, hx.r);
-  const res = game.build(game.player, h, UI.buildMode);
+  const res = game.issue('build', hx.c, hx.r, UI.buildMode);
   if (res === true) {
     updateTopbar();
   } else if (performance.now() - UI._paintToastT > 1200 && h && h.owner === game.player) {
     UI._paintToastT = performance.now();
     pushToast('⚠ ' + res);
   }
+}
+
+function replayBlockedToast() {
+  if (performance.now() - (UI._replayToastT || 0) < 2500) return;
+  UI._replayToastT = performance.now();
+  pushToast('🎬 Replay läuft — Eingaben sind gesperrt (🔄 beendet).');
 }
 
 function setBuildMode(mode) {
@@ -1150,20 +1157,19 @@ function setBuildMode(mode) {
 
 /* S: ausgewählte Divisionen teilen */
 function splitSelection() {
-  const sel = playerSelection();
-  let n = 0;
-  for (const d of sel) {
-    const twin = game.splitDivision(d);
-    if (twin) { UI.selectedDivs.add(twin.id); n++; }
-  }
-  pushToast(n ? `✂️ ${n} Division(en) geteilt.` : '⚠ Teilen braucht ≥ 40 Stärke und einen freien Nachbarplatz.');
+  if (game._replayCmds) { replayBlockedToast(); return; }
+  const ids = playerSelection().map(d => d.id);
+  const twins = game.issue('split', ids) || [];
+  twins.forEach(id => UI.selectedDivs.add(id));
+  pushToast(twins.length ? `✂️ ${twins.length} Division(en) geteilt.` : '⚠ Teilen braucht ≥ 40 Stärke und einen freien Nachbarplatz.');
   updateUnitbar();
 }
 
 /* M: ausgewählte Divisionen gleichen Typs vereinen */
 function mergeSelection() {
-  const sel = playerSelection();
-  const merged = game.mergeDivisions(sel);
+  if (game._replayCmds) { replayBlockedToast(); return; }
+  const ids = playerSelection().map(d => d.id);
+  const merged = game.issue('merge', ids) || 0;
   for (const id of [...UI.selectedDivs]) {
     const d = game.divisions.find(x => x.id === id);
     if (!d || d.dead) UI.selectedDivs.delete(id);
@@ -1175,6 +1181,7 @@ function mergeSelection() {
 /* Rechtsklick: Marschbefehl (Standard) / Shift = Wegpunkt / Alt = Front-Automatik / Allianz */
 function onRightTap(sx, sy, alt, shift) {
   if (UI.buildMode) { setBuildMode(null); return; }
+  if (game._replayCmds) { replayBlockedToast(); return; }
   const w = screenToWorld(sx, sy);
   const hx = pixelToHex(w.x, w.y);
   if (!hx) return;
@@ -1203,27 +1210,15 @@ function onRightTap(sx, sy, alt, shift) {
     if (game.allied(game.player, h.owner)) {
       pushToast(`🤝 Mit ${game.nationName(h.owner)} verbündet — lösen im Nationen-Tab.`);
     } else {
-      const res = game.offerAlliance(game.player, h.owner);
+      const res = game.issue('ally', h.owner);
       if (res !== true) pushToast('🤝 ' + res);
     }
   }
 }
 
 function assignSelectionToFront(key) {
-  const nat = game.nations[game.player];
-  let army = nat.armies.find(a => a.target === key);
-  if (!army) {
-    army = game.createArmy(game.player,
-      key === 'EXPAND' ? 'Expansionsarmee' : 'Front: ' + game.nationName(key));
-    army.target = key;
-  }
-  army.mode = 'attack';
-  let n = 0;
-  for (const d of playerSelection()) {
-    d.army = army.id; d.manual = false; d.path = null; d.attackTarget = null; d.queue = [];
-    n++;
-  }
-  game.updateFronts(game.player);
+  const ids = playerSelection().map(d => d.id);
+  const n = game.issue('assignFront', ids, key) || 0;
   pushToast(key === 'EXPAND'
     ? `🌍 ${n} Division(en) expandieren automatisch ins Neutralland!`
     : `⚔️ ${n} Division(en) automatisch an die Front gegen ${game.nationName(key)}!`);
@@ -1311,7 +1306,10 @@ function groupMoveOrder(c, r, queue) {
     frontier = next;
   }
   divs.sort((a, b) => hexDist(a.c, a.r, c, r) - hexDist(b.c, b.r, c, r));
-  divs.forEach((d, i) => game.moveOrder(d, ...targets[Math.min(i, targets.length - 1)], queue));
+  divs.forEach((d, i) => {
+    const [tc, tr] = targets[Math.min(i, targets.length - 1)];
+    game.issue('move', d.id, tc, tr, queue);
+  });
   game.effects.push({ type: 'capture', c, r, t: performance.now() - 400 });
 }
 
@@ -1394,9 +1392,9 @@ function renderOffers() {
       <button data-decline="${o.from}" class="danger">✖ Ablehnen</button>
     </div>`).join('');
   box.querySelectorAll('[data-accept]').forEach(b =>
-    b.addEventListener('click', () => game.resolveOffer(b.dataset.accept, true)));
+    b.addEventListener('click', () => game.issue('answerOffer', b.dataset.accept, true)));
   box.querySelectorAll('[data-decline]').forEach(b =>
-    b.addEventListener('click', () => game.resolveOffer(b.dataset.decline, false)));
+    b.addEventListener('click', () => game.issue('answerOffer', b.dataset.decline, false)));
 }
 
 /* =========================================================
@@ -1485,6 +1483,8 @@ function updateTopbar() {
   document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${BAL.round.vpToWin}`;
   document.getElementById('tb-day').textContent = dateStr(game.day);
   document.getElementById('tb-round').textContent = `noch ${Math.max(0, BAL.round.days - game.day)} T.`;
+
+  document.getElementById('replay-badge').classList.toggle('hidden', !game._replayCmds);
 
   // Sieg-Countdown-Banner
   const banner = document.getElementById('vp-banner');
@@ -1692,28 +1692,25 @@ function bindPanelActions(el) {
     setBuildMode(b.dataset.buildmode);
   }));
   el.querySelectorAll('[data-ally]').forEach(b => b.addEventListener('click', () => {
-    const res = game.offerAlliance(game.player, b.dataset.ally);
+    const res = game.issue('ally', b.dataset.ally);
     if (res !== true) pushToast('🤝 ' + res);
     refreshPanel();
   }));
   el.querySelectorAll('[data-unally]').forEach(b => b.addEventListener('click', () => {
-    game.dissolveAlliance(game.player, b.dataset.unally);
+    game.issue('unally', b.dataset.unally);
     refreshPanel();
   }));
   el.querySelectorAll('[data-target]').forEach(s => s.addEventListener('change', () => {
-    const a = game.armyById(game.player, +s.dataset.target);
-    if (a) { a.target = s.value; game.updateFronts(game.player); }
+    game.issue('armyTarget', +s.dataset.target, s.value);
   }));
   el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
-    const a = game.armyById(game.player, +b.dataset.armyId);
-    if (a) { a.mode = b.dataset.mode; refreshPanel(); }
+    game.issue('armyMode', +b.dataset.armyId, b.dataset.mode);
+    refreshPanel();
   }));
   el.querySelectorAll('[data-train]').forEach(b => b.addEventListener('click', () => {
-    const a = game.armyById(game.player, +b.dataset.armyId);
-    const n = game.trainDivisions(game.player, b.dataset.train, +b.dataset.n, a);
-    if (!n) pushToast('⚠ Zu wenig Gold oder 🎖️ Soldaten — Kasernen bilden Leute zu Soldaten aus.');
+    const n = game.issue('train', b.dataset.train, +b.dataset.n, +b.dataset.armyId);
+    if (!n) pushToast(game._replayCmds ? '🎬 Replay — Eingaben gesperrt.' : '⚠ Zu wenig Gold oder 🎖️ Soldaten — Kasernen bilden Leute zu Soldaten aus.');
     else pushToast(`🪖 ${n} ${BAL.divTypes[b.dataset.train].name}division(en) aufgestellt — warten an der Kaserne auf deine Befehle.`);
-    game.updateFronts(game.player);
     refreshPanel(); updateTopbar();
   }));
   el.querySelectorAll('[data-selarmy]').forEach(b => b.addEventListener('click', e => {
@@ -1735,7 +1732,7 @@ function bindPanelActions(el) {
   }));
   el.querySelectorAll('[data-delarmy]').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation();
-    if (game.disbandArmy(game.player, +b.dataset.delarmy)) refreshPanel();
+    if (game.issue('disbandArmy', +b.dataset.delarmy)) refreshPanel();
   }));
   el.querySelectorAll('[data-rename]').forEach(b => b.addEventListener('click', e => {
     e.stopPropagation();
@@ -1746,7 +1743,11 @@ function bindPanelActions(el) {
     input.maxLength = 24;
     b.replaceWith(input);
     input.focus(); input.select();
-    const done = () => { a.name = input.value.trim() || a.name; refreshPanel(); };
+    const done = () => {
+      const name = input.value.trim();
+      if (name && name !== a.name) game.issue('renameArmy', a.id, name);
+      refreshPanel();
+    };
     input.addEventListener('blur', done);
     input.addEventListener('keydown', ev => { if (ev.key === 'Enter') input.blur(); });
   }));
@@ -1756,7 +1757,7 @@ function bindPanelActions(el) {
     refreshPanel();
   }));
   const na = el.querySelector('#new-army');
-  if (na) na.addEventListener('click', () => { game.createArmy(game.player); refreshPanel(); });
+  if (na) na.addEventListener('click', () => { game.issue('createArmy'); refreshPanel(); });
 }
 
 /* =========================================================
@@ -1839,20 +1840,14 @@ function updateUnitbar() {
   document.getElementById('ub-merge').onclick = () => mergeSelection();
   document.getElementById('ub-assign').onclick = () => {
     const armyId = +document.getElementById('ub-army').value;
-    let n = 0;
-    for (const d of playerSelection()) {
-      d.army = armyId; d.manual = false; d.path = null; d.queue = []; d.attackTarget = null;
-      n++;
-    }
-    game.updateFronts(game.player);
+    const n = game.issue('assign', playerSelection().map(d => d.id), armyId) || 0;
     pushToast(`🤖 ${n} Division(en) der Armee-Automatik übergeben — sie verteilen sich an der Front.`);
     updateUnitbar();
   };
   document.getElementById('ub-disband').onclick = () => {
-    const toDisband = playerSelection();
-    for (const d of toDisband) game.disbandDivision(d);
+    const n = game.issue('disband', playerSelection().map(d => d.id)) || 0;
     UI.selectedDivs.clear();
-    pushToast(`🗑 ${toDisband.length} Division(en) aufgelöst.`);
+    pushToast(`🗑 ${n} Division(en) aufgelöst.`);
     updateUnitbar();
     updateTopbar();
   };
@@ -2014,6 +2009,27 @@ function startGame(nationId) {
   updateTutorial();
 }
 
+/* ---------- Replay ---------- */
+function startReplay() {
+  const rep = game && game.getReplay ? game.getReplay() : null;
+  if (!rep) { pushToast('⚠ Für dieses Spiel ist kein Replay verfügbar.'); return; }
+  const g = Game.fromReplay(rep);
+  if (!g) return;
+  window.game = g;
+  lastLogLen = 0;
+  UI.selectedDivs.clear(); UI.selectedHex = null; UI.selectedArmy = null;
+  UI.buildMode = null;
+  UI.tutorialStep = -1; UI._ghost = null;
+  document.getElementById('gameover').classList.add('hidden');
+  document.getElementById('offers').innerHTML = '';
+  game._offersChanged = true;
+  game.speed = 3;
+  game.paused = false;
+  game.updateFronts();
+  centerOn(...game.nations[game.player].capital, 1.0);
+  refreshPanel(); updateTopbar(); updateUnitbar(); renderRanking();
+}
+
 function checkGameOver() {
   if (!game || !game.over) return;
   const el = document.getElementById('gameover');
@@ -2021,6 +2037,9 @@ function checkGameOver() {
   el.classList.remove('hidden');
   el.querySelector('h1').textContent = game.over.win ? '🏆 SIEG!' : '💀 NIEDERLAGE';
   el.querySelector('p').textContent = game.over.text;
+  const rbtn = document.getElementById('gameover-replay');
+  rbtn.classList.toggle('hidden', !(game._replayCapable && game.cmdLog));
+  rbtn.onclick = startReplay;
   // Endstand: Top 5 + Spieler
   game.vpRecount();
   const ids = rankedNations();

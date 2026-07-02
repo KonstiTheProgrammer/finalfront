@@ -86,6 +86,10 @@ const BAL = {
   },
 };
 
+/* Fester Simulationstakt: alle Maschinen rechnen identische Schritte —
+   Grundlage für Determinismus, Replays und späteres Lockstep-Multiplayer. */
+const TICK_DAYS = 0.25;   // Spieltage pro Tick (0.25 ist binär exakt — kein Drift)
+
 const MONTHS_DE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 function dateStr(day) {
@@ -95,7 +99,18 @@ function dateStr(day) {
 
 /* ---------- Spielzustand ---------- */
 class Game {
-  constructor(playerNationId) {
+  constructor(playerNationId, seed) {
+    // Geseedeter Zufall (mulberry32) mit serialisierbarem Zustand:
+    // gleiche Saat + gleiche Kommandos = identischer Spielverlauf.
+    this.seed = (seed === undefined ? (Date.now() & 0x7fffffff) : seed) >>> 0;
+    this._rngState = this.seed;
+    this.tickCount = 0;
+    this._acc = 0;
+    this.cmdLog = [];              // alle Spieler-Kommandos {t, cmd, args}
+    this._replayCmds = null;       // im Replay: abzuspielende Kommandos
+    this._replayIdx = 0;
+    this._replayCapable = true;
+
     this.hexes = buildMap();
     this.day = 0;
     this.dayFloat = 0;
@@ -161,6 +176,15 @@ class Game {
   hexAt(c, r) { return (this.hexes[r] && this.hexes[r][c]) || null; }
   nationName(id) { return NATION_DEFS[id] ? NATION_DEFS[id].name : '???'; }
   nationColor(id) { return NATION_DEFS[id] ? NATION_DEFS[id].color : '#999'; }
+
+  /* Geseedeter Zufall (mulberry32) mit explizitem Zustand — serialisierbar,
+     damit Save/Load und Replays den identischen Zufallsstrom fortsetzen. */
+  rand() {
+    let a = this._rngState = (this._rngState + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
 
   addLog(msg, important) {
     this.log.push({ day: this.day, msg, important: !!important, t: performance.now() });
@@ -271,7 +295,7 @@ class Game {
     if (this.nationPower(from) < this.nationPower(to) * 0.35) return false;
     // Nicht mit dem eigenen Angriffsziel verbünden
     for (const army of nTo.armies) if (army.target === from && army.mode === 'attack') return false;
-    return Math.random() < 0.7;
+    return this.rand() < 0.7;
   }
 
   formAlliance(a, b) {
@@ -350,7 +374,7 @@ class Game {
       allies: new Set(),
       armies: [],
       ai: id !== this.player,
-      aiTick: Math.floor(Math.random() * 6),
+      aiTick: Math.floor(this.rand() * 6),
       capital: null,
       divNameSeq: 1,
       hexCount: 1,
@@ -395,7 +419,7 @@ class Game {
     for (const h of (own || this.ownedHexes(nation))) {
       if (h.owner !== nation || h.capital) continue;
       if (!pred(h)) continue;
-      const d = hexDist(h.c, h.r, cc, cr) + Math.random() * 0.7;
+      const d = hexDist(h.c, h.r, cc, cr) + this.rand() * 0.7;
       if (d < bestD && d <= maxDist) { bestD = d; best = h; }
     }
     return best;
@@ -1145,7 +1169,7 @@ class Game {
     const terr = TERRAIN[targetHex.terrain];
     const fromHex = this.hexAt(atk.c, atk.r);
     const seaAssault = fromHex && fromHex.terrain === 'water';
-    const rand = 0.85 + Math.random() * 0.3;
+    const rand = 0.85 + this.rand() * 0.3;
     let power = this.attackPower(atk) * rand / terr.def;
     if (seaAssault) power *= BAL.seaAssaultMalus;
     const neutral = targetHex.owner === null;
@@ -1162,7 +1186,7 @@ class Game {
     if (def && !def.dead) {
       def.inCombat = true;
       if (def.nation !== atk.nation) this.warHeat[[atk.nation, def.nation].sort().join('|')] = this.day;
-      const dRand = 0.85 + Math.random() * 0.3;
+      const dRand = 0.85 + this.rand() * 0.3;
       const defT = BAL.divTypes[def.type];
       const defPower = this.attackPower(def) * defT.defF * dRand;
       // Endphase: Angreifer schlagen härter durch — Stellungskriege lösen sich,
@@ -1507,11 +1531,11 @@ class Game {
       h.building === 'hafen' && h.owner && this.nations[h.owner].alive);
     for (const p of ports) {
       if (p._nextShipDay === undefined)
-        p._nextShipDay = this.day + 1 + Math.floor(Math.random() * BAL.trade.shipEveryDays);
+        p._nextShipDay = this.day + 1 + Math.floor(this.rand() * BAL.trade.shipEveryDays);
       if (this.day < p._nextShipDay) continue;
       const cands = ports.filter(q => q.owner !== p.owner && this.tradePartners(p.owner, q.owner));
       if (!cands.length) { p._nextShipDay = this.day + 2; continue; }
-      const q = cands[Math.floor(Math.random() * cands.length)];
+      const q = cands[Math.floor(this.rand() * cands.length)];
       const path = this.findWaterPath(p, q);
       if (!path || path.length < 2) { p._nextShipDay = this.day + 3; continue; }
       p._nextShipDay = this.day + BAL.trade.shipEveryDays;
@@ -1680,7 +1704,7 @@ class Game {
     const divs = this.divisionsOf(id);
     if (divs.length >= cap) return;
     let type = 'inf';
-    const roll = Math.random();
+    const roll = this.rand();
     if (nat.gold > 600 && roll < 0.2) type = 'pz';
     else if (nat.gold > 400 && roll < 0.4) type = 'art';
     else if (nat.gold > 500 && roll < 0.5) type = 'gar';
@@ -1734,7 +1758,7 @@ class Game {
     const lf = this.lateFactor();   // Endphase: mutiger angreifen, die Runde entscheidet sich
     // Wer selbst Hauptstädte sammelt, greift nach der Krone
     if (victim && vRatio > 1.4 - 0.2 * lf && this.divisionsOf(id).length >= 5
-      && Math.random() < aggression + 0.25 + 0.2 * lf + 0.08 * ((nat.vp || 1) - 1)) {
+      && this.rand() < aggression + 0.25 + 0.2 * lf + 0.08 * ((nat.vp || 1) - 1)) {
       army.target = victim;
       army.mode = 'attack';
       return;
@@ -1770,15 +1794,31 @@ class Game {
     if (cands.length) this.offerAlliance(id, cands[0]);
   }
 
-  /* ---------- Haupt-Tick ---------- */
+  /* ---------- Haupt-Tick: fester Takt ----------
+     Echtzeit wird angesammelt und in identische TICK_DAYS-Schritte übersetzt.
+     Jeder Tick ist auf jeder Maschine gleich groß — deterministisch. */
   tick(realDt) {
     if (this.paused || this.over) return;
-    let dt = Math.min(realDt, 0.25) * BAL.daysPerSec[this.speed];
-    while (dt > 0 && !this.over) {
-      const step = Math.min(dt, 0.34);
-      this.subTick(step);
-      dt -= step;
+    this._acc += Math.min(realDt, 0.25) * BAL.daysPerSec[this.speed];
+    let guard = 0;
+    while (this._acc >= TICK_DAYS && !this.over && guard++ < 60) {
+      this._acc -= TICK_DAYS;
+      this.runTick();
     }
+    if (this._acc > TICK_DAYS * 4) this._acc = 0;   // Rückstand kappen (Tab war im Hintergrund)
+  }
+
+  runTick() {
+    // Replay: aufgezeichnete Kommandos exakt vor ihrem Tick abspielen
+    if (this._replayCmds) {
+      while (this._replayIdx < this._replayCmds.length
+        && this._replayCmds[this._replayIdx].t === this.tickCount) {
+        const c = this._replayCmds[this._replayIdx++];
+        this._exec(c.cmd, c.args);
+      }
+    }
+    this.tickCount++;
+    this.subTick(TICK_DAYS);
   }
 
   subTick(dt) {
@@ -1813,7 +1853,7 @@ class Game {
       const before = this.allianceOffers.length;
       this.allianceOffers = this.allianceOffers.filter(o => this.day - o.day < BAL.offerLifetime);
       if (this.allianceOffers.length !== before) this._offersChanged = true;
-      if (performance.now() - this._lastAutosave > 60000 && !this.over) {
+      if (performance.now() - this._lastAutosave > 60000 && !this.over && !this._replayCmds) {
         this._lastAutosave = performance.now();
         try {
           localStorage.setItem('finalfront_autosave', JSON.stringify({ t: Date.now(), save: this.serialize() }));
@@ -1832,6 +1872,8 @@ class Game {
       v: 4, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
+      seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
+      cmds: this._replayCapable ? this.cmdLog : undefined,
       warHeat: this.warHeat,
       hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist)]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
@@ -1851,10 +1893,15 @@ class Game {
     try { s = JSON.parse(json); } catch (e) { return null; }
     if (!s || (s.v !== 3 && s.v !== 4) || !Array.isArray(s.hexes) || s.hexes.length !== MAP_W * MAP_H) return null;
     if (!NATION_DEFS[s.player]) return null;
-    const g = new Game(s.player);
+    const g = new Game(s.player, s.seed !== undefined ? s.seed : 1);
     g.divisions = [];
     g.day = s.day; g.dayFloat = s.dayFloat;
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
+    // Zufallsstrom & Kommando-Log exakt fortsetzen (Determinismus über Save/Load)
+    if (s.rngState !== undefined) g._rngState = s.rngState;
+    g.tickCount = s.tickCount !== undefined ? s.tickCount : Math.round(s.dayFloat / TICK_DAYS);
+    g.cmdLog = Array.isArray(s.cmds) ? s.cmds : [];
+    g._replayCapable = s.seed !== undefined && Array.isArray(s.cmds);
     const flat = g.hexes.flat();
     // Erst alles zurück auf neutral
     for (const h of flat) {
@@ -1906,4 +1953,146 @@ class Game {
     g.recalcAllSupply(); g.updateFronts();
     return g;
   }
+
+  /* ---------- Replay ---------- */
+  getReplay() {
+    if (!this._replayCapable) return null;
+    return { v: 1, seed: this.seed, player: this.player, cmds: this.cmdLog };
+  }
+
+  static fromReplay(rep) {
+    if (!rep || rep.seed === undefined || !NATION_DEFS[rep.player]) return null;
+    const g = new Game(rep.player, rep.seed);
+    g._replayCmds = (rep.cmds || []).slice();
+    g._replayIdx = 0;
+    g.cmdLog = g._replayCmds;
+    g._replayCapable = false;
+    g.addLog('🎬 Replay — Eingaben sind gesperrt, Geschwindigkeit frei wählbar.', true);
+    return g;
+  }
 }
+
+/* =========================================================
+   KOMMANDO-SCHLEUSE
+   Alle Spieler-Eingriffe laufen als aufgezeichnete Kommandos
+   durch issue() — die Basis für Replays und Multiplayer.
+   ========================================================= */
+Game.prototype._divById = function (id) {
+  return this.divisions.find(d => d.id === id && !d.dead) || null;
+};
+
+Game.prototype.issue = function (cmd, ...args) {
+  if (this._replayCmds) return null;   // Replay: Eingaben gesperrt
+  const fn = this._commands[cmd];
+  if (!fn) return null;
+  this.cmdLog.push({ t: this.tickCount, cmd, args });
+  return fn.apply(this, args);
+};
+
+Game.prototype._exec = function (cmd, args) {
+  const fn = this._commands[cmd];
+  if (fn) fn.apply(this, args);
+};
+
+Game.prototype._commands = {
+  move(divId, c, r, queue) {
+    const d = this._divById(divId);
+    if (d && d.nation === this.player) this.moveOrder(d, c, r, queue);
+  },
+  build(c, r, what) {
+    return this.build(this.player, this.hexAt(c, r), what);
+  },
+  train(type, n, armyId) {
+    const a = this.armyById(this.player, armyId);
+    const made = this.trainDivisions(this.player, type, n, a);
+    if (made) this.updateFronts(this.player);
+    return made;
+  },
+  split(divIds) {
+    const twins = [];
+    for (const id of divIds) {
+      const d = this._divById(id);
+      if (d && d.nation === this.player) {
+        const t = this.splitDivision(d);
+        if (t) twins.push(t.id);
+      }
+    }
+    return twins;
+  },
+  merge(divIds) {
+    const divs = divIds.map(id => this._divById(id)).filter(d => d && d.nation === this.player);
+    return this.mergeDivisions(divs);
+  },
+  disband(divIds) {
+    let n = 0;
+    for (const id of divIds) {
+      const d = this._divById(id);
+      if (d && d.nation === this.player) { this.disbandDivision(d); n++; }
+    }
+    return n;
+  },
+  disbandArmy(armyId) {
+    return this.disbandArmy(this.player, armyId);
+  },
+  createArmy() {
+    this.createArmy(this.player);
+  },
+  renameArmy(armyId, name) {
+    const a = this.armyById(this.player, armyId);
+    if (a && name) a.name = String(name).slice(0, 24);
+  },
+  armyTarget(armyId, target) {
+    const a = this.armyById(this.player, armyId);
+    if (a) { a.target = target; this.updateFronts(this.player); }
+  },
+  armyMode(armyId, mode) {
+    const a = this.armyById(this.player, armyId);
+    if (a && (mode === 'attack' || mode === 'defend')) a.mode = mode;
+  },
+  assignFront(divIds, key) {
+    const nat = this.nations[this.player];
+    let army = nat.armies.find(a => a.target === key);
+    if (!army) {
+      army = this.createArmy(this.player,
+        key === 'EXPAND' ? 'Expansionsarmee' : 'Front: ' + this.nationName(key));
+      army.target = key;
+    }
+    army.mode = 'attack';
+    let n = 0;
+    for (const id of divIds) {
+      const d = this._divById(id);
+      if (!d || d.nation !== this.player) continue;
+      d.army = army.id; d.manual = false; d.path = null; d.attackTarget = null; d.queue = [];
+      n++;
+    }
+    this.updateFronts(this.player);
+    return n;
+  },
+  assign(divIds, armyId) {
+    let n = 0;
+    for (const id of divIds) {
+      const d = this._divById(id);
+      if (!d || d.nation !== this.player) continue;
+      d.army = armyId; d.manual = false; d.path = null; d.queue = []; d.attackTarget = null;
+      n++;
+    }
+    this.updateFronts(this.player);
+    return n;
+  },
+  release(divIds) {
+    for (const id of divIds) {
+      const d = this._divById(id);
+      if (d && d.nation === this.player) this.releaseToArmy(d);
+    }
+    this.updateFronts(this.player);
+  },
+  ally(to) {
+    return this.offerAlliance(this.player, to);
+  },
+  unally(other) {
+    this.dissolveAlliance(this.player, other);
+  },
+  answerOffer(from, accept) {
+    this.resolveOffer(from, accept);
+  },
+};

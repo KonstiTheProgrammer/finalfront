@@ -260,6 +260,19 @@ button.peace:hover { background: #26512e; }
 #gameover-stats { margin: 14px auto 4px; max-width: 420px; text-align: left; font-size: 13.5px; }
 #gameover-stats .rank-row { padding: 3px 0; border-bottom: 1px solid #22303f; }
 
+/* ---------- Replay-Anzeige ---------- */
+#replay-badge {
+  position: absolute; bottom: 10px; left: 64px;
+  z-index: 27;
+  padding: 5px 16px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: #ffd75e;
+  background: rgba(20, 16, 6, 0.92);
+  border: 1px solid #e0b04a;
+  pointer-events: none;
+}
+
 /* ---------- Geführtes erstes Match ---------- */
 #tutorial {
   position: absolute; top: 50px; left: 50%;

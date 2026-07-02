@@ -29,6 +29,10 @@ python -m http.server 4173
 - **Easy Entry:** Das erste Match führt mit 5 kontextuellen Aufgaben durch Eroberung und
   Wirtschaftskette (inkl. vorgeschlagener Bauplätze auf der Karte); ein Berater warnt bei
   Engpässen genau dann, wenn sie auftreten — überspringbar, erscheint nur einmal.
+- **Deterministische Simulation + Replays:** Fester Simulationstakt, geseedeter Zufall und
+  ein Kommando-Log für alle Spieler-Eingriffe — gleiche Saat + gleiche Befehle ergeben
+  bit-identische Verläufe. Nach jeder Runde: **🎬 Replay ansehen** auf dem Endbildschirm.
+  Das ist zugleich das technische Fundament für späteres Lockstep-Multiplayer.
 - **Rundenmodus — Sieg über Hauptstädte:** Die 15 Original-Hauptstädte sind dauerhaft markierte
   **Siegpunkte**. Wer **4 davon hält, startet einen 50-Tage-Countdown**, den alle sehen — die
   perfekte Einladung für eine Gegenkoalition; fällt eine Hauptstadt zurück, stoppt er. Nach
