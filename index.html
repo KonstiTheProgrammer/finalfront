@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Final Front — Europa in Flammen</title>
+  <link rel="stylesheet" href="style.css?v=10">
+</head>
+<body>
+  <canvas id="map"></canvas>
+
+  <!-- Obere Leiste -->
+  <div id="topbar">
+    <div class="tb-group" id="tb-nation"></div>
+    <div class="tb-group" title="Gold (Einkommen/Tag)">🪙 <span id="tb-gold">0</span></div>
+    <div class="tb-group" title="Rekruten (Zuwachs/Tag)">👥 <span id="tb-mp">0</span></div>
+    <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
+    <div class="tb-group" id="tb-day">1. Januar 1936</div>
+    <div class="tb-group speed">
+      <button id="btn-pause" title="Pause (Leertaste)">⏸</button>
+      <button id="btn-speed1" title="Normal (1)">▶</button>
+      <button id="btn-speed2" title="Schnell (2)">▶▶</button>
+      <button id="btn-speed3" title="Sehr schnell (3)">▶▶▶</button>
+      <button id="btn-speed4" title="Turbo (4)">▶▶▶▶</button>
+    </div>
+    <div class="tb-group">
+      <button id="btn-supply" title="Versorgungs-Overlay (V)">🚚</button>
+      <button id="btn-save" title="Speichern">💾</button>
+      <button id="btn-load" title="Laden">📂</button>
+      <button id="btn-restart" title="Neues Spiel">🔄</button>
+      <button id="btn-help" title="Hilfe">❓</button>
+    </div>
+  </div>
+
+  <!-- Seitenpanel -->
+  <div id="panel">
+    <div id="tabs">
+      <button data-tab="bauen" class="active">🏗 Bauen</button>
+      <button data-tab="armeen">🪖 Armeen</button>
+      <button data-tab="nationen">🌍 Nationen</button>
+      <button data-tab="info">ℹ Info</button>
+    </div>
+    <div id="panel-content"></div>
+  </div>
+
+  <!-- Minimap -->
+  <canvas id="minimap" width="256" height="176"></canvas>
+
+  <!-- Ereignis-Log -->
+  <div id="log"></div>
+
+  <!-- Toasts -->
+  <div id="toasts"></div>
+
+  <!-- Bündnisangebote -->
+  <div id="offers"></div>
+
+  <!-- Tooltip -->
+  <div id="tooltip"></div>
+
+  <!-- Startbildschirm -->
+  <div id="start" class="overlay">
+    <div class="overlay-box">
+      <h1>FINAL FRONT</h1>
+      <p class="subtitle">Europa in Flammen — Echtzeit-Strategie</p>
+      <p class="intro">Europa liegt brach und grau. Jede Nation beginnt mit <b>einem Dorf und zwei
+        Divisionen</b>. Breite dich in neutrales Land aus, baue Wirtschaft auf, führe Krieg gegen
+        jeden Nicht-Verbündeten — oder schmiede Allianzen (Rechtsklick auf fremdes Land).
+        Sieg bei 55 % Kontrolle über Europa.</p>
+      <button id="btn-continue" class="wide continue hidden">▶ Weiterspielen (letzter Spielstand)</button>
+      <h2>Wähle deine Nation</h2>
+      <div id="nation-grid"></div>
+    </div>
+  </div>
+
+  <!-- Endbildschirm -->
+  <div id="gameover" class="overlay hidden">
+    <div class="overlay-box small-box">
+      <h1></h1>
+      <p></p>
+      <button id="gameover-restart" class="wide">Neues Spiel</button>
+    </div>
+  </div>
+
+  <!-- Hilfe -->
+  <div id="help" class="overlay hidden">
+    <div class="overlay-box">
+      <h2>Anleitung</h2>
+      <ul class="help-list">
+        <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = ganze Armee</b></li>
+        <li><b>Teilen &amp; Vereinen:</b> <b>S</b> teilt ausgewählte Divisionen in zwei Hälften · <b>M</b> vereint ausgewählte Divisionen gleichen Typs</li>
+        <li><b>Befehle:</b> Rechtsklick auf <b>Neutral-/Feindland = Front zuweisen</b> (Truppen verteilen sich selbst und greifen an) · auf eigenes Land = dorthin verlegen · <b>Alt+Rechtsklick</b> = exakter Marschbefehl (Küste = Invasion per Schiff)</li>
+        <li><b>Karte:</b> Rechts-/Mittel-Ziehen oder WASD = verschieben · Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
+        <li><b>Expansion:</b> Neutralland (grau) gehört niemandem — erobere es! Deine Startarmee expandiert automatisch.</li>
+        <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist jederzeit angreifbar — und du auch!</li>
+        <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab.</li>
+        <li><b>Bauen:</b> Tab „Bauen“ → wählen → klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
+        <li><b>Seehandel:</b> Baue einen <b>🚢 Hafen an einem Ufer</b> — er schickt Handelsschiffe zu Häfen anderer Nationen, und <b>beide Seiten verdienen Gold</b> pro Ankunft (längere Routen = mehr). Kein Handel mit Nationen, mit denen du gerade kämpfst; Verbündete handeln immer. Häfen sind zudem Versorgungs-Hubs.</li>
+        <li><b>Truppentypen:</b> Infanterie (billig), Garde (Elite), Panzer (schnell), Artillerie (knackt Verteidigung &amp; Miliz).</li>
+        <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
+        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet, Küsten evakuieren über See.</li>
+        <li><b>Hauptstadt</b> verloren? Sie wird verlegt, solange dein Reich groß genug ist — sonst Untergang.</li>
+        <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
+      </ul>
+      <p class="small hint">(Klick neben das Fenster zum Schließen)</p>
+    </div>
+  </div>
+
+  <script src="js/mapdata.js?v=10"></script>
+  <script src="js/map.js?v=10"></script>
+  <script src="js/game.js?v=10"></script>
+  <script src="js/ui.js?v=10"></script>
+  <script src="js/main.js?v=10"></script>
+</body>
+</html>
