@@ -77,8 +77,13 @@ const BAL = {
   catchupMax: 0.35,           // Einkommensbonus kleiner Nationen (bis +35 %)
   leaderMalus: 0.25,          // Einkommensmalus des Spitzenreiters (bis -25 %)
   smallNationDefense: 1.5,    // Miliz-Bonus für Nationen unter 30 Provinzen
-  // Sieg
-  winLandShare: 0.55,
+  // Rundenmodus & Sieg über Hauptstädte
+  round: {
+    days: 1000,               // Rundenlänge in Spieltagen (≈ 17–33 min je nach Tempo)
+    vpToWin: 4,               // gehaltene Hauptstädte starten den Sieg-Countdown
+    countdownDays: 50,        // Länge des Countdowns — Zeit für die Gegenkoalition
+    lateStart: 0.7,           // ab 70 % der Runde: Endphase (Miliz ermüdet, Aufholbonus schwindet)
+  },
 };
 
 const MONTHS_DE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
@@ -130,6 +135,20 @@ class Game {
     }
 
     for (const [id, def] of Object.entries(NATION_DEFS)) this.initNation(id, def);
+
+    // Siegpunkt-Hauptstädte: die 15 Original-Hauptstädte bleiben dauerhaft
+    // markiert — wer BAL.round.vpToWin davon hält, startet den Sieg-Countdown.
+    this.vpHexes = [];
+    this.vpLeader = null;
+    this.vpDeadline = 0;
+    for (const [id, nat] of Object.entries(this.nations)) {
+      if (!nat.capital) continue;
+      const h = this.hexAt(...nat.capital);
+      h.vp = true;
+      this.vpHexes.push({ id, c: h.c, r: h.r, name: h.cityName });
+    }
+    this.vpRecount();
+
     this.recalcEconomy();
     this.recalcAllSupply();
     this.updateFronts();
@@ -643,12 +662,14 @@ class Game {
     let sum = 0, cnt = 0;
     for (const nat of Object.values(this.nations)) if (nat.alive) { sum += nat.hexCount; cnt++; }
     const avg = Math.max(1, sum / Math.max(1, cnt));
+    const lf = this.lateFactor();   // Endphase: Aufholbonus/Malus schwinden
     for (const nat of Object.values(this.nations)) {
       if (!nat.alive) continue;
       const rel = nat.hexCount / avg;
       let mult = 1;
       if (rel < 1) mult = 1 + Math.min(BAL.catchupMax, (1 - rel) * 0.5);
       else mult = 1 - Math.min(BAL.leaderMalus, (rel - 1) * 0.1);
+      mult = 1 + (mult - 1) * (1 - lf);
       nat.econMult = nat.incomePerDay > 0 ? mult : 1;
       nat.gold = Math.max(0, nat.gold + nat.incomePerDay * nat.econMult * dt);
       nat.leute += nat.leutePerDay * dt;
@@ -1105,6 +1126,7 @@ class Game {
       let score = -defense;
       if (nh.building) score += 4;
       if (nh.capital) score += 10;
+      if (nh.vp) score += 12;   // Siegpunkt-Hauptstädte sind das Rundenziel
       if (this._atkCount && this._atkCount.get(nc + nr * MAP_W)) score += 6;
       if (score > bestScore) { bestScore = score; best = nh; }
     }
@@ -1142,15 +1164,19 @@ class Game {
       const dRand = 0.85 + Math.random() * 0.3;
       const defT = BAL.divTypes[def.type];
       const defPower = this.attackPower(def) * defT.defF * dRand;
-      def.org -= power * BAL.atkBase * BAL.orgDmg * dt;
-      def.str -= power * BAL.atkBase * BAL.strDmg * dt;
+      // Endphase: Angreifer schlagen härter durch — Stellungskriege lösen sich,
+      // Hauptstädte fallen, die Runde findet ihren Sieger
+      const lateAtk = 1 + 0.5 * this.lateFactor();
+      def.org -= power * BAL.atkBase * BAL.orgDmg * lateAtk * dt;
+      def.str -= power * BAL.atkBase * BAL.strDmg * lateAtk * dt;
       atk.org -= defPower * BAL.atkBase * BAL.orgDmg * 0.75 * dt;
       atk.str -= defPower * BAL.atkBase * BAL.strDmg * 0.6 * dt;
       if (def.str <= 5) this.destroyDivision(def, atk.nation);
       else if (def.org <= BAL.retreatOrg) this.retreatDivision(def, atk);
     } else {
       const t = BAL.divTypes[atk.type];
-      const bonus = neutral ? BAL.neutralDmgBonus : 1;
+      // Endphase: Milizen ermüden — die Karte konsolidiert sich, Runden enden
+      const bonus = (neutral ? BAL.neutralDmgBonus : 1) * (1 + this.lateFactor());
       targetHex.resist -= power * BAL.atkBase * 0.55 * t.militia * bonus * dt;
       this._damagedHexes.add(targetHex);
       const counter = neutral ? BAL.neutralCounter : 1;
@@ -1260,7 +1286,6 @@ class Game {
       if (h.capital) { h.capital = false; this.onCapitalFall(loser, div.nation); }
       this.checkElimination(loser, div.nation);
     }
-    this.checkVictory();
   }
 
   onCapitalFall(loser, winner) {
@@ -1322,11 +1347,81 @@ class Game {
     if (this.ownedHexes(loser).length === 0) this.surrender(loser, winner);
   }
 
-  checkVictory() {
+  /* ---------- Rundenmodus: Sieg über Hauptstädte ---------- */
+  /* 0 vor der Endphase, steigt bis 1 am Rundenende — steuert Endspiel-Druck */
+  lateFactor() {
+    const start = BAL.round.days * BAL.round.lateStart;
+    return Math.max(0, Math.min(1, (this.day - start) / (BAL.round.days - start)));
+  }
+
+  vpRecount() {
+    for (const nat of Object.values(this.nations)) nat.vp = 0;
+    for (const v of this.vpHexes) {
+      const o = this.hexAt(v.c, v.r).owner;
+      if (o && this.nations[o] && this.nations[o].alive) this.nations[o].vp++;
+    }
+  }
+
+  vpDaily() {
     if (this.over) return;
-    const own = this.nations[this.player].hexCount;
-    if (own / this.totalLand >= BAL.winLandShare) {
-      this.over = { win: true, text: `Du kontrollierst ${Math.round(own / this.totalLand * 100)} % Europas!` };
+    this.vpRecount();
+    const need = BAL.round.vpToWin;
+    const alive = Object.keys(this.nations).filter(id => this.nations[id].alive);
+
+    // Letzter Überlebender gewinnt sofort
+    if (alive.length === 1) {
+      const w = alive[0];
+      this.over = {
+        win: w === this.player,
+        text: w === this.player
+          ? 'Alle Rivalen sind gefallen — ganz Europa gehört dir!'
+          : `${this.nationName(w)} steht allein — Europa ist verloren.`,
+      };
+      return;
+    }
+
+    // Laufenden Countdown verwalten
+    if (this.vpLeader) {
+      const ln = this.nations[this.vpLeader];
+      if (!ln.alive || ln.vp < need) {
+        this.addLog(`🕊 ${this.nationName(this.vpLeader)} hält keine ${need} Hauptstädte mehr — der Sieg-Countdown ist gestoppt!`, true);
+        this.vpLeader = null;
+        this.vpDeadline = 0;
+      } else if (this.day >= this.vpDeadline) {
+        this.over = {
+          win: this.vpLeader === this.player,
+          text: this.vpLeader === this.player
+            ? `Du hältst ${ln.vp} Hauptstädte — Europa liegt dir zu Füßen!`
+            : `${this.nationName(this.vpLeader)} beherrscht Europa mit ${ln.vp} Hauptstädten.`,
+        };
+        return;
+      }
+    }
+    // Neuen Countdown starten?
+    if (!this.vpLeader) {
+      let cand = null;
+      for (const id of alive) {
+        if (this.nations[id].vp >= need && (!cand || this.nations[id].vp > this.nations[cand].vp)) cand = id;
+      }
+      if (cand) {
+        this.vpLeader = cand;
+        this.vpDeadline = this.day + BAL.round.countdownDays;
+        this.addLog(`👑 ${this.nationName(cand)} hält ${this.nations[cand].vp} Hauptstädte — Sieg in ${BAL.round.countdownDays} Tagen! ${cand === this.player ? 'Halte durch!' : 'Haltet ihn auf!'}`, true);
+      }
+    }
+
+    // Rundenende per Timer: stärkste Macht gewinnt
+    if (this.day >= BAL.round.days) {
+      const ranked = [...alive].sort((a, b) =>
+        (this.nations[b].vp - this.nations[a].vp) || (this.nations[b].hexCount - this.nations[a].hexCount));
+      const winner = ranked[0];
+      const place = ranked.indexOf(this.player) + 1;
+      this.over = {
+        win: winner === this.player,
+        text: winner === this.player
+          ? `Zeit abgelaufen — du bist die stärkste Macht Europas (${this.nations[winner].vp} Hauptstädte, ${this.nations[winner].hexCount} Provinzen)!`
+          : `Zeit abgelaufen — ${this.nationName(winner)} gewinnt mit ${this.nations[winner].vp} Hauptstädten.${place > 0 ? ` Du wirst ${place}.` : ''}`,
+      };
     }
   }
 
@@ -1500,11 +1595,13 @@ class Game {
   }
 
   militiaDaily() {
-    // Nur angeschlagene Hexes regenerieren — statt die ganze Karte zu scannen
+    // Nur angeschlagene Hexes regenerieren — statt die ganze Karte zu scannen.
+    // In der Endphase regeneriert die Miliz kaum noch.
+    const regen = BAL.militiaRegen * (1 - 0.85 * this.lateFactor());
     for (const h of this._damagedHexes) {
       if (h.terrain === 'water' || h.resist >= h.resistMax) { this._damagedHexes.delete(h); continue; }
       if (this.dayFloat - (h._atkT || -99) > 2) {
-        h.resist = Math.min(h.resistMax, h.resist + BAL.militiaRegen);
+        h.resist = Math.min(h.resistMax, h.resist + regen);
         if (h.resist >= h.resistMax) this._damagedHexes.delete(h);
       }
     }
@@ -1620,16 +1717,23 @@ class Game {
     }
     // 2) Lohnendes Opfer in Reichweite? Große Ziele bevorzugen —
     //    das bremst Spitzenreiter und verhindert Dogpiling auf Sterbende.
+    //    Hauptstadt-Sammler sind besonders attraktive Ziele (Countdown stoppen!).
     const borders = this.borderNationsOf(id).filter(b => this.hostile(id, b));
     let victim = null, vRatio = 0, vScore = -Infinity;
     for (const b of borders) {
       const r = myPow / Math.max(0.1, this.nationPower(b));
       const size = Math.sqrt(this.nations[b].hexCount / Math.max(1, nat.hexCount));
-      const score = r * Math.min(2, Math.max(0.5, size));
+      let score = r * Math.min(2, Math.max(0.5, size));
+      score *= 1 + (this.nations[b].vp || 0) * 0.1;
+      if (this.vpLeader === b) score *= 1.6;                          // Countdown stoppen!
+      else if ((this.nations[b].vp || 0) >= BAL.round.vpToWin - 1) score *= 1.8;  // Beinahe-Sieger bremsen
       if (score > vScore) { vScore = score; vRatio = r; victim = b; }
     }
     const aggression = NATION_DEFS[id].aggression;
-    if (victim && vRatio > 1.4 && this.divisionsOf(id).length >= 5 && Math.random() < aggression + 0.25) {
+    const lf = this.lateFactor();   // Endphase: mutiger angreifen, die Runde entscheidet sich
+    // Wer selbst Hauptstädte sammelt, greift nach der Krone
+    if (victim && vRatio > 1.4 - 0.2 * lf && this.divisionsOf(id).length >= 5
+      && Math.random() < aggression + 0.25 + 0.2 * lf + 0.08 * ((nat.vp || 1) - 1)) {
       army.target = victim;
       army.mode = 'attack';
       return;
@@ -1694,12 +1798,16 @@ class Game {
       }
       if (prevDay < BAL.graceDays && this.day >= BAL.graceDays)
         this.addLog('⚔️ Die Schonfrist ist vorbei — ganz Europa ist jetzt angreifbar!', true);
+      const lateDay = Math.floor(BAL.round.days * BAL.round.lateStart);
+      if (prevDay < lateDay && this.day >= lateDay)
+        this.addLog('🔥 Endphase! Die Milizen ermüden, der Aufholbonus schwindet — jetzt entscheidet Eroberung.', true);
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
       this.supplyDaily();
       this.militiaDaily();
       this.tradeDaily();
       this.aiDaily();
+      this.vpDaily();
       // Abgelaufene Bündnisangebote entfernen
       const before = this.allianceOffers.length;
       this.allianceOffers = this.allianceOffers.filter(o => this.day - o.day < BAL.offerLifetime);
@@ -1722,6 +1830,7 @@ class Game {
     return JSON.stringify({
       v: 4, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
+      vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
       warHeat: this.warHeat,
       hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist)]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
@@ -1779,6 +1888,9 @@ class Game {
     g.allianceOffers = [];
     g.ships = [];
     g.warHeat = s.warHeat || {};
+    g.vpLeader = s.vpLeader || null;
+    g.vpDeadline = s.vpDeadline || 0;
+    g.vpRecount();
     g.addLog('💾 Spielstand geladen.');
     g.economyDirty = true; g.labelsDirty = true; g.frontsDirty = true;
     g.markDirtyAll();

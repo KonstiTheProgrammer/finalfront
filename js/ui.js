@@ -271,7 +271,12 @@ function drawBuilding(ctx, h, x, y, detailed) {
     ctx.beginPath(); ctx.moveTo(4.7, -8); ctx.lineTo(8.4, -7.1); ctx.lineTo(4.7, -5.9);
     ctx.closePath(); ctx.fill();
   }
-  if (h.capital) {
+  if (h.capital || h.vp) {
+    // Siegpunkt-Hauptstädte behalten ihren Stern dauerhaft — sie sind das Rundenziel
+    if (h.vp) {
+      ctx.strokeStyle = 'rgba(255,215,94,0.55)'; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(0, h.building ? -8.4 : 0, 7.2, 0, 7); ctx.stroke();
+    }
     ctx.fillStyle = '#ffd75e'; ctx.strokeStyle = '#6b5100'; ctx.lineWidth = 1;
     star(ctx, 0, h.building ? -8.4 : 0, 4.5);
   }
@@ -395,7 +400,7 @@ function renderMapLayer() {
   }
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
     const h = game.hexAt(c, r);
-    if (h.building || h.capital) {
+    if (h.building || h.capital || h.vp) {
       const p = hexToPixel(c, r);
       drawBuilding(ctx, h, p.x, p.y, false);
     }
@@ -472,12 +477,13 @@ function renderOverviewRegion(c0, r0, c1, r1, rx, ry, rw, rh) {
   // Hauptstädte & Städte als Punkte
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
     const h = game.hexAt(c, r);
-    if (!h.capital && h.building !== 'stadt') continue;
+    if (!h.capital && !h.vp && h.building !== 'stadt') continue;
     const p = hexToPixel(c, r);
-    ctx.fillStyle = h.capital ? '#ffd75e' : 'rgba(245,245,240,0.9)';
+    const isVp = h.capital || h.vp;
+    ctx.fillStyle = isVp ? '#ffd75e' : 'rgba(245,245,240,0.9)';
     ctx.strokeStyle = 'rgba(20,20,26,0.8)';
     ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.arc(p.x, p.y, h.capital ? 4.2 : 2.6, 0, 7);
+    ctx.beginPath(); ctx.arc(p.x, p.y, isVp ? 4.2 : 2.6, 0, 7);
     ctx.fill(); ctx.stroke();
   }
   ctx.restore();
@@ -664,7 +670,7 @@ function render() {
     }
     for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
       const h = game.hexAt(c, r);
-      if (h.building || h.capital) {
+      if (h.building || h.capital || h.vp) {
         const p = hexToPixel(c, r);
         drawBuilding(ctx, h, p.x, p.y, true);
       }
@@ -1303,6 +1309,7 @@ function updateTooltip(sx, sy) {
     html += ` — <span style="color:${NATION_DEFS[h.owner].color}">${game.nationName(h.owner)}</span>`;
     if (game.allied(game.player, h.owner)) html += ' 🤝';
     if (h.capital) html += ' ★';
+    if (h.vp) html += ' · <b>🏛️ Siegpunkt-Hauptstadt</b>';
     if (h.cityName) html += ` · <b>${h.cityName}</b>`;
     if (h.building) {
       html += `<br>${buildingName(h.building)}`;
@@ -1456,7 +1463,22 @@ function updateTopbar() {
   document.getElementById('tb-div').textContent = `${game.divisionsOf(game.player).length}`;
   const share = Math.round(nat.hexCount / game.totalLand * 100);
   document.getElementById('tb-prov').textContent = `${nat.hexCount} (${share} %)`;
+  document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${BAL.round.vpToWin}`;
   document.getElementById('tb-day').textContent = dateStr(game.day);
+  document.getElementById('tb-round').textContent = `noch ${Math.max(0, BAL.round.days - game.day)} T.`;
+
+  // Sieg-Countdown-Banner
+  const banner = document.getElementById('vp-banner');
+  if (game.vpLeader && !game.over && game.nations[game.vpLeader]) {
+    const own = game.vpLeader === game.player;
+    const rest = Math.max(0, game.vpDeadline - game.day);
+    banner.className = own ? 'own' : '';
+    banner.innerHTML = own
+      ? `👑 Du hältst ${game.nations[game.vpLeader].vp} Hauptstädte — <b>Sieg in ${rest} Tagen!</b> Halte durch!`
+      : `👑 <b>${game.nationName(game.vpLeader)}</b> hält ${game.nations[game.vpLeader].vp} Hauptstädte — Sieg in <b>${rest} Tagen</b>! Haltet ihn auf!`;
+  } else {
+    banner.className = 'hidden';
+  }
   document.getElementById('btn-pause').classList.toggle('active', game.paused);
   for (const s of [1, 2, 3, 4])
     document.getElementById('btn-speed' + s).classList.toggle('active', !game.paused && game.speed === s);
@@ -1469,6 +1491,37 @@ const PANEL_TITLES = {
   nationen: '🌍 Nationen & Diplomatie',
   info: 'ℹ️ Info',
 };
+
+/* ---------- Live-Rangliste (Rundenmodus) ---------- */
+function rankedNations() {
+  return Object.keys(game.nations)
+    .filter(id => game.nations[id].alive)
+    .sort((a, b) => ((game.nations[b].vp || 0) - (game.nations[a].vp || 0))
+      || (game.nations[b].hexCount - game.nations[a].hexCount));
+}
+
+function rankRowHtml(place, id) {
+  const n = game.nations[id];
+  return `<div class="rank-row ${id === game.player ? 'me' : ''}">
+    <span class="rank-pl">${place}.</span>
+    <span class="chip" style="background:${game.nationColor(id)}"></span>
+    <span class="rank-name">${game.nationName(id)}</span>
+    <span class="rank-vp">🏛️ ${n.vp || 0}</span>
+    <span class="rank-hex">${n.hexCount}</span>
+  </div>`;
+}
+
+function renderRanking() {
+  const el = document.getElementById('ranking');
+  if (!game || game.over) { el.innerHTML = ''; return; }
+  const ids = rankedNations();
+  let html = `<div class="rank-head">🏆 RANGLISTE — 🏛️ Hauptstädte · Provinzen</div>`;
+  ids.forEach((id, i) => {
+    if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id);
+  });
+  if (!game.nations[game.player].alive) html += `<div class="rank-row me"><span class="rank-pl">☠</span><span class="rank-name">Du bist ausgeschieden</span></div>`;
+  el.innerHTML = html;
+}
 
 function refreshPanel() {
   document.querySelectorAll('#sidebar button[data-tab]').forEach(b =>
@@ -1837,4 +1890,15 @@ function checkGameOver() {
   el.classList.remove('hidden');
   el.querySelector('h1').textContent = game.over.win ? '🏆 SIEG!' : '💀 NIEDERLAGE';
   el.querySelector('p').textContent = game.over.text;
+  // Endstand: Top 5 + Spieler
+  game.vpRecount();
+  const ids = rankedNations();
+  let html = `<div class="rank-head">ENDSTAND (Tag ${game.day}) — 🏛️ Hauptstädte · Provinzen</div>`;
+  ids.forEach((id, i) => {
+    if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id);
+  });
+  if (!game.nations[game.player].alive)
+    html += `<div class="rank-row me"><span class="rank-pl">☠</span><span class="rank-name">Dein Reich ist untergegangen</span></div>`;
+  document.getElementById('gameover-stats').innerHTML = html;
+  document.getElementById('ranking').innerHTML = '';
 }

@@ -26,6 +26,12 @@ python -m http.server 4173
   (180×205 Hexes, Miller-Projektion), alles startet neutral und grau.
 - Jede der 15 Nationen beginnt mit **einem Dorf und zwei Divisionen** und breitet sich in
   neutrales Land aus.
+- **Rundenmodus — Sieg über Hauptstädte:** Die 15 Original-Hauptstädte sind dauerhaft markierte
+  **Siegpunkte**. Wer **4 davon hält, startet einen 50-Tage-Countdown**, den alle sehen — die
+  perfekte Einladung für eine Gegenkoalition; fällt eine Hauptstadt zurück, stoppt er. Nach
+  **1000 Tagen** (≈ 20–30 Minuten) gewinnt sonst, wer die meisten Hauptstädte hält. Live-Rangliste
+  am rechten Rand. Ab Tag 700 beginnt die **Endphase**: Milizen ermüden, der Aufholbonus schwindet,
+  Angriffe schlagen härter durch — die Karte konsolidiert sich, jede Runde endet mit einem Sieger.
 - **Keine Kriegserklärungen:** Jeder Nicht-Verbündete ist angreifbar — du auch. In den ersten
   **30 Tagen gilt eine Schonfrist** (nur Expansion ins Neutralland), damit alle fair starten.
 - **Fair & Multiplayer-tauglich balanciert:** Aufholmechanik (kleine Nationen bis +35 %
