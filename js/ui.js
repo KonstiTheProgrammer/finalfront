@@ -342,6 +342,27 @@ function drawBuilding(ctx, h, x, y, detailed) {
       ctx.moveTo(-4.9, -4.2); ctx.lineTo(-3.4, -3.4); ctx.lineTo(-4.6, -2.6);
       ctx.closePath(); ctx.fill();
     }
+  } else if (h.building === 'turm') {
+    // Wehrturm: Steinturm mit Zinnen
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(-4.4, 4.2, 9.4, 1.3);
+    ctx.fillStyle = '#9aa2ad'; ctx.strokeStyle = '#2b313c';
+    ctx.fillRect(-3.2, -3.6, 6.4, 8); ctx.strokeRect(-3.2, -3.6, 6.4, 8);
+    // Sockel breiter
+    ctx.fillRect(-4.2, 2.6, 8.4, 1.9); ctx.strokeRect(-4.2, 2.6, 8.4, 1.9);
+    // Zinnen
+    ctx.fillStyle = '#b8c0cc';
+    for (const zx of [-3.9, -1.3, 1.3]) { ctx.fillRect(zx, -5.4, 2.6, 2); ctx.strokeRect(zx, -5.4, 2.6, 2); }
+    if (detailed) {
+      ctx.fillStyle = '#232a36';
+      ctx.fillRect(-0.9, -1.6, 1.8, 2.6);   // Schießscharte
+      ctx.beginPath(); ctx.arc(0, 1.9, 0.7, 0, 7); ctx.fill();
+    }
+    ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(2.6, -5.4); ctx.lineTo(2.6, -8.2); ctx.stroke();
+    ctx.fillStyle = '#d4b13f';
+    ctx.beginPath(); ctx.moveTo(2.6, -8.2); ctx.lineTo(5.4, -7.5); ctx.lineTo(2.6, -6.7);
+    ctx.closePath(); ctx.fill();
   } else if (h.building === 'kaserne') {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(-5.7, 3.5, 12.3, 1.2);
@@ -1150,6 +1171,17 @@ function render() {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2.4 / zoom + 1;
     ctx.stroke();
+    const sh = game.hexAt(UI.selectedHex.c, UI.selectedHex.r);
+    if (sh && sh.building === 'turm') {
+      const range = (sh.level || 1) >= 2 ? BAL.turm.range2 : BAL.turm.range;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HEX_SIZE * SQRT3 * (range + 0.55), 0, 7);
+      ctx.strokeStyle = 'rgba(150,190,255,0.6)';
+      ctx.lineWidth = 1.8 / zoom + 0.5;
+      ctx.setLineDash([6, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
   if (UI.buildMode && UI.hoverHex) {
     const p = hexToPixel(UI.hoverHex.c, UI.hoverHex.r);
@@ -1161,6 +1193,17 @@ function render() {
     ctx.setLineDash([5, 4]);
     ctx.stroke();
     ctx.setLineDash([]);
+    // Wehrturm: Wirkungsradius als Ring zeigen
+    if (UI.buildMode === 'turm' && ok) {
+      const range = h.building === 'turm' && (h.level || 1) >= 1 ? BAL.turm.range2 : BAL.turm.range;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HEX_SIZE * SQRT3 * (range + 0.55), 0, 7);
+      ctx.strokeStyle = 'rgba(150,190,255,0.65)';
+      ctx.lineWidth = 1.8 / zoom + 0.5;
+      ctx.setLineDash([6, 5]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   } else if (UI.hoverHex && !UI.selectedDivs.size) {
     const p = hexToPixel(UI.hoverHex.c, UI.hoverHex.r);
     hexPath(ctx, p.x, p.y, HEX_SIZE + 0.5);
@@ -1757,11 +1800,13 @@ function updateTooltip(sx, sy) {
         y.gold ? `+${(((h.building === 'mine' && h.terrain === 'hills') ? y.hillsGold : y.gold) * lvl).toFixed(1)} Gold/Tag` : '',
         y.leute ? `+${(y.leute * lvl).toFixed(2)}k Leute/Tag` : '',
       ].filter(Boolean).join(' · ')
-        : h.building === 'stadt' ? `+${BAL.incomeStadt} Gold · +${BAL.leuteStadt}k Leute/Tag`
+        : h.building === 'stadt' ? `+${BAL.incomeStadt} Gold · +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub`
           : h.building === 'kaserne' ? `bildet ${(BAL.trainPerKaserne * lvl).toFixed(2)}k Leute/Tag zu Soldaten aus`
-            : '';
+            : h.building === 'turm' ? `Miliz umliegender Felder ×${BAL.turm.boost} (Reichweite ${lvl >= 2 ? BAL.turm.range2 : BAL.turm.range})`
+              : '';
       if (eff) html += ` <span class="tt-dim">(${eff})</span>`;
-      if (lvl < BAL.maxLevel && h.building !== 'stadt') html += `<br><span class="tt-dim">nochmal bauen = Ausbau auf Level ${lvl + 1}</span>`;
+      const lvlCap = h.building === 'stadt' ? 1 : h.building === 'turm' ? BAL.turm.maxLevel : BAL.maxLevel;
+      if (lvl < lvlCap) html += `<br><span class="tt-dim">nochmal bauen = Ausbau auf Level ${lvl + 1}${h.building === 'turm' ? ' (doppelte Reichweite)' : ''}</span>`;
     }
     if (h.road) html += ' · 🛣️';
     if (h.terrain !== 'water')
@@ -1782,7 +1827,7 @@ function updateTooltip(sx, sy) {
 }
 
 function buildingName(b) {
-  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', forsterei: '🪓 Forsterei', fischerei: '🎣 Fischerei', kaserne: '🎪 Kaserne' }[b] || b;
+  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', forsterei: '🪓 Forsterei', fischerei: '🎣 Fischerei', kaserne: '🎪 Kaserne', turm: '🗼 Wehrturm' }[b] || b;
 }
 
 /* =========================================================
@@ -1994,6 +2039,8 @@ function panelBauen() {
     ['forsterei', '🪓 Forsterei', `+${y.forsterei.gold} Gold und +${y.forsterei.leute}k Leute/Tag · nur im Wald`],
     ['fischerei', '🎣 Fischerei', `+${y.fischerei.gold} Gold und +${y.fischerei.leute}k Leute/Tag · Küstenwasser neben deinem Land`],
     ['dorf', '🏠 Dorf', `+${y.dorf.leute}k Leute/Tag · überall baubar`],
+    ['stadt', '🏙️ Stadt', `Dorf-Ausbau: +${BAL.incomeStadt} Gold und +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub · Straßen zu nahen Städten wachsen automatisch`],
+    ['turm', '🗼 Wehrturm', `Miliz umliegender Felder ×${BAL.turm.boost} · Ausbau (Level 2) = doppelte Reichweite`],
     ['kaserne', '🎪 Kaserne', `bildet ${BAL.trainPerKaserne}k Leute/Tag zu 🎖️ Soldaten aus (× Level) — Divisionen kosten Gold + Soldaten`],
     ['strasse', '🛣️ Straße', `Bewegung + Versorgung · überbrückt Flüsse — ziehbar!`],
   ];
@@ -2017,9 +2064,9 @@ function panelBauen() {
 }
 
 const TYPE_HINT = {
-  inf: '🛡 hält die Linie · schlägt Kavallerie',
-  kav: '🐎 schnell &amp; hart · schlägt Kanonen',
-  kan: '💥 Belagerung · schlägt Krieger · langsam',
+  inf: '🛡 hält die Linie · schlägt Kavallerie · erobert schwach',
+  kav: '🐎 schnell unterwegs · schlägt Kanonen · erobert ordentlich',
+  kan: '💥 Erobert STARK (2,5×) · schlägt Krieger · langsam unterwegs',
 };
 
 function panelTruppen() {

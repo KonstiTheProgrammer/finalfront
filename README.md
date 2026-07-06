@@ -30,8 +30,10 @@ python -m http.server 4173
   Miliz) und schlagen Krieger — langsam und fragil.
 - **Erobern ohne Reinlaufen (War-of-Dots):** Truppen marschieren nicht ins Neutralland —
   sie stehen daneben und nehmen es ein: das Feld **füllt sich langsam mit der Farbe des
-  Eroberers** (truppenstärke-abhängig). ⛰️ Berge leisten doppelten Widerstand, 🌊 Flussfelder
-  sind zäher und verteidigen sich besser. Idle-Truppen nibbeln Nachbarland von selbst.
+  Eroberers**. Das Tempo hängt von der **Stärke der Armee** ab und vom Typ: 💥 Kanonen
+  erobern stark, sind aber langsam unterwegs · 🐎 Kavallerie ist flott und mittelmäßig ·
+  🛡 Krieger sind normal schnell, aber schwach im Erobern. ⛰️ Berge leisten doppelten
+  Widerstand, 🌊 Flussfelder sind zäher. Idle-Truppen nibbeln Nachbarland von selbst.
 - **⚔ Frontlinien statt Automatik:** **Strg+Klick auf die Grenze** zu einem Nachbarn erzeugt
   eine Front entlang des Grenzverlaufs (wächst mit) · **B** zieht eine eigene Linie über die
   Karte. Zugewiesene Truppen verteilen sich selbst und kämpfen dort; **S** teilt und
@@ -77,7 +79,10 @@ python -m http.server 4173
   Hügel-Bonus) · 🪓 **Forsterei** = viel Gold + etwas Leute (nur Wald) · 🎣 **Fischerei** =
   etwas Gold + viele Leute (Küstenwasser neben eigenem Land) · 🏠 **Dorf** = nur Leute.
   Gleiches Gebäude nochmal bauen = **Level 2/3** (Kosten & Ertrag skalieren). Unbebautes Land
-  arbeitet passiv mit (viel schwächer). 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
+  arbeitet passiv mit (viel schwächer). 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +
+  Versorgungs-Hub, und **Straßen zu nahen Städten wachsen automatisch** (schnellere Truppen).
+  🗼 **Wehrturm**: Miliz umliegender Felder ×1,5, Ausbau = doppelte Reichweite — fällt er,
+  wirkt er für den Eroberer. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
   Divisionen und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
 - **Direkte Kontrolle:** Deine Truppen gehorchen dir — Rechtsklick schickt sie exakt dorthin,
   auch mitten durch Feind- oder Neutralland (sie kämpfen sich durch) und über See (Invasionen!).

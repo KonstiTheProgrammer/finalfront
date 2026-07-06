@@ -37,12 +37,20 @@ const BAL = {
     mountain: { gold: 0.45, leute: 0 },
   },
   // Baukosten (Ausbau auf Level N kostet das N-fache)
-  cost: { strasse: 25, dorf: 60, fischerei: 90, mine: 110, forsterei: 130, kaserne: 150 },
+  cost: { strasse: 25, dorf: 60, fischerei: 90, mine: 110, forsterei: 130, turm: 140, kaserne: 150, stadt: 250 },
+  // Wehrturm: verstärkt die Miliz umliegender eigener Felder.
+  // Level 2 verdoppelt die Reichweite (1 → 2 Felder).
+  turm: { boost: 1.5, range: 1, range2: 2, maxLevel: 2 },
   // Truppendreieck nach EU4-Vorbild:
   //   Krieger schlagen Kavallerie · Kavallerie schlägt Kanonen · Kanonen schlagen Krieger
+  // Erober-Profil (militia = Tempo gegen Miliz, skaliert zusätzlich linear
+  // mit der Stärke der Armee):
+  //   Krieger normal schnell unterwegs, aber SCHWACH im Erobern
+  //   Kavallerie flott unterwegs, mittelmäßig im Erobern
+  //   Kanonen STARK im Erobern, aber langsam unterwegs
   divTypes: {
-    inf: { name: 'Krieger',    gold: 60,  mp: 10, upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 1.0 },
-    kav: { name: 'Kavallerie', gold: 120, mp: 8,  upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 0.9 },
+    inf: { name: 'Krieger',    gold: 60,  mp: 10, upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', gold: 120, mp: 8,  upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
     kan: { name: 'Kanonen',    gold: 180, mp: 6,  upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
@@ -158,6 +166,7 @@ class Game {
     this._frontsDirtyIds = new Set();
     this._damagedHexes = new Set();    // Hexes mit angeschlagener Miliz (für militiaDaily)
     this._kasernen = [];               // Cache: alle Kasernen-Hexes (recalcEconomy)
+    this._tuerme = [];                 // Cache: alle Wehrturm-Hexes (recalcEconomy)
     this._borderCache = null;          // Cache: borderNationsOf pro Tag
     this._hasDead = false;
     this._pockets = [];                // erkannte Kessel (für Anzeige & Meldungen)
@@ -563,6 +572,8 @@ class Game {
     // Gelände verteidigt mit: Berge sind Festungen, Flussfelder zäh
     base *= BAL.terrainResist[h.terrain] || 1;
     if (h.river) base *= BAL.riverResist;
+    // Wehrturm in Reichweite: Miliz der umliegenden Felder verstärkt
+    if (h.owner && this._towerNear(h)) base *= BAL.turm.boost;
     h.resistMax = base;
     if (h.resist <= 0 || h.resist > base) h.resist = base;
   }
@@ -759,6 +770,54 @@ class Game {
     return merged;
   }
 
+  /* Steht ein eigener Wehrturm in Reichweite? (Level 2 = doppelte Reichweite) */
+  _towerNear(h) {
+    for (const t of this._tuerme) {
+      if (t.building !== 'turm' || t.owner !== h.owner) continue;
+      const range = (t.level || 1) >= 2 ? BAL.turm.range2 : BAL.turm.range;
+      if (hexDist(t.c, t.r, h.c, h.r) <= range) return true;
+    }
+    return false;
+  }
+
+  /* Miliz-Obergrenzen rund um einen (neuen/verlorenen) Turm neu setzen */
+  refreshTowerRing(h) {
+    for (let dr = -BAL.turm.range2; dr <= BAL.turm.range2; dr++) {
+      for (let dc = -BAL.turm.range2 - 1; dc <= BAL.turm.range2 + 1; dc++) {
+        const x = this.hexAt(h.c + dc, h.r + dr);
+        if (!x || x.terrain === 'water' || hexDist(h.c, h.r, x.c, x.r) > BAL.turm.range2) continue;
+        this.setResist(x);
+        if (x.resist < x.resistMax) this._damagedHexes.add(x);
+      }
+    }
+  }
+
+  /* Stadt-Ausbau: Straßen wachsen automatisch zu nahen eigenen Städten —
+     schnellere Truppen, bessere Versorgung, Brücken über Flüsse */
+  connectCities(h) {
+    const cities = [];
+    for (const row of this.hexes) for (const x of row) {
+      if (x !== h && x.owner === h.owner && (x.capital || x.building === 'stadt')) cities.push(x);
+    }
+    cities.sort((a, b) => hexDist(h.c, h.r, a.c, a.r) - hexDist(h.c, h.r, b.c, b.r));
+    let built = 0;
+    for (const city of cities) {
+      if (built >= 2 || hexDist(h.c, h.r, city.c, city.r) > 14) break;
+      const path = this.findPath(h.owner, h.c, h.r, city.c, city.r, true);
+      if (!path) continue;
+      for (const [pc, pr] of path) {
+        const ph = this.hexAt(pc, pr);
+        if (ph && ph.owner === h.owner && ph.terrain !== 'water' && !ph.road) {
+          ph.road = true;
+          this.markDirty(pc, pr);
+        }
+      }
+      built++;
+    }
+    if (built) this._supplyDirtyIds.add(h.owner);
+    return built;
+  }
+
   /* ---------- Bauen ----------
      Vier Wirtschaftsgebäude + Kaserne + Straße. Gleiches Gebäude nochmal
      bauen = Ausbau auf Level 2/3 (Kosten & Ertrag skalieren mit dem Level). */
@@ -786,11 +845,15 @@ class Game {
     } else if (what === 'strasse') {
       if (h.terrain === 'water') return 'Nicht im Meer';
       if (h.road) return 'Bereits Straße';
+    } else if (what === 'stadt') {
+      if (h.building === 'stadt') return 'Schon eine Stadt';
+      if (h.building !== 'dorf') return 'Braucht ein Dorf (Ausbau)';
     } else {
       if (!TERRAIN[h.terrain].buildable) return TERRAIN[h.terrain].name + ' — nicht bebaubar';
       if (what === 'forsterei' && h.terrain !== 'forest') return 'Nur im Wald';
       if (h.building === what) {
-        if ((h.level || 1) >= BAL.maxLevel) return `Schon Level ${BAL.maxLevel} (max.)`;
+        const cap = what === 'turm' ? BAL.turm.maxLevel : BAL.maxLevel;
+        if ((h.level || 1) >= cap) return `Schon Level ${cap} (max.)`;
       } else if (h.building) return 'Feld belegt';
     }
     const cost = this.buildCost(h, what);
@@ -803,13 +866,23 @@ class Game {
     if (ok !== true) return ok;
     this.nations[nation].gold -= this.buildCost(h, what);
     if (what === 'strasse') h.road = true;
-    else if (h.building === what) h.level = (h.level || 1) + 1;   // Ausbau
-    else {
+    else if (what === 'stadt') {
+      h.building = 'stadt';
+      h.level = 1;
+      this.setResist(h);
+      const roads = this.connectCities(h);
+      if (nation === this.player && roads)
+        this.addLog(`🏙️ Neue Stadt — Straßen zu ${roads} Nachbarstadt/-städten wachsen von selbst!`);
+    } else if (h.building === what) {
+      h.level = (h.level || 1) + 1;   // Ausbau
+      if (what === 'turm') this.refreshTowerRing(h);   // Level 2: doppelte Reichweite
+    } else {
       h.building = what;
       h.level = 1;
       if (what === 'fischerei') h.owner = nation;   // Küstenwasser gehört jetzt dir
       this.setResist(h);
       if (what === 'kaserne') this._kasernen.push(h);
+      else if (what === 'turm') { this._tuerme.push(h); this.refreshTowerRing(h); }
     }
     this._supplyDirtyIds.add(nation);
     this.economyDirty = true;
@@ -827,6 +900,7 @@ class Game {
       nat.staedte = 0;
     }
     this._kasernen = [];
+    this._tuerme = [];
     for (const row of this.hexes) for (const h of row) {
       if (!h.owner) continue;
       const nat = this.nations[h.owner];
@@ -843,6 +917,8 @@ class Game {
         nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; nat.staedte++;
       } else if (h.building === 'kaserne') {
         this._kasernen.push(h); nat.trainCap += BAL.trainPerKaserne * lvl;
+      } else if (h.building === 'turm') {
+        this._tuerme.push(h);
       } else {
         // Unbebautes Land arbeitet passiv — viel schwächer als jedes Gebäude
         const p = BAL.passive[h.terrain];
@@ -1633,6 +1709,7 @@ class Game {
     h.owner = div.nation;
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
+    if (h.building === 'turm') this.refreshTowerRing(h);   // Turm wirkt jetzt für den Eroberer
     this._damagedHexes.add(h);
     // Die Truppe bleibt STEHEN — das Land wird von der Position aus übernommen
     // (War-of-Dots). War das Feld das Marschziel, ist der Befehl erledigt;
@@ -2035,6 +2112,13 @@ class Game {
       plan.push(['forsterei', forestSpot]);   // Wald zuerst: bester Ertrag
       plan.push(['mine', spotNear(18)]);
     }
+    // Stadt-Ausbau: ab ~40 Provinzen ein Dorf zur Stadt machen (Hub + Auto-Straßen)
+    const staedte = count('stadt');
+    if (staedte < 1 + Math.floor(landN / 40) && nat.leute > 5)
+      plan.push(['stadt', () => own.find(x => x.building === 'dorf') || null]);
+    // Wehrturm: wer angegriffen wird, befestigt das Hinterland
+    if (this.day - nat._lastAttackedDay < 30 && count('turm') < 1 + Math.floor(landN / 70))
+      plan.push(['turm', spotNear(10)]);
     if (leuteGeb < wantLeute) plan.push(['dorf', spotNear(16)]);
     // Reiche Nationen bauen aus: bestehende Gold-Gebäude auf Level 2/3
     if (nat.gold > 420) {

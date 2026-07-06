@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=22">
+  <link rel="stylesheet" href="style.css?v=23">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -131,7 +131,7 @@
       <ul class="help-list">
         <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = alle eigenen Truppen</b>. Ausgewählte Truppen erscheinen in der <b>Einheiten-Leiste unten</b> (Teilen, Vereinen, Front lösen, Auflösen).</li>
         <li><b>Teilen &amp; Vereinen:</b> <b>S</b> teilt ausgewählte Divisionen in zwei Hälften · <b>M</b> vereint ausgewählte Divisionen gleichen Typs</li>
-        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen ziehen exakt dorthin und kämpfen sich durch (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte</b> (werden der Reihe nach abgelaufen). Truppen <b>marschieren nicht ins Neutralland</b> — sie stehen daneben und nehmen es ein: das Feld <b>füllt sich langsam mit deiner Farbe</b> (je stärker die Truppe, desto schneller). ⛰️ Bergfelder sind viel zäher, 🌊 Flussfelder etwas zäher.</li>
+        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen ziehen exakt dorthin und kämpfen sich durch (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte</b> (werden der Reihe nach abgelaufen). Truppen <b>marschieren nicht ins Neutralland</b> — sie stehen daneben und nehmen es ein: das Feld <b>füllt sich langsam mit deiner Farbe</b> — je <b>stärker</b> die Armee, desto schneller. Jeder Typ erobert anders: 💥 <b>Kanonen stark, aber langsam unterwegs</b> · 🐎 <b>Kavallerie flott, mittelmäßig</b> · 🛡 <b>Krieger normal schnell, aber schwach</b>. ⛰️ Bergfelder sind viel zäher, 🌊 Flussfelder etwas zäher.</li>
         <li><b>⚔ Frontlinien:</b> <b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Front entlang des Grenzverlaufs (wächst mit) · <b>B</b> = eigene Linie über die Karte ziehen (hält Stellung). Zugewiesene Truppen <b>verteilen sich selbst</b> auf der Linie und kämpfen dort. <b>S</b> teilt Front-Truppen und verteilt sie neu. Front lösen: Truppen-Menü oder Einheiten-Leiste. <b>🎯 Vormarsch:</b> Front-Badge (Kreis mit Truppenzahl) anklicken, dann ein Ziel auf der Karte — die Front kämpft sich dorthin vor.</li>
         <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
         <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt samt Umland (7 Felder) und einer Armee Krieger</b> — für alle exakt gleich.</li>
@@ -143,6 +143,8 @@
         <li><b>Bauen:</b> Menüleiste links → 🏗️ → Gebäude wählen → auf die Karte klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
         <li><b>Wirtschaft — 4 Gebäude mit klaren Rollen:</b> ⛏️ <b>Mine</b> = Gold (überall, Hügel-Bonus) · 🪓 <b>Forsterei</b> = viel Gold + etwas Leute (nur Wald) · 🎣 <b>Fischerei</b> = etwas Gold + viele Leute (Küstenwasser neben deinem Land) · 🏠 <b>Dorf</b> = nur Leute. Dazu: 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> (Divisionen kosten Gold + Soldaten) · 🛣️ Straßen = Bewegung + Versorgung.</li>
         <li><b>Ausbau-Level:</b> Gleiches Gebäude nochmal aufs Feld bauen = <b>Level 2/3</b> (goldene Punkte am Gebäude) — kostet das 2-/3-fache, bringt das Doppelte/Dreifache. Auch Kasernen sind ausbaubar.</li>
+        <li><b>🏙️ Stadt (Dorf-Ausbau):</b> Ein Dorf lässt sich zur Stadt ausbauen — Gold + Leute + Versorgungs-Hub, und <b>Straßen zu nahen Städten wachsen automatisch</b> (schnellere Truppen, Brücken über Flüsse).</li>
+        <li><b>🗼 Wehrturm:</b> Verstärkt die <b>Miliz aller umliegenden eigenen Felder ×1,5</b> — dein Land fällt langsamer. Ausbau (Level 2) = <b>doppelte Reichweite</b>. Fällt der Turm, wirkt er für den Eroberer!</li>
         <li><b>Passives Land:</b> Unbebautes eigenes Land arbeitet mit — Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute. Gebäude sind um ein Vielfaches stärker.</li>
         <li><b>📚 Armee-Stapel:</b> Mehrere Armeen können auf einem Feld stehen (z. B. nach dem Teilen) — der Stapel zeigt oben rechts seine Anzahl. Klick aufs Feld wählt alle; in der Einheiten-Leiste unten wählst du sie einzeln an.</li>
         <li><b>Gefechtsprognose:</b> Über laufenden Kämpfen und beim Zeigen auf eine feindliche Armee (mit eigener Auswahl) erscheint die <b>HOI-Bubble</b>: Grün = du gewinnst, Gelb = knapp, Rot = Finger weg. RPS-Dreieck, Gelände, Fluss, Organisation und Kessel sind eingerechnet.</li>
@@ -156,10 +158,10 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=22"></script>
-  <script src="js/map.js?v=22"></script>
-  <script src="js/game.js?v=22"></script>
-  <script src="js/ui.js?v=22"></script>
-  <script src="js/main.js?v=22"></script>
+  <script src="js/mapdata.js?v=23"></script>
+  <script src="js/map.js?v=23"></script>
+  <script src="js/game.js?v=23"></script>
+  <script src="js/ui.js?v=23"></script>
+  <script src="js/main.js?v=23"></script>
 </body>
 </html>
