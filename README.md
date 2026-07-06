@@ -17,7 +17,24 @@ python -m http.server 4173
 # dann http://localhost:4173 öffnen
 ```
 
-## Spielprinzip (Free-for-All wie OpenFront)
+## Spielprinzip (5-Spieler-Match, War-of-Dots-Stil)
+
+- **5 Spieler, eine kompakte Karte (72×80):** In der **Startphase (15 s)** wählst du deinen
+  Spawn frei per Klick — alle sehen einander, Umziehen ist erlaubt. Jeder beginnt mit
+  **einer Stadt und einer Armee Krieger**.
+- **Truppendreieck (EU4-Vorbild):** 🛡 Krieger halten die Linie und schlagen Kavallerie ·
+  🐎 Kavallerie ist schnell/hart und schlägt Kanonen · 💥 Kanonen belagern (2,5× gegen
+  Miliz) und schlagen Krieger — langsam und fragil.
+- **Langsames Erobern:** Jedes Feld ist ein kleiner Kampf (Multiplayer-Pacing). Truppen
+  erobern **freies Nachbarland von selbst** (zufälliges Feld, Warteschlangen-Gefühl).
+- **⚔ Frontlinien statt Automatik:** **Strg+Klick auf die Grenze** zu einem Nachbarn erzeugt
+  eine Front entlang des Grenzverlaufs (wächst mit) · **B** zieht eine eigene Linie über die
+  Karte. Zugewiesene Truppen verteilen sich selbst und kämpfen dort; **S** teilt und
+  verteilt neu, **M** vereint.
+- **Sieg:** Wer **3 der 5 Hauptstädte** hält, startet den 50-Tage-Countdown. Nach 1000 Tagen
+  gewinnt sonst die stärkste Macht. Eine Runde ≈ 20–30 Minuten.
+
+### Weitere Systeme
 
 - **Echte Europakarte:** Die Karte wird aus **realen Geodaten** erzeugt — Küstenlinien von
   Natural Earth (1:50m, Public Domain) und echten Höhendaten (Copernicus-DEM via

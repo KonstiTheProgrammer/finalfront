@@ -100,7 +100,9 @@ function leftUIW() {
 }
 
 function fitZoom() {
-  return Math.min((window.innerWidth - leftUIW() - 20) / WORLD_W, (window.innerHeight - 60) / WORLD_H);
+  // Untergrenze schützt vor innerWidth=0 (verdeckter Tab) → nie negativer Zoom
+  return Math.max(0.25,
+    Math.min((window.innerWidth - leftUIW() - 20) / WORLD_W, (window.innerHeight - 60) / WORLD_H));
 }
 
 function fitView() {
@@ -117,6 +119,7 @@ function centerOn(c, r, zoom) {
 }
 
 function camClamp() {
+  if (!(UI.cam.zoom > 0.05)) UI.cam.zoom = fitZoom();   // kaputte Zoom-Werte heilen
   const m = 260 / UI.cam.zoom;
   const viewW = window.innerWidth / UI.cam.zoom;
   const viewH = window.innerHeight / UI.cam.zoom;
@@ -548,7 +551,7 @@ function computeLabels() {
 }
 
 /* ---------- Divisions-Sprites ---------- */
-const TYPE_STRIPE = { inf: null, gar: '#ffd75e', pz: '#7fa8d8', art: '#d87f7f' };
+const TYPE_STRIPE = { inf: null, kav: '#7fa8d8', kan: '#d87f7f' };
 
 function drawDivision(ctx, d, zoom) {
   const t = BAL.divTypes[d.type];
@@ -588,20 +591,22 @@ function drawDivision(ctx, d, zoom) {
   ctx.strokeStyle = 'rgba(255,255,255,0.92)';
   ctx.lineWidth = 1.05;
   const ix = x + (TYPE_STRIPE[d.type] ? 3.1 : 1.9), iy = y + 1.9, iw = w - (TYPE_STRIPE[d.type] ? 5 : 3.8), ih = hh - 3.8;
-  if (d.type === 'inf' || d.type === 'gar') {
+  if (d.type === 'inf') {
+    // Krieger: gekreuzte Klingen
     ctx.beginPath();
     ctx.moveTo(ix, iy); ctx.lineTo(ix + iw, iy + ih);
     ctx.moveTo(ix + iw, iy); ctx.lineTo(ix, iy + ih);
     ctx.stroke();
-    if (d.type === 'gar') {
-      ctx.fillStyle = '#ffd75e';
-      ctx.beginPath(); ctx.arc(ix + iw / 2, iy + ih / 2, 1.5, 0, 7); ctx.fill();
-    }
-  } else if (d.type === 'pz') {
+  } else if (d.type === 'kav') {
+    // Kavallerie: Flanken-Schrägstrich mit Pfeilspitze
     ctx.beginPath();
-    ctx.ellipse(ix + iw / 2, iy + ih / 2, iw * 0.42, ih * 0.4, 0, 0, 7);
+    ctx.moveTo(ix, iy + ih); ctx.lineTo(ix + iw, iy);
     ctx.stroke();
-  } else if (d.type === 'art') {
+    ctx.beginPath();
+    ctx.moveTo(ix + iw - 3, iy); ctx.lineTo(ix + iw, iy); ctx.lineTo(ix + iw, iy + 3);
+    ctx.stroke();
+  } else if (d.type === 'kan') {
+    // Kanonen: Kugel + Rohr
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.beginPath(); ctx.arc(ix + iw / 2, iy + ih / 2 + 0.5, 1.6, 0, 7); ctx.fill();
     ctx.beginPath();
@@ -744,37 +749,82 @@ function render() {
     }
   }
 
-  // Frontlinien der eigenen Armeen
-  const nat = game.nations[game.player];
-  if (nat) for (const army of nat.armies) {
-    if (!army.frontHexes.length) continue;
-    const isSel = UI.selectedArmy === army.id;
-    const isExpand = army.target === 'EXPAND';
+  // Frontlinien des Spielers (War-of-Dots-Stil): Linie + Truppen-Badge
+  for (const f of game.fronts) {
+    if (f.owner !== game.player || !f.hexes.length) continue;
     const w = Math.max(2.5, 3.5 / zoom);
-    // Linie bei großen Sprüngen abreißen — keine Querverbinder durchs Reich
-    const traceFront = () => {
+    const trace = () => {
       ctx.beginPath();
       let prev = null;
-      for (const h of army.frontHexes) {
+      for (const h of f.hexes) {
         const p = hexToPixel(h.c, h.r);
         if (!prev || hexDist(h.c, h.r, prev.c, prev.r) > 3) ctx.moveTo(p.x, p.y);
         else ctx.lineTo(p.x, p.y);
         prev = h;
       }
     };
-    ctx.strokeStyle = isExpand ? 'rgba(110,230,140,0.28)'
-      : army.mode === 'attack' ? 'rgba(255,70,45,0.28)' : 'rgba(255,200,60,0.25)';
+    const isBorder = f.kind === 'border';
+    ctx.strokeStyle = isBorder ? 'rgba(255,70,45,0.28)' : 'rgba(255,200,60,0.26)';
     ctx.lineWidth = w * 2.6;
     ctx.lineJoin = 'round';
-    traceFront();
+    trace();
     ctx.stroke();
-    ctx.strokeStyle = isExpand ? 'rgba(120,240,150,0.95)'
-      : army.mode === 'attack' ? 'rgba(255,86,58,0.95)' : 'rgba(255,205,70,0.9)';
-    ctx.lineWidth = isSel ? w * 1.4 : w * 0.8;
-    ctx.setLineDash(isSel ? [] : [7, 5]);
-    traceFront();
+    ctx.strokeStyle = isBorder ? 'rgba(255,86,58,0.95)' : 'rgba(255,205,70,0.92)';
+    ctx.lineWidth = w * 0.9;
+    ctx.setLineDash([7, 5]);
+    trace();
     ctx.stroke();
     ctx.setLineDash([]);
+    // Badge: Anzahl der Fronttruppen an der Linienmitte
+    const mid = f.hexes[Math.floor(f.hexes.length / 2)];
+    const mp = hexToPixel(mid.c, mid.r);
+    const n = game.frontDivisions(f).length;
+    const rad = 6.5 / Math.min(zoom, 1.6) + 2;
+    ctx.fillStyle = isBorder ? 'rgba(120,26,18,0.94)' : 'rgba(96,72,10,0.94)';
+    ctx.strokeStyle = isBorder ? '#ff8a70' : '#ffd75e';
+    ctx.lineWidth = 1.4 / zoom + 0.5;
+    ctx.beginPath(); ctx.arc(mp.x, mp.y - HEX_SIZE * 0.9, rad, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff2e0';
+    ctx.font = `bold ${9 / Math.min(zoom, 1.6) + 3}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(n), mp.x, mp.y - HEX_SIZE * 0.9 + 0.5);
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // Vorschau der gezogenen Frontlinie (B-Modus)
+  if (UI.frontDraw && UI.frontDraw.path.length) {
+    ctx.strokeStyle = 'rgba(255,215,94,0.9)';
+    ctx.lineWidth = 2.4 / zoom + 1;
+    ctx.setLineDash([6, 5]);
+    ctx.beginPath();
+    UI.frontDraw.path.forEach(([pc, pr], i) => {
+      const p = hexToPixel(pc, pr);
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Spawn-Phase: Startplätze aller Spieler markieren
+  if (game.spawnPhase) {
+    const pulse = 0.5 + 0.5 * Math.sin(now / 300);
+    for (const [id, natSp] of Object.entries(game.nations)) {
+      if (!natSp.capital) continue;
+      const p = hexToPixel(...natSp.capital);
+      const mine = id === game.player;
+      ctx.strokeStyle = mine ? `rgba(255,215,94,${0.6 + 0.4 * pulse})` : NATION_DEFS[id].color;
+      ctx.lineWidth = (mine ? 3 : 2) / zoom + 1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, HEX_SIZE * (1.3 + (mine ? 0.25 * pulse : 0)), 0, 7); ctx.stroke();
+      ctx.font = `800 ${11 / Math.min(zoom, 1.6) + 3}px 'Segoe UI', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.lineWidth = 3 / zoom + 1;
+      ctx.strokeStyle = 'rgba(10,14,20,0.9)';
+      ctx.fillStyle = mine ? '#ffd75e' : '#f0ece0';
+      const label = mine ? '★ DU' : NATION_DEFS[id].name;
+      ctx.strokeText(label, p.x, p.y - HEX_SIZE * 1.8);
+      ctx.fillText(label, p.x, p.y - HEX_SIZE * 1.8);
+    }
   }
 
   // Effekte
@@ -1061,7 +1111,14 @@ function bindInput() {
       return;
     }
     if (e.button !== 0) return;
-    if (UI.buildMode) {
+    if (UI.frontDraw) {
+      // B-Modus: Linie aufnehmen
+      const w = screenToWorld(e.clientX, e.clientY);
+      const hx = pixelToHex(w.x, w.y);
+      if (hx) UI.frontDraw.path = [[hx.c, hx.r]];
+      UI.frontDraw.active = true;
+      UI.drag = { frontDraw: true };
+    } else if (UI.buildMode) {
       paintBuild(e.clientX, e.clientY);
       UI.drag = { paint: true };
     } else {
@@ -1073,6 +1130,15 @@ function bindInput() {
   window.addEventListener('mousemove', e => {
     if (UI.boxSel) {
       UI.boxSel.x1 = e.clientX; UI.boxSel.y1 = e.clientY;
+    } else if (UI.drag && UI.drag.frontDraw && UI.frontDraw) {
+      if (e.buttons & 1) {
+        const w = screenToWorld(e.clientX, e.clientY);
+        const hx = pixelToHex(w.x, w.y);
+        if (hx) {
+          const last = UI.frontDraw.path[UI.frontDraw.path.length - 1];
+          if (!last || last[0] !== hx.c || last[1] !== hx.r) UI.frontDraw.path.push([hx.c, hx.r]);
+        }
+      }
     } else if (UI.drag && UI.drag.paint) {
       if (e.buttons & 1) paintBuild(e.clientX, e.clientY);
     } else if (UI.drag && UI.drag.pan) {
@@ -1093,6 +1159,7 @@ function bindInput() {
   window.addEventListener('mouseup', e => {
     UI.canvas.style.cursor = '';
     if (e.button === 0) {
+      if (UI.drag && UI.drag.frontDraw) { UI.drag = null; finishFrontDraw(); return; }
       if (UI.drag && UI.drag.paint) { UI.drag = null; return; }
       if (UI.boxSel) {
         const b = UI.boxSel;
@@ -1136,13 +1203,24 @@ function bindInput() {
     if (e.key === '-') zoomStep(1 / 1.25);
     if (e.code === 'Home') centerOn(...game.nations[game.player].capital, Math.max(UI.cam.zoom, 1.5));
     if (e.key === 'v' || e.key === 'V') { UI.supplyOverlay = !UI.supplyOverlay; updateTopbar(); }
-    if (e.code === 'KeyB') {
-      UI.activeTab = UI.activeTab === 'bauen' ? null : 'bauen';
-      refreshPanel();
+    if (e.code === 'KeyB' && !game.spawnPhase) {
+      // B = Frontlinien-Zeichenmodus (Linie über die Karte ziehen)
+      if (UI.frontDraw) {
+        UI.frontDraw = null;
+        UI.canvas.style.cursor = '';
+      } else {
+        UI.buildMode = null;
+        UI.frontDraw = { path: [], active: false };
+        UI.canvas.style.cursor = 'crosshair';
+        pushToast('📏 Frontlinie: mit gedrückter Maustaste eine Linie über die Karte ziehen (Esc bricht ab).');
+      }
     }
     if (e.code === 'Escape') {
-      // Kaskade wie in HOI4: erst Baumodus, dann Auswahl, dann Panel schließen
-      if (UI.buildMode) {
+      // Kaskade: erst Zeichenmodus/Baumodus, dann Auswahl, dann Panel schließen
+      if (UI.frontDraw) {
+        UI.frontDraw = null;
+        UI.canvas.style.cursor = '';
+      } else if (UI.buildMode) {
         UI.buildMode = null;
       } else if (UI.selectedDivs.size || UI.selectedHex) {
         UI.selectedDivs.clear();
@@ -1242,13 +1320,8 @@ function onRightTap(sx, sy, alt, shift) {
       pushToast(`⏳ Schonfrist: Angriffe auf Nationen erst in ${BAL.graceDays - game.day} Tagen.`);
       return;
     }
-    if (alt && !shift && h.terrain !== 'water' && !ownOrAllied) {
-      // Alt+Rechtsklick = Automatik: Truppen der Front zuweisen
-      assignSelectionToFront(h.owner === null ? 'EXPAND' : h.owner);
-    } else {
-      // Standard: direkter Marsch-/Angriffsbefehl · Shift = Wegpunkt anhängen
-      groupMoveOrder(hx.c, hx.r, shift);
-    }
+    // Direkter Marsch-/Angriffsbefehl · Shift = Wegpunkt anhängen
+    groupMoveOrder(hx.c, hx.r, shift);
     return;
   }
   // Ohne Auswahl: Rechtsklick auf fremdes Land = Allianz anbieten
@@ -1262,36 +1335,92 @@ function onRightTap(sx, sy, alt, shift) {
   }
 }
 
-function assignSelectionToFront(key) {
+/* Strg+Klick auf die Grenze: Frontlinie gegen den Nachbarn erstellen und
+   die aktuelle Auswahl darauf verteilen (War-of-Dots-Geste) */
+function frontlineClick(hx) {
+  const h = game.hexAt(hx.c, hx.r);
+  if (!h || h.terrain === 'water') return false;
+  let other = null;
+  const check = hex => {
+    if (hex && hex.owner && hex.owner !== game.player && game.nations[hex.owner].alive) other = hex.owner;
+  };
+  if (h.owner && h.owner !== game.player) check(h);
+  if (!other) for (const [nc, nr] of neighborsOf(hx.c, hx.r)) check(game.hexAt(nc, nr));
+  if (!other) return false;
+  if (game.allied(game.player, other)) {
+    pushToast(`🤝 ${game.nationName(other)} ist dein Verbündeter — keine Front nötig.`);
+    return true;
+  }
   const ids = playerSelection().map(d => d.id);
-  const n = game.issue('assignFront', ids, key) || 0;
-  pushToast(key === 'EXPAND'
-    ? `🌍 ${n} Division(en) expandieren automatisch ins Neutralland!`
-    : `⚔️ ${n} Division(en) automatisch an die Front gegen ${game.nationName(key)}!`);
+  const res = game.issue('frontBorder', other, ids);
+  if (res) {
+    pushToast(res.n
+      ? `⚔️ Frontlinie gegen ${game.nationName(other)} — ${res.n} Truppen verteilen sich!`
+      : `⚔️ Frontlinie gegen ${game.nationName(other)} erstellt — Truppen wählen und erneut Strg+Klicken.`);
+    refreshPanel();
+  }
+  return true;
+}
+
+/* B-Modus: eigene Frontlinie über die Karte ziehen */
+function finishFrontDraw() {
+  const draw = UI.frontDraw;
+  UI.frontDraw = null;
+  UI.canvas.style.cursor = '';
+  if (!draw || draw.path.length < 2) {
+    if (draw) pushToast('📏 Linie zu kurz — B drücken und über die Karte ziehen.');
+    refreshPanel();
+    return;
+  }
+  const ids = playerSelection().map(d => d.id);
+  const res = game.issue('frontLine', draw.path, ids);
+  if (res) {
+    pushToast(res.n
+      ? `📏 Linie steht — ${res.n} Truppen verteilen sich darauf.`
+      : '📏 Linie steht — Truppen auswählen und im Truppen-Menü zuweisen (👥 → Strg+Klick).');
+  } else {
+    pushToast('⚠ Die Linie muss über Land verlaufen.');
+  }
   refreshPanel();
 }
 
 function handleClick(sx, sy, additive) {
   const w = screenToWorld(sx, sy);
+
+  // Spawn-Phase: Klick = Startplatz verlegen
+  if (game.spawnPhase && !game._replayCmds) {
+    const hx = pixelToHex(w.x, w.y);
+    if (hx) {
+      const ok = game.issue('spawn', hx.c, hx.r);
+      if (ok) pushToast('📍 Startplatz verlegt — du kannst weiter umziehen, bis die Zeit abläuft.');
+      else pushToast('⚠ Hier geht es nicht: Land wählen, nicht zu nah an anderen Spielern.');
+    }
+    return;
+  }
+
   let clickedDiv = null, bestD = (14 / Math.max(UI.cam.zoom, 0.6)) ** 2 + 60;
   for (const d of game.divisions) {
     if (d.dead) continue;
     const dist = (d.x - w.x) ** 2 + (d.y - w.y) ** 2;
     if (dist < bestD) { bestD = dist; clickedDiv = d; }
   }
+
+  // Strg+Klick auf die Karte (keine Truppe getroffen): Frontlinie an der Grenze
+  if (!clickedDiv && additive && !game._replayCmds) {
+    const hx = pixelToHex(w.x, w.y);
+    if (hx && frontlineClick(hx)) return;
+  }
+
   if (clickedDiv) {
     const now = performance.now();
     const isDouble = !additive && UI._lastClickDiv === clickedDiv.id && now - (UI._lastClickT || 0) < 350;
     UI._lastClickDiv = clickedDiv.id;
     UI._lastClickT = now;
-    if (isDouble && clickedDiv.nation === game.player && clickedDiv.army != null) {
-      // Doppelklick: ganze Armee auswählen
-      const a = game.armyById(game.player, clickedDiv.army);
-      if (a) {
-        UI.selectedDivs.clear();
-        game.armyDivisions(a).forEach(d => UI.selectedDivs.add(d.id));
-        pushToast(`👥 ${a.name}: ${UI.selectedDivs.size} Divisionen ausgewählt.`);
-      }
+    if (isDouble && clickedDiv.nation === game.player) {
+      // Doppelklick: alle eigenen Truppen auswählen
+      UI.selectedDivs.clear();
+      game.divisionsOf(game.player).forEach(d => UI.selectedDivs.add(d.id));
+      pushToast(`👥 Alle ${UI.selectedDivs.size} Truppen ausgewählt.`);
     } else if (additive && clickedDiv.nation === game.player) {
       // Strg/Shift: hinzufügen bzw. wieder abwählen
       if (UI.selectedDivs.has(clickedDiv.id)) UI.selectedDivs.delete(clickedDiv.id);
@@ -1329,7 +1458,7 @@ function finishBoxSelect(b, shift) {
     if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) UI.selectedDivs.add(d.id);
   }
   if (UI.selectedDivs.size) {
-    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick = Marsch · Shift = Wegpunkte · Alt = Front-Automatik`);
+    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick = Marsch · Strg+Klick auf Grenze = Front · S/M = teilen/vereinen`);
   }
   updateUnitbar();
 }
@@ -1476,6 +1605,7 @@ function bindPanels() {
   });
   document.getElementById('btn-load').addEventListener('click', () => loadNewestSave());
   document.getElementById('btn-restart').addEventListener('click', () => showStartScreen());
+  document.getElementById('spawn-ready').addEventListener('click', finishSpawnPhase);
   document.getElementById('btn-help').addEventListener('click', () => {
     document.getElementById('help').classList.toggle('hidden');
   });
@@ -1556,7 +1686,7 @@ function updateTopbar() {
 
 const PANEL_TITLES = {
   bauen: '🏗 Bauen',
-  armeen: '🪖 Armeen',
+  armeen: '🪖 Truppen',
   nationen: '🌍 Nationen & Diplomatie',
   info: 'ℹ️ Info',
 };
@@ -1601,7 +1731,7 @@ function refreshPanel() {
   document.getElementById('panel-title').textContent = PANEL_TITLES[UI.activeTab] || '';
   const el = document.getElementById('panel-content');
   if (UI.activeTab === 'bauen') el.innerHTML = panelBauen();
-  else if (UI.activeTab === 'armeen') el.innerHTML = panelArmeen();
+  else if (UI.activeTab === 'armeen') el.innerHTML = panelTruppen();
   else if (UI.activeTab === 'nationen') el.innerHTML = panelNationen();
   else el.innerHTML = panelInfo();
   bindPanelActions(el);
@@ -1635,54 +1765,46 @@ function panelBauen() {
   return html;
 }
 
-function panelArmeen() {
-  const nat = game.nations[game.player];
-  const borders = game.borderNationsOf(game.player).filter(b => game.hostile(game.player, b));
-  let html = `<p class="hint small">Du steuerst deine Truppen selbst: auswählen (Links-Ziehen), <b>Rechtsklick = Marschbefehl</b>. Armeen sind die optionale Automatik: <b>Alt+Rechtsklick</b> auf Feind-/Neutralland weist Truppen einer Front zu — sie verteilen sich dann selbst.</p>`;
-  for (const a of nat.armies) {
-    const divs = game.armyDivisions(a);
-    const sel = UI.selectedArmy === a.id;
-    let targetOpts = `<option value="EXPAND" ${a.target === 'EXPAND' ? 'selected' : ''}>🌍 Expansion (Neutralland)</option>
-      <option value="ALL" ${a.target === 'ALL' ? 'selected' : ''}>Gesamtfront (alle Nachbarn)</option>
-      <option value="RESERVE" ${a.target === 'RESERVE' ? 'selected' : ''}>Reserve (Hauptstadt)</option>`;
-    const opts = new Set(['EXPAND', 'ALL', 'RESERVE', ...borders]);
-    if (!opts.has(a.target)) targetOpts += `<option value="${a.target}" selected>Front: ${game.nationName(a.target)}</option>`;
-    for (const e of borders)
-      targetOpts += `<option value="${e}" ${a.target === e ? 'selected' : ''}>Front: ${game.nationName(e)}</option>`;
-    const avgOrg = divs.length ? divs.reduce((s, d) => s + d.org / BAL.divTypes[d.type].maxOrg, 0) / divs.length : 0;
-    const avgMoral = divs.length ? divs.reduce((s, d) => s + d.moral, 0) / divs.length : 0;
-    const typeCount = {};
-    divs.forEach(d => typeCount[d.type] = (typeCount[d.type] || 0) + 1);
-    const typeStr = Object.entries(typeCount).map(([t, n]) => `${n}×${BAL.divTypes[t].name.slice(0, 4)}`).join(' ');
-    html += `<div class="army ${sel ? 'sel' : ''}" data-army="${a.id}">
-      <div class="army-head">
-        <b class="army-name" data-rename="${a.id}" title="Klicken zum Umbenennen">${a.name} ✏</b>
-        <span>${divs.length} Div. ${nat.armies.length > 1 ? `<button class="mini danger" data-delarmy="${a.id}" title="Armee auflösen">✖</button>` : ''}</span>
-      </div>
-      <div class="bar"><i style="width:${avgOrg * 100}%;background:#e0b34a"></i></div>
-      <div class="small">${typeStr || '—'} · Ø Moral ${Math.round(avgMoral * 100)} % · Front: ${a.frontHexes.length} Felder</div>
-      <div class="army-controls">
-        <select data-target="${a.id}">${targetOpts}</select>
-        <div class="mode-btns">
-          <button data-mode="defend" data-army-id="${a.id}" class="${a.mode === 'defend' ? 'active' : ''}">🛡 Verteidigen</button>
-          <button data-mode="attack" data-army-id="${a.id}" class="${a.mode === 'attack' ? 'active' : ''}">⚔ Angriff!</button>
-        </div>
-        <div class="row-btns">
-          <button data-selarmy="${a.id}">👥 Auswählen</button>
-          <button data-gotofront="${a.id}">🎯 Zur Front</button>
-        </div>
-        <div class="train-grid">
-          ${['inf', 'gar', 'pz', 'art'].map(ty => {
-            const t = BAL.divTypes[ty];
-            return `<div class="train-row"><span>${t.name}<br><span class="small">${t.gold} G · ${t.mp}k 🎖️</span></span>
-              <span><button data-train="${ty}" data-n="1" data-army-id="${a.id}">+1</button>
-              <button data-train="${ty}" data-n="5" data-army-id="${a.id}">+5</button></span></div>`;
-          }).join('')}
-        </div>
-      </div>
+const TYPE_HINT = {
+  inf: '🛡 hält die Linie · schlägt Kavallerie',
+  kav: '🐎 schnell &amp; hart · schlägt Kanonen',
+  kan: '💥 Belagerung · schlägt Krieger · langsam',
+};
+
+function panelTruppen() {
+  const myDivs = game.divisionsOf(game.player);
+  const frei = myDivs.filter(d => d.front == null).length;
+  let html = `<p class="hint small"><b>Rechtsklick</b> = Marsch · Truppen erobern freies Nachbarland von selbst ·
+    <b>Strg+Klick auf eine Grenze</b> = Frontlinie gegen den Nachbarn · <b>B</b> = eigene Linie ziehen ·
+    <b>S/M</b> = teilen/vereinen.</p>
+    <h3>Ausbilden</h3>
+    <div class="train-grid">
+    ${['inf', 'kav', 'kan'].map(ty => {
+      const t = BAL.divTypes[ty];
+      return `<div class="train-row"><span><b>${t.name}</b><br><span class="small">${TYPE_HINT[ty]}<br>${t.gold} G · ${t.mp}k 🎖️</span></span>
+        <span><button data-train="${ty}" data-n="1">+1</button>
+        <button data-train="${ty}" data-n="3">+3</button></span></div>`;
+    }).join('')}
+    </div>
+    <hr><h3>Frontlinien</h3>`;
+  const myFronts = game.fronts.filter(f => f.owner === game.player);
+  if (!myFronts.length) {
+    html += `<p class="hint small">Noch keine. Truppen auswählen, dann <b>Strg+Klick</b> auf deine Grenze zu
+      einem Nachbarn — oder <b>B</b> drücken und eine Linie über die Karte ziehen.</p>`;
+  }
+  for (const f of myFronts) {
+    const divs = game.frontDivisions(f);
+    const label = f.kind === 'border'
+      ? `⚔ Front gegen ${game.nationName(f.target)}`
+      : `📏 Linie ${f.id}`;
+    html += `<div class="front-row">
+      <div class="diplo-info"><b>${label}</b>
+        <span class="small">${divs.length} Truppen · ${f.hexes.length} Felder</span></div>
+      <button class="mini" data-selfront="${f.id}" title="Truppen dieser Front auswählen">👥</button>
+      <button class="mini danger" data-delfront="${f.id}" title="Front auflösen — Truppen werden frei">✖</button>
     </div>`;
   }
-  html += `<button id="new-army" class="wide">➕ Neue Armee aufstellen</button>`;
+  html += `<p class="small" style="margin-top:8px">Frei: <b>${frei}</b> von ${myDivs.length} Truppen ohne Frontdienst.</p>`;
   return html;
 }
 
@@ -1750,64 +1872,29 @@ function bindPanelActions(el) {
     game.issue('unally', b.dataset.unally);
     refreshPanel();
   }));
-  el.querySelectorAll('[data-target]').forEach(s => s.addEventListener('change', () => {
-    game.issue('armyTarget', +s.dataset.target, s.value);
-  }));
-  el.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
-    game.issue('armyMode', +b.dataset.armyId, b.dataset.mode);
-    refreshPanel();
-  }));
   el.querySelectorAll('[data-train]').forEach(b => b.addEventListener('click', () => {
-    const n = game.issue('train', b.dataset.train, +b.dataset.n, +b.dataset.armyId);
+    const n = game.issue('train', b.dataset.train, +b.dataset.n);
     if (!n) pushToast(game._replayCmds ? '🎬 Replay — Eingaben gesperrt.' : '⚠ Zu wenig Gold oder 🎖️ Soldaten — Kasernen bilden Leute zu Soldaten aus.');
-    else pushToast(`🪖 ${n} ${BAL.divTypes[b.dataset.train].name}division(en) aufgestellt — warten an der Kaserne auf deine Befehle.`);
+    else pushToast(`🪖 ${n}× ${BAL.divTypes[b.dataset.train].name} aufgestellt — warten auf deine Befehle.`);
     refreshPanel(); updateTopbar();
   }));
-  el.querySelectorAll('[data-selarmy]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation();
-    const a = game.armyById(game.player, +b.dataset.selarmy);
+  el.querySelectorAll('[data-selfront]').forEach(b => b.addEventListener('click', () => {
+    const f = game.frontById(+b.dataset.selfront);
+    if (!f) return;
     UI.selectedDivs.clear();
-    game.armyDivisions(a).forEach(d => UI.selectedDivs.add(d.id));
-    pushToast(`👥 ${UI.selectedDivs.size} Divisionen von ${a.name} ausgewählt.`);
-  }));
-  el.querySelectorAll('[data-gotofront]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation();
-    const a = game.armyById(game.player, +b.dataset.gotofront);
-    if (a && a.frontHexes.length) {
-      const mid = a.frontHexes[Math.floor(a.frontHexes.length / 2)];
+    game.frontDivisions(f).forEach(d => UI.selectedDivs.add(d.id));
+    if (f.hexes.length) {
+      const mid = f.hexes[Math.floor(f.hexes.length / 2)];
       centerOn(mid.c, mid.r, Math.max(UI.cam.zoom, 1.6));
-    } else {
-      centerOn(...game.nations[game.player].capital, Math.max(UI.cam.zoom, 1.4));
     }
+    updateUnitbar();
+    pushToast(`👥 ${UI.selectedDivs.size} Truppen der Front ausgewählt.`);
   }));
-  el.querySelectorAll('[data-delarmy]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation();
-    if (game.issue('disbandArmy', +b.dataset.delarmy)) refreshPanel();
-  }));
-  el.querySelectorAll('[data-rename]').forEach(b => b.addEventListener('click', e => {
-    e.stopPropagation();
-    const a = game.armyById(game.player, +b.dataset.rename);
-    if (!a) return;
-    const input = document.createElement('input');
-    input.value = a.name;
-    input.maxLength = 24;
-    b.replaceWith(input);
-    input.focus(); input.select();
-    const done = () => {
-      const name = input.value.trim();
-      if (name && name !== a.name) game.issue('renameArmy', a.id, name);
-      refreshPanel();
-    };
-    input.addEventListener('blur', done);
-    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') input.blur(); });
-  }));
-  el.querySelectorAll('.army').forEach(div => div.addEventListener('click', e => {
-    if (e.target.closest('button,select,input,.army-name')) return;
-    UI.selectedArmy = UI.selectedArmy === +div.dataset.army ? null : +div.dataset.army;
+  el.querySelectorAll('[data-delfront]').forEach(b => b.addEventListener('click', () => {
+    game.issue('frontRemove', +b.dataset.delfront);
+    pushToast('Front aufgelöst — die Truppen sind wieder frei.');
     refreshPanel();
   }));
-  const na = el.querySelector('#new-army');
-  if (na) na.addEventListener('click', () => { game.issue('createArmy'); refreshPanel(); });
 }
 
 /* =========================================================
@@ -1835,14 +1922,18 @@ function updateUnitbar() {
     const moralIcon = d.moral >= 1.05 ? '😄' : d.moral >= 0.85 ? '🙂' : d.moral >= 0.65 ? '😐' : '😟';
     const supWarn = sup.level < 0.5
       ? ` · <span style="color:#e0a34a">⚠️ Nachschub ${Math.round(sup.level * 100)} %</span>` : '';
-    head.innerHTML = `<b>${d.name}</b><span class="small"> ${army ? army.name : ''} · ${d.manual ? '🎮 dein Befehl' : '🤖 Automatik'}${wp}</span>
+    const front = d.front != null ? game.frontById(d.front) : null;
+    const status = front
+      ? `⚔ Frontdienst${front.kind === 'border' ? ' gegen ' + game.nationName(front.target) : ' (Linie)'}`
+      : '🎮 dein Befehl';
+    head.innerHTML = `<b>${d.name}</b><span class="small"> ${status}${wp}</span>
       <span class="small ub-stats">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)}/${t.maxOrg} · ${moralIcon}${supWarn}</span>
       <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
   } else {
     const avgStr = sel.reduce((s, d) => s + d.str, 0) / sel.length;
-    const autoN = sel.filter(d => !d.manual).length;
-    head.innerHTML = `<b>${sel.length} Divisionen</b><span class="small"> · Ø Stärke ${Math.round(avgStr)} % · ${autoN ? autoN + '× 🤖 Automatik' : 'alle 🎮 unter Befehl'}</span>
-      <span class="small ub-stats">Rechtsklick = Marsch · Shift = Wegpunkt · Alt = Front</span>
+    const frontN = sel.filter(d => d.front != null).length;
+    head.innerHTML = `<b>${sel.length} Truppen</b><span class="small"> · Ø Stärke ${Math.round(avgStr)} % · ${frontN ? frontN + '× ⚔ Frontdienst' : 'alle frei'}</span>
+      <span class="small ub-stats">Rechtsklick = Marsch · Strg+Klick Grenze = Front · B = Linie</span>
       <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
   }
 
@@ -1855,22 +1946,17 @@ function updateUnitbar() {
       <div class="ucard-type" style="border-top-color:${TYPE_STRIPE[d.type] || '#8fa0b3'}">${TYPE_SHORT[d.type] || '?'}</div>
       <div class="ubar"><i style="width:${Math.max(0, Math.min(100, d.str))}%;background:#57c268"></i></div>
       <div class="ubar"><i style="width:${Math.max(0, Math.min(100, d.org / t.maxOrg * 100))}%;background:#e0b34a"></i></div>
-      <div class="ucard-flags">${d.inCombat ? '⚔' : ''}${lowSup}${d.manual ? '' : '🤖'}</div>
+      <div class="ucard-flags">${d.inCombat ? '⚔' : ''}${lowSup}${d.front != null ? '📏' : ''}</div>
     </div>`;
   }).join('') + (sel.length > 24 ? `<div class="ucard-more small">+${sel.length - 24}</div>` : '');
 
-  // Häufigste Armee der Auswahl als Vorauswahl
-  const armyCount = {};
-  sel.forEach(d => { if (d.army != null) armyCount[d.army] = (armyCount[d.army] || 0) + 1; });
-  const topArmy = Object.entries(armyCount).sort((a, b) => b[1] - a[1])[0];
+  const anyFront = sel.some(d => d.front != null);
   const actions = document.getElementById('unitbar-actions');
   actions.innerHTML = `
-    <button id="ub-split" title="Teilen — braucht ≥ 40 Stärke (S)">✂ Teilen</button>
+    <button id="ub-split" title="Teilen — braucht ≥ 40 Stärke (S). Front-Truppen verteilen sich neu auf der Linie">✂ Teilen</button>
     <button id="ub-merge" title="Gleiche Typen vereinen (M)">🔗 Vereinen</button>
-    <select id="ub-army" title="Ziel-Armee für die Automatik">${nat.armies.map(a => `<option value="${a.id}">${a.name}</option>`).join('')}</select>
-    <button id="ub-assign" title="Divisionen verteilen sich selbstständig an der Front dieser Armee">🤖 Automatik</button>
-    <button id="ub-disband" class="danger" title="Ausgewählte Divisionen auflösen (50 % der Soldaten zurück)">🗑</button>`;
-  if (topArmy) actions.querySelector('#ub-army').value = topArmy[0];
+    ${anyFront ? '<button id="ub-release" title="Aus der Frontlinie lösen — Truppen werden frei">↩ Front lösen</button>' : ''}
+    <button id="ub-disband" class="danger" title="Ausgewählte Truppen auflösen (50 % der Soldaten zurück)">🗑</button>`;
 
   document.getElementById('ub-close').onclick = () => { UI.selectedDivs.clear(); updateUnitbar(); };
   cards.querySelectorAll('.ucard').forEach(el => el.addEventListener('click', e => {
@@ -1888,11 +1974,12 @@ function updateUnitbar() {
   }));
   document.getElementById('ub-split').onclick = () => splitSelection();
   document.getElementById('ub-merge').onclick = () => mergeSelection();
-  document.getElementById('ub-assign').onclick = () => {
-    const armyId = +document.getElementById('ub-army').value;
-    const n = game.issue('assign', playerSelection().map(d => d.id), armyId) || 0;
-    pushToast(`🤖 ${n} Division(en) der Armee-Automatik übergeben — sie verteilen sich an der Front.`);
+  const rel = document.getElementById('ub-release');
+  if (rel) rel.onclick = () => {
+    game.issue('release', playerSelection().map(d => d.id));
+    pushToast('↩ Truppen aus der Front gelöst — sie warten auf Befehle.');
     updateUnitbar();
+    refreshPanel();
   };
   document.getElementById('ub-disband').onclick = () => {
     const n = game.issue('disband', playerSelection().map(d => d.id)) || 0;
@@ -1907,16 +1994,16 @@ function updateUnitbar() {
    GEFÜHRTES ERSTES MATCH & BERATER (Easy Entry)
    ========================================================= */
 const TUTORIAL_STEPS = [
-  { text: 'Wähle deine Divisionen (Klick oder <b>Links-Ziehen</b>) und erobere per <b>Rechtsklick</b> graues Neutralland — hol dir 8 Provinzen!',
-    done: g => g.nations[g.player].hexCount >= 8 },
-  { text: 'Bau eine <b>🎪 Kaserne</b>: Menüleiste links → 🏗️ (Taste <b>B</b>). Sie bildet 👥 Leute zu 🎖️ Soldaten aus.',
+  { text: 'Deine Armee erobert <b>freies Nachbarland von selbst</b>. Wähle sie (Klick) und schick sie per <b>Rechtsklick</b> an gute Stellen — hol dir 6 Provinzen!',
+    done: g => g.nations[g.player].hexCount >= 6 },
+  { text: 'Bau eine <b>🎪 Kaserne</b> (Menü links → 🏗️). Sie bildet 👥 Leute zu 🎖️ Soldaten aus.',
     ghost: 'kaserne', done: g => g.nations[g.player].trainCap > 0 },
-  { text: 'Bau ein <b>🏠 Dorf</b> — es erzeugt 👥 Leute, den Nachschub für deine Kaserne.',
-    ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.19 },
-  { text: 'Öffne das <b>🪖 Armeen-Menü</b> links und stelle eine Infanterie-Division auf (<b>+1</b>) — kostet Gold + 🎖️ Soldaten.',
-    done: g => g.divisionsOf(g.player).length >= 3 },
-  { text: 'Bau eine <b>🏙️ Stadt</b> (im Bau-Menü auf ein Dorf klicken) — sie bringt Gold <b>und</b> Leute. Danach: erobere 🏛️ Hauptstädte — <b>4 gewinnen die Runde!</b>',
-    done: g => (g.nations[g.player].staedte || 0) >= 1 },
+  { text: 'Bau ein <b>🏠 Dorf</b> — mehr 👥 Leute als Nachschub für deine Kaserne.',
+    ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.29 },
+  { text: 'Öffne das <b>🪖 Truppen-Menü</b> links und stelle <b>Krieger</b> auf (+1). Merke das Dreieck: Krieger &gt; Kavallerie &gt; Kanonen &gt; Krieger!',
+    done: g => g.divisionsOf(g.player).length >= 2 },
+  { text: '<b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Frontlinie — deine Truppen verteilen sich darauf (oder <b>B</b> drücken und selbst eine Linie ziehen). <b>3 🏛️ Hauptstädte gewinnen die Runde!</b>',
+    done: g => g.fronts.some(f => f.owner === g.player) },
 ];
 
 function tutorialDone() {
@@ -1928,7 +2015,7 @@ function markTutorialDone() {
 
 function updateTutorial() {
   const el = document.getElementById('tutorial');
-  if (!game || game.over || UI.tutorialStep == null || UI.tutorialStep < 0
+  if (!game || game.over || game.spawnPhase || UI.tutorialStep == null || UI.tutorialStep < 0
     || UI.tutorialStep >= TUTORIAL_STEPS.length) {
     el.classList.add('hidden');
     UI._ghost = null;
@@ -1984,7 +2071,7 @@ const ADVISOR_CHECKS = [
     msg: '💡 Ohne 🎪 Kaserne bekommst du keine Soldaten — bau eine (Menü links → 🏗️).' },
   { key: 'stau', cd: 90000,
     when: g => { const n = g.nations[g.player]; return n.soldaten > 30 && n.gold > 300; },
-    msg: '💡 Viele 🎖️ Soldaten warten — stelle im Armeen-Menü Divisionen auf!' },
+    msg: '💡 Viele 🎖️ Soldaten warten — stelle im 🪖 Truppen-Menü neue Truppen auf!' },
   { key: 'supply', cd: 90000,
     when: g => g.divisionsOf(g.player).some(d => g.supplyModOf(d).level < 0.2),
     msg: '⚠️ Divisionen ohne Nachschub verlieren Stärke — Straßen, Städte und Häfen versorgen.' },
@@ -2003,6 +2090,25 @@ function advisorTick() {
       break;   // höchstens eine Warnung auf einmal
     }
   }
+}
+
+/* ---------- Spawn-Phase: Startplatz wählen ---------- */
+function updateSpawnPhase() {
+  const el = document.getElementById('spawn-banner');
+  if (!game || !game.spawnPhase || game._replayCmds) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const rest = Math.max(0, Math.ceil((UI.spawnDeadline - performance.now()) / 1000));
+  const cnt = el.querySelector('#spawn-count');
+  if (cnt) cnt.textContent = rest;
+  if (rest <= 0) finishSpawnPhase();
+}
+
+function finishSpawnPhase() {
+  if (!game || !game.spawnPhase || game._replayCmds) return;
+  game.issue('startMatch');
+  document.getElementById('spawn-banner').classList.add('hidden');
+  updateTopbar();
+  refreshPanel();
 }
 
 /* ---------- Ereignis-Log ---------- */
@@ -2026,7 +2132,7 @@ function showStartScreen() {
     return `<button class="nation-card" data-nation="${id}">
       <span class="chip big" style="background:${def.color}"></span>
       <b>${def.name}</b>
-      <span class="small">startet bei ${def.capitalName}</span>
+      <span class="small">Startplatz frei wählbar</span>
     </button>`;
   }).join('');
   grid.querySelectorAll('.nation-card').forEach(b =>
@@ -2042,13 +2148,15 @@ function startGame(nationId) {
   lastLogLen = 0;
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;
   UI.buildMode = null;
-  UI.activeTab = 'bauen';
+  UI.frontDraw = null;
+  UI.activeTab = null;                 // Spawn-Phase: freie Sicht auf die Karte
   document.getElementById('start').classList.add('hidden');
   document.getElementById('gameover').classList.add('hidden');
   document.getElementById('offers').innerHTML = '';
   game._offersChanged = true;
   game.updateFronts();
-  centerOn(...game.nations[nationId].capital, 1.25);
+  fitView();                           // kleine Karte: alles im Blick für die Spawn-Wahl
+  UI.spawnDeadline = performance.now() + BAL.spawn.seconds * 1000;
   UI.tutorialStep = tutorialDone() ? -1 : 0;
   UI._tutRendered = -1;
   UI._advisor = {};
@@ -2057,6 +2165,7 @@ function startGame(nationId) {
   updateTopbar();
   updateUnitbar();
   updateTutorial();
+  updateSpawnPhase();
 }
 
 /* ---------- Replay ---------- */

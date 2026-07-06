@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 const CONFIG = {
-  W: 180, H: 205,                       // Hexgitter (odd-r, pointy-top)
+  W: 72, H: 80,                         // Hexgitter (odd-r, pointy-top) — kompakte Multiplayer-Karte
   lonMin: -11, lonMax: 42,              // Europa: Irland bis Moskau
   latMin: 34, latMax: 71.5,             // Nordafrika-Küste bis Nordkap
   landUrls: [

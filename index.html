@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -16,7 +16,7 @@
     <div class="tb-group" title="Leute (Zuwachs/Tag) — kommen aus Dörfern und Städten">👥 <span id="tb-mp">0</span></div>
     <div class="tb-group" title="Soldaten (Ausbildung/Tag) — Kasernen bilden Leute zu Soldaten aus; Divisionen kosten Gold + Soldaten">🎖️ <span id="tb-sold">0</span></div>
     <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
-    <div class="tb-group" title="Gehaltene Hauptstädte — 4 starten den Sieg-Countdown!">🏛️ <span id="tb-vp">1/4</span></div>
+    <div class="tb-group" title="Gehaltene Hauptstädte — 3 starten den Sieg-Countdown!">🏛️ <span id="tb-vp">1/3</span></div>
     <div class="tb-group" title="Provinzen (Anteil Europas)">🗺️ <span id="tb-prov">0</span></div>
     <div class="tb-spacer"></div>
     <div class="tb-group">
@@ -41,8 +41,8 @@
 
   <!-- Linke Menüleiste (HOI4-Stil) -->
   <div id="sidebar">
-    <button data-tab="bauen" title="Bauen (B)">🏗️</button>
-    <button data-tab="armeen" title="Armeen">🪖</button>
+    <button data-tab="bauen" title="Bauen">🏗️</button>
+    <button data-tab="armeen" title="Truppen">🪖</button>
     <button data-tab="nationen" title="Nationen &amp; Diplomatie">🌍</button>
     <button data-tab="info" title="Info">ℹ️</button>
   </div>
@@ -62,6 +62,11 @@
     <div id="unitbar-cards"></div>
     <div id="unitbar-actions"></div>
   </div>
+
+  <!-- Spawn-Phase: Startplatz wählen -->
+  <div id="spawn-banner" class="hidden">📍 <b>Wähle deinen Startplatz!</b> Klick auf die Karte — du siehst, wo die anderen starten.
+    Start in <b><span id="spawn-count">15</span>&thinsp;s</b>
+    <button id="spawn-ready">✔ Bereit</button></div>
 
   <!-- Sieg-Countdown-Banner -->
   <div id="vp-banner" class="hidden"></div>
@@ -95,12 +100,13 @@
     <div class="overlay-box">
       <h1>FINAL FRONT</h1>
       <p class="subtitle">Europa in Flammen — Echtzeit-Strategie</p>
-      <p class="intro">Europa liegt brach und grau. Jede Nation beginnt mit <b>einem Dorf und zwei
-        Divisionen</b>. Breite dich aus, baue Wirtschaft auf, schmiede Allianzen — und erobere
-        Hauptstädte: <b>Wer 4 der 15 Hauptstädte hält, startet den Sieg-Countdown!</b>
-        Nach 1000 Tagen gewinnt sonst die stärkste Macht. Eine Runde ≈ 20–30 Minuten.</p>
+      <p class="intro"><b>5 Spieler, eine kompakte Europakarte.</b> Wähle in der Startphase (15 s) deinen
+        Spawn frei auf der Karte — du siehst, wo die anderen starten. Jeder beginnt mit <b>einer Stadt
+        und einer Armee</b>. Truppen erobern freies Nachbarland von selbst; Frontlinien ziehst du per
+        <b>Strg+Klick auf die Grenze</b> oder mit <b>B</b>. <b>Wer 3 der 5 Hauptstädte hält, startet den
+        Sieg-Countdown!</b> Eine Runde ≈ 20–30 Minuten.</p>
       <button id="btn-continue" class="wide continue hidden">▶ Weiterspielen (letzter Spielstand)</button>
-      <h2>Wähle deine Nation</h2>
+      <h2>Wähle deine Farbe</h2>
       <div id="nation-grid"></div>
     </div>
   </div>
@@ -121,33 +127,34 @@
     <div class="overlay-box">
       <h2>Anleitung</h2>
       <ul class="help-list">
-        <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = ganze Armee</b>. Ausgewählte Divisionen erscheinen in der <b>Einheiten-Leiste unten</b> (Teilen, Vereinen, Automatik, Auflösen).</li>
+        <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = alle eigenen Truppen</b>. Ausgewählte Truppen erscheinen in der <b>Einheiten-Leiste unten</b> (Teilen, Vereinen, Front lösen, Auflösen).</li>
         <li><b>Teilen &amp; Vereinen:</b> <b>S</b> teilt ausgewählte Divisionen in zwei Hälften · <b>M</b> vereint ausgewählte Divisionen gleichen Typs</li>
-        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — deine Truppen ziehen exakt dorthin und kämpfen sich durch Feind-/Neutralland (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte anhängen</b> (werden der Reihe nach abgelaufen) · <b>Alt+Rechtsklick auf Neutral-/Feindland = Front zuweisen</b> (Automatik: Truppen verteilen sich selbst und greifen an)</li>
+        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen ziehen exakt dorthin und kämpfen sich durch (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte</b> (werden der Reihe nach abgelaufen). Truppen erobern <b>freies Nachbarland von selbst</b>, Feld für Feld.</li>
+        <li><b>⚔ Frontlinien:</b> <b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Front entlang des Grenzverlaufs (wächst mit) · <b>B</b> = eigene Linie über die Karte ziehen (hält Stellung). Zugewiesene Truppen <b>verteilen sich selbst</b> auf der Linie und kämpfen dort. <b>S</b> teilt Front-Truppen und verteilt sie neu. Front lösen: Truppen-Menü oder Einheiten-Leiste.</li>
         <li><b>Karte:</b> Rechts-/Mittel-Ziehen oder WASD = verschieben · Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
-        <li><b>Expansion:</b> Neutralland (grau) gehört niemandem — erobere es! Wähle deine Divisionen und schick sie per Rechtsklick los (oder Alt+Rechtsklick für automatische Expansion).</li>
+        <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt und einer Armee Krieger</b>.</li>
         <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
-        <li><b>Sieg — halte 4 Hauptstädte:</b> Die 15 Original-Hauptstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>4 davon hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine Hauptstadt zurück, stoppt er. Nach <b>1000 Tagen</b> gewinnt sonst, wer die meisten Hauptstädte (dann Provinzen) hält. Ab Tag 700 beginnt die <b>Endphase</b>: Milizen ermüden, der Aufholbonus schwindet — die Karte konsolidiert sich.</li>
-        <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>30 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
-        <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Nationen unter 30 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
+        <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Nach <b>1000 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 700: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
+        <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>40 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
+        <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
         <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab. <b>Verrat:</b> Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen angreift, ist 60 Tage <b>🐍 Verräter</b> — kein Handel, keine neuen Bündnisse, bevorzugtes Ziel aller.</li>
-        <li><b>Bauen:</b> Menüleiste links → 🏗 (oder Taste <b>B</b>) → Gebäude wählen → auf die Karte klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
+        <li><b>Bauen:</b> Menüleiste links → 🏗️ → Gebäude wählen → auf die Karte klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
         <li><b>Wirtschaftskette:</b> 🏠 Dörfer erzeugen <b>👥 Leute</b> · 🏙️ Städte erzeugen Leute <b>und</b> Gold · ⛏️ Minen und 🚢 Häfen bringen Gold · 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> — neue Divisionen und Verstärkung kosten Gold + Soldaten · 🛣️ Straßen = Bewegung + Versorgung</li>
         <li><b>Seehandel:</b> Baue einen <b>🚢 Hafen an einem Ufer</b> — er schickt Handelsschiffe zu Häfen anderer Nationen, und <b>beide Seiten verdienen Gold</b> pro Ankunft (längere Routen = mehr). Kein Handel mit Nationen, mit denen du gerade kämpfst; Verbündete handeln immer. Häfen sind zudem Versorgungs-Hubs.</li>
-        <li><b>Truppentypen:</b> Infanterie (billig), Garde (Elite), Panzer (schnell), Artillerie (knackt Verteidigung &amp; Miliz).</li>
+        <li><b>Truppendreieck (EU4-Stil):</b> 🛡 <b>Krieger</b> halten die Linie und schlagen Kavallerie · 🐎 <b>Kavallerie</b> ist schnell und schlägt Kanonen · 💥 <b>Kanonen</b> belagern (2,5× gegen Miliz) und schlagen Krieger — aber langsam und fragil.</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
         <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert — Küsten evakuieren über See.</li>
         <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
-        <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
+        <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · <b>B</b> Frontlinie ziehen · S/M teilen/vereinen · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
       </ul>
       <p class="small hint">(Klick neben das Fenster zum Schließen)</p>
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=18"></script>
-  <script src="js/map.js?v=18"></script>
-  <script src="js/game.js?v=18"></script>
-  <script src="js/ui.js?v=18"></script>
-  <script src="js/main.js?v=18"></script>
+  <script src="js/mapdata.js?v=19"></script>
+  <script src="js/map.js?v=19"></script>
+  <script src="js/game.js?v=19"></script>
+  <script src="js/ui.js?v=19"></script>
+  <script src="js/main.js?v=19"></script>
 </body>
 </html>

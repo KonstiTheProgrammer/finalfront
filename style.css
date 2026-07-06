@@ -463,3 +463,32 @@ button.peace:hover { background: #26512e; }
 ::-webkit-scrollbar { width: 9px; }
 ::-webkit-scrollbar-thumb { background: #2c3a4c; border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---------- Spawn-Phase ---------- */
+#spawn-banner {
+  position: absolute; top: 48px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 26;
+  padding: 9px 18px;
+  border-radius: 9px;
+  font-size: 14px;
+  background: rgba(14, 30, 44, 0.96);
+  border: 1px solid #4a90d9;
+  box-shadow: 0 8px 26px rgba(0,0,0,0.55);
+  white-space: nowrap;
+}
+#spawn-banner button {
+  margin-left: 10px;
+  background: #2a5a35; color: #e6f0e8;
+  border: 1px solid #4a9a5c; border-radius: 5px;
+  padding: 3px 10px; cursor: pointer;
+}
+#spawn-banner button:hover { background: #337044; }
+
+/* ---------- Frontlinien-Liste (Truppen-Menü) ---------- */
+.front-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 4px;
+  border-bottom: 1px solid #22303f;
+}
+.front-row .diplo-info { flex: 1; }

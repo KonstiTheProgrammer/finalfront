@@ -22,6 +22,7 @@ function loop(now) {
       else if (UI.activeTab === 'info') refreshPanel();
       updateUnitbar();   // Balken/Status der ausgewählten Divisionen live halten
       updateTutorial();
+      updateSpawnPhase();
       if (now - (UI._lastRankT || 0) > 2000) {
         UI._lastRankT = now;
         renderRanking();

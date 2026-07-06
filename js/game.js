@@ -16,7 +16,7 @@ const BAL = {
   incomeStadt: 4.0,
   incomeMine: 6.0,
   incomeMineBerg: 8.0,
-  landIncomePerHex: 0.008,            // Territorium zahlt Steuern
+  landIncomePerHex: 0.03,             // Territorium zahlt Steuern (kompakte Karte)
   leuteDorf: 0.10,                    // Dorf: nur Leute
   leuteStadt: 0.20,                   // Stadt: Leute UND Gold
   trainPerKaserne: 0.25,              // Ausbildung: Leute → Soldaten pro Kaserne
@@ -30,34 +30,36 @@ const BAL = {
     shipSpeed: 7,            // Hexes/Tag
     warCooldown: 25,         // Tage ohne Kampf, bis Handel wieder möglich
   },
-  // Divisionstypen
+  // Truppendreieck nach EU4-Vorbild:
+  //   Krieger schlagen Kavallerie · Kavallerie schlägt Kanonen · Kanonen schlagen Krieger
   divTypes: {
-    inf: { name: 'Infanterie', gold: 80,  mp: 10, upkeep: 0.5, atk: 1.0, defF: 1.2, maxOrg: 55, speed: 1.0, militia: 1.0 },
-    gar: { name: 'Garde',      gold: 170, mp: 12, upkeep: 0.9, atk: 1.5, defF: 1.5, maxOrg: 70, speed: 1.0, militia: 1.0 },
-    pz:  { name: 'Panzer',     gold: 240, mp: 6,  upkeep: 1.6, atk: 2.0, defF: 0.9, maxOrg: 45, speed: 1.8, militia: 1.3 },
-    art: { name: 'Artillerie', gold: 150, mp: 5,  upkeep: 1.0, atk: 1.7, defF: 0.6, maxOrg: 40, speed: 0.8, militia: 2.0 },
+    inf: { name: 'Krieger',    gold: 60,  mp: 10, upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 1.0 },
+    kav: { name: 'Kavallerie', gold: 120, mp: 8,  upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 0.9 },
+    kan: { name: 'Kanonen',    gold: 180, mp: 6,  upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
+  rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
   reinforceRate: 3.0,
   reinforceMpCost: 0.1,
   orgRegen: 7.0,
   retreatOrg: 8,
-  // Kampf (pro Tag)
+  // Kampf (pro Tag) — Erobern dauert bewusst LANGE (Multiplayer-Pacing):
+  // jedes Feld ist ein kleiner Kampf, keine Blitz-Expansion
   atkBase: 8.0,
   orgDmg: 0.9,
   strDmg: 0.22,
-  militiaResist: 15,
-  militiaResistStadt: 30,
-  militiaResistHauptstadt: 45,
-  militiaResistNeutral: 7,            // Neutralland fällt zügig, aber nicht sofort
-  neutralDmgBonus: 1.6,
+  militiaResist: 35,
+  militiaResistStadt: 60,
+  militiaResistHauptstadt: 90,
+  militiaResistNeutral: 25,
+  neutralDmgBonus: 1.0,
   neutralCounter: 0.5,
-  militiaRegen: 2.0,
+  militiaRegen: 1.2,
   militiaCounter: 0.25,
   seaAssaultMalus: 0.5,
-  // Versorgung (3x-Karte: Distanzen sind größer)
+  // Versorgung (kompakte Karte)
   supplyHub: { capital: 1.0, stadt: 0.85, hafen: 0.7, kaserne: 0.6 },
-  supplyDecay: 0.023,
+  supplyDecay: 0.05,
   roadCostFactor: 0.5,
   seaMinSupply: 0.25,
   lowSupply: 0.2,
@@ -67,8 +69,8 @@ const BAL = {
   moralMin: 0.5, moralMax: 1.3,
   moralWin: 0.04, moralLoss: 0.06, moralRetreat: 0.05,
   moralBaselinePull: 0.03,
-  // Bewegung (Hexes/Tag)
-  moveSpeed: 4.0,
+  // Bewegung (Hexes/Tag) — kompakte Karte, gemächliches Tempo
+  moveSpeed: 2.6,
   // Flüsse: Übergänge sind langsam und gefährlich — Straßen überbrücken sie
   river: { moveFactor: 1.6, attackFrom: 0.6, attackInto: 0.85 },
   // Verrat: Ex-Verbündeten schnell angreifen macht dich öffentlich zum Verräter
@@ -77,14 +79,17 @@ const BAL = {
   maxAllies: 2,
   offerLifetime: 40,
   // Balance / Fairness (Multiplayer-tauglich)
-  graceDays: 30,              // Schonfrist: so lange keine Angriffe auf Nationen
-  catchupMax: 0.35,           // Einkommensbonus kleiner Nationen (bis +35 %)
+  graceDays: 40,              // Schonfrist: so lange keine Angriffe auf Spieler
+  catchupMax: 0.35,           // Einkommensbonus kleiner Spieler (bis +35 %)
   leaderMalus: 0.25,          // Einkommensmalus des Spitzenreiters (bis -25 %)
-  smallNationDefense: 1.5,    // Miliz-Bonus für Nationen unter 30 Provinzen
-  // Rundenmodus & Sieg über Hauptstädte
+  smallNationDefense: 1.5,    // Miliz-Bonus für Spieler unter 12 Provinzen
+  smallNationHexes: 12,
+  // Spawn-Phase: Startplatz frei wählen, alle sehen einander
+  spawn: { seconds: 15, minDist: 12 },
+  // Rundenmodus & Sieg über Hauptstädte (5 Spieler)
   round: {
     days: 1000,               // Rundenlänge in Spieltagen (≈ 17–33 min je nach Tempo)
-    vpToWin: 4,               // gehaltene Hauptstädte starten den Sieg-Countdown
+    vpToWin: 3,               // gehaltene Hauptstädte starten den Sieg-Countdown
     countdownDays: 50,        // Länge des Countdowns — Zeit für die Gegenkoalition
     lateStart: 0.7,           // ab 70 % der Runde: Endphase (Miliz ermüdet, Aufholbonus schwindet)
   },
@@ -145,6 +150,9 @@ class Game {
     this._pockets = [];                // erkannte Kessel (für Anzeige & Meldungen)
     this._pocketKeys = new Set();
     this._exAllies = {};               // 'Initiator>Opfer' -> Tag der Bündnisauflösung
+    this.spawnPhase = true;            // Startplatz-Wahl: Spiel tickt noch nicht
+    this.fronts = [];                  // Frontlinien {id, owner, kind, target, path, hexes}
+    this._frontSeq = 1;
     this.mapDirty = true;
     this.dirtyRect = null;
     this.labelsDirty = true;
@@ -409,11 +417,11 @@ class Game {
     };
     this.nations[id] = nat;
 
-    const spawn = this.nearestFreeLand(...def.spawnHex);
+    const spawn = this.pickSpawnSpot();
     if (!spawn) { nat.alive = false; return; }
     spawn.owner = id;
     spawn.capital = true;
-    spawn.building = 'dorf';
+    spawn.building = 'stadt';          // Start: eine Stadt …
     spawn.cityName = def.capitalName;
     this.setResist(spawn);
     nat.capital = [spawn.c, spawn.r];
@@ -421,8 +429,71 @@ class Game {
     const army = this.createArmy(id, '1. Armee');
     army.target = 'EXPAND';
     army.mode = 'attack';
-    this.spawnDivision(id, 'inf', army, true);
-    this.spawnDivision(id, 'inf', army, true);
+    this.spawnDivision(id, 'inf', army, true);   // … und eine Armee Krieger
+  }
+
+  /* Zufälliger Startplatz mit Abstand zu den anderen (Spawn-Phase) */
+  pickSpawnSpot() {
+    const taken = Object.values(this.nations).map(n => n.capital).filter(Boolean);
+    for (let minDist = BAL.spawn.minDist; minDist >= 4; minDist -= 4) {
+      for (let tries = 0; tries < 300; tries++) {
+        const c = Math.floor(this.rand() * MAP_W), r = Math.floor(this.rand() * MAP_H);
+        const h = this.hexAt(c, r);
+        if (!h || h.terrain === 'water' || h.terrain === 'mountain' || h.owner) continue;
+        if (taken.some(([tc, tr]) => hexDist(c, r, tc, tr) < minDist)) continue;
+        return h;
+      }
+    }
+    return this.nearestFreeLand(Math.floor(MAP_W / 2), Math.floor(MAP_H / 2));
+  }
+
+  /* Spawn-Phase: eigenen Startplatz verlegen (Stadt + Truppen ziehen mit) */
+  relocateSpawn(id, c, r) {
+    if (!this.spawnPhase) return false;
+    const h = this.hexAt(c, r);
+    if (!h || h.terrain === 'water' || h.terrain === 'mountain') return false;
+    if (h.owner && h.owner !== id) return false;
+    for (const [oid, nat] of Object.entries(this.nations)) {
+      if (oid === id || !nat.capital) continue;
+      if (hexDist(c, r, nat.capital[0], nat.capital[1]) < 6) return false;   // zu nah am Nachbarn
+    }
+    const nat = this.nations[id];
+    const old = this.hexAt(...nat.capital);
+    if (old) {
+      old.owner = null; old.capital = false; old.building = null;
+      old.cityName = null; old.vp = false;
+      this.setResist(old);
+      this.markDirty(old.c, old.r);
+    }
+    h.owner = id;
+    h.capital = true;
+    h.building = 'stadt';
+    h.cityName = NATION_DEFS[id].capitalName;
+    h.vp = true;
+    this.setResist(h);
+    nat.capital = [c, r];
+    const vpe = this.vpHexes.find(v => v.id === id);
+    if (vpe) { vpe.c = c; vpe.r = r; }
+    for (const d of this.divisionsOf(id)) {
+      this._placeDiv(d, c, r);
+      const p = hexToPixel(c, r);
+      d.x = p.x; d.y = p.y;
+      d.path = null; d.station = null; d.queue = [];
+    }
+    this.economyDirty = true;
+    this._supplyDirtyIds.add(id);
+    this.labelsDirty = true;
+    this.markDirty(c, r);
+    return true;
+  }
+
+  endSpawnPhase() {
+    if (!this.spawnPhase) return;
+    this.spawnPhase = false;
+    this.recalcEconomy();
+    this.recalcAllSupply();
+    this.vpRecount();
+    this.addLog('🏁 Alle Startplätze stehen — das Match beginnt!', true);
   }
 
   setResist(h) {
@@ -434,7 +505,7 @@ class Game {
       else base = BAL.militiaResist;
       // Heimatverteidigung: kleine Nationen sind zäher — schützt vor frühem Aus
       const nat = this.nations[h.owner];
-      if (nat && nat.alive && nat.hexCount < 30) base *= BAL.smallNationDefense;
+      if (nat && nat.alive && nat.hexCount < BAL.smallNationHexes) base *= BAL.smallNationDefense;
     }
     h.resistMax = base;
     if (h.resist <= 0 || h.resist > base) h.resist = base;
@@ -513,6 +584,7 @@ class Game {
       org: free ? t.maxOrg : t.maxOrg * 0.5,
       moral: 1.0,
       army: army ? army.id : null,
+      front: null,
       station: null,
       path: null, pathI: 0, moveProgress: 0,
       queue: [],
@@ -587,7 +659,7 @@ class Game {
       nation: div.nation, type: div.type,
       c: spot.c, r: spot.r, x: p.x, y: p.y,
       str: half, org: div.org, moral: div.moral,
-      army: div.army, station: null,
+      army: div.army, front: div.front, station: null,
       path: null, pathI: 0, moveProgress: 0,
       queue: [],
       attackTarget: null, inCombat: false,
@@ -1051,6 +1123,7 @@ class Game {
     const h = this.hexAt(c, r);
     if (!h) return;
     div.manual = true;
+    div.front = null;              // Marschbefehl löst von der Frontlinie
     if (queue) {
       // Shift: Wegpunkt anhängen — wird abgearbeitet, sobald die Division frei ist
       if (div.path || div.attackTarget || (div.queue && div.queue.length)) {
@@ -1069,10 +1142,146 @@ class Game {
   }
 
   releaseToArmy(div) {
-    div.manual = false;
+    // Aus der Frontlinie lösen — Truppe wird frei und wartet auf Befehle
+    div.front = null;
+    div.station = null;
     div.path = null;
     div.queue = [];
-    this._frontsDirtyIds.add(div.nation);
+  }
+
+  /* =========================================================
+     FRONTLINIEN (War-of-Dots-Stil)
+     Grenz-Front: Strg+Klick auf die Grenze zu einem Spieler —
+     folgt dem Grenzverlauf automatisch. Gezogene Linie (B):
+     hält eine feste Stellung. Zugewiesene Truppen verteilen
+     sich selbst auf der Linie und kämpfen dort.
+     ========================================================= */
+  frontById(id) { return this.fronts.find(f => f.id === id) || null; }
+  frontDivisions(f) { return this.divisions.filter(d => !d.dead && d.front === f.id); }
+
+  createBorderFront(owner, target) {
+    let f = this.fronts.find(x => x.owner === owner && x.kind === 'border' && x.target === target);
+    if (!f) {
+      f = { id: this._frontSeq++, owner, kind: 'border', target, path: null, hexes: [] };
+      this.fronts.push(f);
+      this.refreshFront(f);
+    }
+    return f;
+  }
+
+  createLineFront(owner, path) {
+    const clean = [];
+    const seen = new Set();
+    for (const p of path || []) {
+      const h = this.hexAt(p[0], p[1]);
+      if (!h || h.terrain === 'water') continue;
+      const k = p[0] + p[1] * MAP_W;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      clean.push([p[0], p[1]]);
+    }
+    if (clean.length < 2) return null;
+    const f = { id: this._frontSeq++, owner, kind: 'line', target: null, path: clean, hexes: [] };
+    this.fronts.push(f);
+    this.refreshFront(f);
+    return f;
+  }
+
+  refreshFront(f) {
+    if (f.kind === 'border') {
+      const pseudo = { nation: f.owner, target: f.target, frontHexes: [] };
+      this.computeFront(pseudo);
+      f.hexes = pseudo.frontHexes;
+    } else {
+      f.hexes = f.path.map(p => this.hexAt(p[0], p[1])).filter(h => h && h.owner === f.owner);
+    }
+  }
+
+  assignToFrontline(divIds, frontId) {
+    const f = this.frontById(frontId);
+    if (!f) return 0;
+    let n = 0;
+    for (const id of divIds) {
+      const d = this._divById(id);
+      if (!d || d.nation !== f.owner) continue;
+      d.front = f.id;
+      d.path = null; d.queue = []; d.attackTarget = null; d.station = null;
+      n++;
+    }
+    this.distributeFrontline(f);
+    return n;
+  }
+
+  distributeFrontline(f) {
+    const divs = this.frontDivisions(f);
+    const line = f.hexes;
+    if (!divs.length || !line.length) return;
+    const sorted = divs.map(d => {
+      let bi = 0, bd = Infinity;
+      line.forEach((h, i) => {
+        const dd = hexDist(d.c, d.r, h.c, h.r);
+        if (dd < bd) { bd = dd; bi = i; }
+      });
+      return [bi, d];
+    }).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+    const used = new Set();
+    sorted.forEach((d, i) => {
+      const idx = sorted.length === 1 ? Math.floor(line.length / 2)
+        : Math.round(i * (line.length - 1) / (sorted.length - 1));
+      let h = line[Math.min(idx, line.length - 1)];
+      if (used.has(h.c + h.r * MAP_W)) {
+        const free = this.findFreeStation(f.owner, h, used);
+        if (free) h = free;
+      }
+      used.add(h.c + h.r * MAP_W);
+      d.station = [h.c, h.r];
+    });
+  }
+
+  frontsDaily() {
+    for (let i = this.fronts.length - 1; i >= 0; i--) {
+      const f = this.fronts[i];
+      const divs = this.frontDivisions(f);
+      const ownerDead = !this.nations[f.owner] || !this.nations[f.owner].alive;
+      const targetDead = f.kind === 'border' && (!this.nations[f.target] || !this.nations[f.target].alive);
+      if (ownerDead || targetDead) {
+        for (const d of divs) d.front = null;
+        this.fronts.splice(i, 1);
+        continue;
+      }
+      this.refreshFront(f);
+      if (divs.length) f._empty = undefined;
+      else if (f._empty === undefined) f._empty = this.day;
+      if ((f._empty !== undefined && this.day - f._empty > 20)
+        || (f.kind === 'line' && !f.hexes.length)) {
+        for (const d of divs) d.front = null;
+        this.fronts.splice(i, 1);
+        continue;
+      }
+      this.distributeFrontline(f);
+    }
+  }
+
+  /* Ziel für eine Front-Truppe: Nachbarfelder gemäß Auftrag der Linie */
+  pickFrontTarget(div) {
+    const f = this.frontById(div.front);
+    if (!f) { div.front = null; return null; }
+    return this.scoreTargets(div, nh => {
+      if (f.kind === 'border') return nh.owner === f.target && this.hostile(div.nation, f.target);
+      return this.attackable(div.nation, nh) && nh.owner !== null;   // gezogene Linie: Feinde abwehren
+    });
+  }
+
+  /* Passives Nibbeln: freies Nachbarfeld zufällig erobern (Warteschlangen-Gefühl) */
+  pickNeutralNibble(div) {
+    if (this.day < 1) return null;
+    const cands = [];
+    for (const [nc, nr] of neighborsOf(div.c, div.r)) {
+      const nh = this.hexAt(nc, nr);
+      if (nh && nh.terrain !== 'water' && nh.owner === null) cands.push(nh);
+    }
+    if (!cands.length) return null;
+    return cands[Math.floor(this.rand() * cands.length)];
   }
 
   divisionsTick(dt) {
@@ -1149,12 +1358,22 @@ class Game {
       }
 
       if (!div.path && !div.attackTarget) {
-        const army = div.army != null ? this.armyById(div.nation, div.army) : null;
-        const aggressive = army && army.mode === 'attack' && !div.manual;
-        if (aggressive && div.org > BAL.divTypes[div.type].maxOrg * 0.45) {
+        const t = BAL.divTypes[div.type];
+        if (div.org > t.maxOrg * 0.35) {
           const sup = this.supplyModOf(div);
-          if (sup.level > 0.15) {
-            const target = this.pickAttackTarget(div, army);
+          if (sup.level > 0.12) {
+            let target = null;
+            // 1) Frontlinien-Dienst: dort kämpfen, wo die Linie es verlangt
+            if (div.front != null) {
+              target = this.pickFrontTarget(div);
+            } else if (div.army != null && !div.manual) {
+              // Bots: klassische Armee-Logik
+              const army = this.armyById(div.nation, div.army);
+              if (army && army.mode === 'attack' && div.org > t.maxOrg * 0.45)
+                target = this.pickAttackTarget(div, army);
+            }
+            // 2) Passives Nibbeln: jede Truppe erobert freies Nachbarland von selbst
+            if (!target) target = this.pickNeutralNibble(div);
             if (target) div.attackTarget = [target.c, target.r];
           }
         }
@@ -1163,11 +1382,16 @@ class Game {
   }
 
   pickAttackTarget(div, army) {
+    return this.scoreTargets(div, nh => this.frontMatches(army, nh));
+  }
+
+  scoreTargets(div, matchFn) {
     const myPow = this.attackPower(div);
     let best = null, bestScore = -Infinity;
     for (const [nc, nr] of neighborsOf(div.c, div.r)) {
       const nh = this.hexAt(nc, nr);
-      if (!this.frontMatches(army, nh)) continue;
+      if (!nh || nh.terrain === 'water' || !matchFn(nh)) continue;
+      if (!this.attackable(div.nation, nh)) continue;
       const defDiv = this.divisionAt(nc, nr);
       let defense = nh.resist * 0.4;
       if (defDiv) {
@@ -1225,7 +1449,10 @@ class Game {
       }
       const dRand = 0.85 + this.rand() * 0.3;
       const defT = BAL.divTypes[def.type];
-      const defPower = this.attackPower(def) * defT.defF * dRand;
+      // Truppendreieck: Krieger > Kavallerie > Kanonen > Krieger
+      power *= (BAL.rps[atk.type] && BAL.rps[atk.type][def.type]) || 1;
+      const defPower = this.attackPower(def) * defT.defF * dRand
+        * ((BAL.rps[def.type] && BAL.rps[def.type][atk.type]) || 1);
       // Endphase: Angreifer schlagen härter durch — Stellungskriege lösen sich,
       // Hauptstädte fallen, die Runde findet ihren Sieger
       const lateAtk = 1 + 0.5 * this.lateFactor();
@@ -1356,7 +1583,7 @@ class Game {
     for (const d of this.divisionsOf(loser)) d.moral = Math.max(BAL.moralMin, d.moral - 0.25);
     const nat = this.nations[loser];
     const own = this.ownedHexes(loser);
-    if (own.length < 25) { this.surrender(loser, winner); return; }
+    if (own.length < 10) { this.surrender(loser, winner); return; }
     // Hauptstadt verlegen: beste Stadt/Kaserne, sonst bestversorgtes Feld
     let best = null, bestScore = -Infinity;
     for (const h of own) {
@@ -1749,28 +1976,28 @@ class Game {
     // Bauten und erreicht Stadt (270 G) oder Kaserne nie (Oszillation).
     const doerfer = count('dorf'), staedte = count('stadt');
     const kasernen = count('kaserne');
-    const wantKas = 1 + (staedte >= 1 ? Math.floor(own.length / 100) : 0);
-    const wantStadt = 1 + Math.floor(own.length / 120);
-    const wantHafen = 1 + Math.floor(own.length / 220);
+    const wantKas = 1 + (staedte >= 1 ? Math.floor(own.length / 45) : 0);
+    const wantStadt = 1 + Math.floor(own.length / 50);
+    const wantHafen = 1 + Math.floor(own.length / 90);
     // Genug Dörfer, um die Kasernen zu füttern (1 Kaserne frisst 0.25k/Tag)
-    const wantDorf = Math.max(2, Math.floor(own.length * 0.025), kasernen * 3 - staedte * 2);
+    const wantDorf = Math.max(2, Math.floor(own.length * 0.06), kasernen * 3 - staedte * 2);
     const mineSpots = own.filter(h => (h.terrain === 'hills' || h.terrain === 'mountain') && !h.building);
     const spotNear = maxDist => () => this.findBuildSpot(id, cc, cr, buildable, maxDist, own);
 
     const plan = [];
-    if (doerfer + staedte < 2) plan.push(['dorf', spotNear(30)]);
-    if (kasernen < wantKas) plan.push(['kaserne', spotNear(30)]);
+    if (doerfer + staedte < 2) plan.push(['dorf', spotNear(14)]);
+    if (kasernen < wantKas) plan.push(['kaserne', spotNear(14)]);
     if (staedte < wantStadt)
       plan.push(['stadt', () => own.find(h => h.building === 'dorf') || null]);
     // Leute-Mangel (< 20 Tage Ausbildungs-Reserve): Dörfer VOR Minen ziehen,
     // sonst verhungern die Kasernen reicher Minen-Nationen
     if (nat.leute < nat.trainCap * 20 && doerfer + staedte < wantDorf)
-      plan.push(['dorf', spotNear(34)]);
+      plan.push(['dorf', spotNear(16)]);
     if (mineSpots.length)
       plan.push(['mine', () => mineSpots[0]]);
     if ((nat.ports || 0) < wantHafen)
-      plan.push(['hafen', () => this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 55, own)]);
-    if (doerfer + staedte < wantDorf) plan.push(['dorf', spotNear(34)]);
+      plan.push(['hafen', () => this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 24, own)]);
+    if (doerfer + staedte < wantDorf) plan.push(['dorf', spotNear(16)]);
 
     for (const [what, findSpot] of plan) {
       const spot = findSpot();
@@ -1794,14 +2021,13 @@ class Game {
     const nat = this.nations[id];
     // Flacherer Verlauf: Riesenreiche stellen nicht mehr endlos Divisionen auf
     // (Einkommens-Term gedeckelt — sonst fluten Minen-Nationen die Karte)
-    const cap = Math.floor(4 + Math.min(10, Math.max(0, nat.incomePerDay) / 5) + nat.hexCount / 90);
+    const cap = Math.floor(4 + Math.min(10, Math.max(0, nat.incomePerDay) / 5) + nat.hexCount / 35);
     const divs = this.divisionsOf(id);
     if (divs.length >= cap) return;
     let type = 'inf';
     const roll = this.rand();
-    if (nat.gold > 600 && roll < 0.2) type = 'pz';
-    else if (nat.gold > 400 && roll < 0.4) type = 'art';
-    else if (nat.gold > 500 && roll < 0.5) type = 'gar';
+    if (nat.gold > 500 && roll < 0.25) type = 'kan';
+    else if (nat.gold > 350 && roll < 0.55) type = 'kav';
     const tt = BAL.divTypes[type];
     const underAttack = this.day - nat._lastAttackedDay < 12;
     // In Friedenszeiten Wirtschaft vor Masse: erst bauen (Stadt = 270 G),
@@ -1893,7 +2119,8 @@ class Game {
      Echtzeit wird angesammelt und in identische TICK_DAYS-Schritte übersetzt.
      Jeder Tick ist auf jeder Maschine gleich groß — deterministisch. */
   tick(realDt) {
-    if (this.paused || this.over) return;
+    // Spawn-Phase blockiert die Uhr — außer im Replay (dort steuern die Kommandos)
+    if (this.paused || this.over || (this.spawnPhase && !this._replayCmds)) return;
     this._acc += Math.min(realDt, 0.25) * BAL.daysPerSec[this.speed];
     let guard = 0;
     while (this._acc >= TICK_DAYS && !this.over && guard++ < 60) {
@@ -1939,6 +2166,7 @@ class Game {
         this.addLog('🔥 Endphase! Die Milizen ermüden, der Aufholbonus schwindet — jetzt entscheidet Eroberung.', true);
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
+      this.frontsDaily();
       this.supplyDaily();
       this.militiaDaily();
       this.tradeDaily();
@@ -1972,6 +2200,8 @@ class Game {
       cmds: this._replayCapable ? this.cmdLog : undefined,
       warHeat: this.warHeat,
       exAllies: this._exAllies,
+      frontSeq: this._frontSeq,
+      fronts: this.fronts.map(f => ({ id: f.id, owner: f.owner, kind: f.kind, target: f.target, path: f.path })),
       hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist)]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
         alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), soldaten: +n.soldaten.toFixed(2),
@@ -1981,7 +2211,8 @@ class Game {
       }])),
       divisions: this.divisions.filter(d => !d.dead).map(d => ({
         id: d.id, name: d.name, nation: d.nation, type: d.type, c: d.c, r: d.r,
-        str: Math.round(d.str), org: Math.round(d.org), moral: +d.moral.toFixed(2), army: d.army, manual: d.manual,
+        str: Math.round(d.str), org: Math.round(d.org), moral: +d.moral.toFixed(2),
+        army: d.army, manual: d.manual, front: d.front,
       })),
     });
   }
@@ -2026,10 +2257,16 @@ class Game {
       if (!BAL.divTypes[ds.type]) continue;
       const p = hexToPixel(ds.c, ds.r);
       g.divisions.push({
+        front: null,
         ...ds, x: p.x, y: p.y, station: null, path: null, pathI: 0,
         moveProgress: 0, queue: [], attackTarget: null, inCombat: false, dead: false,
       });
     }
+    g.spawnPhase = false;
+    g._frontSeq = s.frontSeq || 1;
+    g.fronts = (s.fronts || []).map(f => ({ ...f, hexes: [] }));
+    for (const f of g.fronts) g.refreshFront(f);
+    for (const f of g.fronts) g.distributeFrontline(f);
     g.log = [];
     g.toasts = [];
     g.allianceOffers = [];
@@ -2095,6 +2332,12 @@ Game.prototype._exec = function (cmd, args) {
 };
 
 Game.prototype._commands = {
+  spawn(c, r) {
+    return this.relocateSpawn(this.player, c, r);
+  },
+  startMatch() {
+    this.endSpawnPhase();
+  },
   move(divId, c, r, queue) {
     const d = this._divById(divId);
     if (d && d.nation === this.player) this.moveOrder(d, c, r, queue);
@@ -2102,20 +2345,26 @@ Game.prototype._commands = {
   build(c, r, what) {
     return this.build(this.player, this.hexAt(c, r), what);
   },
-  train(type, n, armyId) {
-    const a = this.armyById(this.player, armyId);
-    const made = this.trainDivisions(this.player, type, n, a);
-    if (made) this.updateFronts(this.player);
-    return made;
+  train(type, n) {
+    return this.trainDivisions(this.player, type, n, this.nations[this.player].armies[0]);
   },
   split(divIds) {
     const twins = [];
+    const fronts = new Set();
     for (const id of divIds) {
       const d = this._divById(id);
       if (d && d.nation === this.player) {
         const t = this.splitDivision(d);
-        if (t) twins.push(t.id);
+        if (t) {
+          twins.push(t.id);
+          if (t.front != null) fronts.add(t.front);
+        }
       }
+    }
+    // Geteilte Front-Truppen sofort neu auf der Linie verteilen
+    for (const fid of fronts) {
+      const f = this.frontById(fid);
+      if (f) this.distributeFrontline(f);
     }
     return twins;
   },
@@ -2131,60 +2380,33 @@ Game.prototype._commands = {
     }
     return n;
   },
-  disbandArmy(armyId) {
-    return this.disbandArmy(this.player, armyId);
+  frontBorder(targetId, divIds) {
+    if (!this.nations[targetId] || targetId === this.player) return null;
+    const f = this.createBorderFront(this.player, targetId);
+    const n = this.assignToFrontline(divIds || [], f.id);
+    return { id: f.id, n };
   },
-  createArmy() {
-    this.createArmy(this.player);
+  frontLine(path, divIds) {
+    const f = this.createLineFront(this.player, path);
+    if (!f) return null;
+    const n = this.assignToFrontline(divIds || [], f.id);
+    return { id: f.id, n };
   },
-  renameArmy(armyId, name) {
-    const a = this.armyById(this.player, armyId);
-    if (a && name) a.name = String(name).slice(0, 24);
+  frontAssign(frontId, divIds) {
+    return this.assignToFrontline(divIds || [], frontId);
   },
-  armyTarget(armyId, target) {
-    const a = this.armyById(this.player, armyId);
-    if (a) { a.target = target; this.updateFronts(this.player); }
-  },
-  armyMode(armyId, mode) {
-    const a = this.armyById(this.player, armyId);
-    if (a && (mode === 'attack' || mode === 'defend')) a.mode = mode;
-  },
-  assignFront(divIds, key) {
-    const nat = this.nations[this.player];
-    let army = nat.armies.find(a => a.target === key);
-    if (!army) {
-      army = this.createArmy(this.player,
-        key === 'EXPAND' ? 'Expansionsarmee' : 'Front: ' + this.nationName(key));
-      army.target = key;
-    }
-    army.mode = 'attack';
-    let n = 0;
-    for (const id of divIds) {
-      const d = this._divById(id);
-      if (!d || d.nation !== this.player) continue;
-      d.army = army.id; d.manual = false; d.path = null; d.attackTarget = null; d.queue = [];
-      n++;
-    }
-    this.updateFronts(this.player);
-    return n;
-  },
-  assign(divIds, armyId) {
-    let n = 0;
-    for (const id of divIds) {
-      const d = this._divById(id);
-      if (!d || d.nation !== this.player) continue;
-      d.army = armyId; d.manual = false; d.path = null; d.queue = []; d.attackTarget = null;
-      n++;
-    }
-    this.updateFronts(this.player);
-    return n;
+  frontRemove(frontId) {
+    const i = this.fronts.findIndex(f => f.id === frontId && f.owner === this.player);
+    if (i < 0) return false;
+    for (const d of this.frontDivisions(this.fronts[i])) this.releaseToArmy(d);
+    this.fronts.splice(i, 1);
+    return true;
   },
   release(divIds) {
     for (const id of divIds) {
       const d = this._divById(id);
       if (d && d.nation === this.player) this.releaseToArmy(d);
     }
-    this.updateFronts(this.player);
   },
   ally(to) {
     return this.offerAlliance(this.player, to);

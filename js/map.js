@@ -9,28 +9,15 @@
 const MAP_W = GENMAP.w;
 const MAP_H = GENMAP.h;
 
-/* Nationen-Definitionen. Spawn-Hexes kommen aus den echten
-   Hauptstadt-Koordinaten (via Projektion in mapdata.js). */
+/* Spieler-Definitionen: 5 Farben, ein Match = 5 Spieler (Mensch + Bots).
+   Startplätze werden in der Spawn-Phase frei gewählt — keine festen Spawns. */
 const NATION_DEFS = {
-  G: { name: 'Großbritannien', color: '#c0504e', capitalName: 'London',    aggression: 0.35 },
-  J: { name: 'Irland',         color: '#79ad58', capitalName: 'Dublin',    aggression: 0.15 },
-  F: { name: 'Frankreich',     color: '#4a72c4', capitalName: 'Paris',     aggression: 0.40 },
-  L: { name: 'Benelux',        color: '#d98e32', capitalName: 'Brüssel',   aggression: 0.15 },
-  D: { name: 'Deutschland',    color: '#6e7480', capitalName: 'Berlin',    aggression: 0.55 },
-  W: { name: 'Schweiz',        color: '#dedede', capitalName: 'Bern',      aggression: 0.10 },
-  I: { name: 'Italien',        color: '#42a55c', capitalName: 'Rom',       aggression: 0.45 },
-  S: { name: 'Spanien',        color: '#d4b13f', capitalName: 'Madrid',    aggression: 0.30 },
-  O: { name: 'Portugal',       color: '#3e8f7a', capitalName: 'Lissabon',  aggression: 0.18 },
-  N: { name: 'Skandinavien',   color: '#5f9ec9', capitalName: 'Stockholm', aggression: 0.25 },
-  P: { name: 'Polen',          color: '#c268a8', capitalName: 'Warschau',  aggression: 0.30 },
-  H: { name: 'Österreich-Ungarn', color: '#b07a45', capitalName: 'Wien',   aggression: 0.40 },
-  B: { name: 'Balkanbund',     color: '#8a63b8', capitalName: 'Belgrad',   aggression: 0.35 },
-  R: { name: 'Russland',       color: '#a03028', capitalName: 'Moskau',    aggression: 0.50 },
-  T: { name: 'Türkei',         color: '#3fb0a5', capitalName: 'Ankara',    aggression: 0.40 },
+  A: { name: 'Azur',    color: '#4a72c4', capitalName: 'Feste Azur',    aggression: 0.40 },
+  B: { name: 'Karmin',  color: '#c0504e', capitalName: 'Feste Karmin',  aggression: 0.50 },
+  C: { name: 'Jade',    color: '#42a55c', capitalName: 'Feste Jade',    aggression: 0.35 },
+  D: { name: 'Gold',    color: '#d4b13f', capitalName: 'Feste Gold',    aggression: 0.30 },
+  E: { name: 'Violett', color: '#8a63b8', capitalName: 'Feste Violett', aggression: 0.45 },
 };
-for (const [id, def] of Object.entries(NATION_DEFS)) {
-  def.spawnHex = GENMAP.spawns[id] || [Math.floor(MAP_W / 2), Math.floor(MAP_H / 2)];
-}
 
 /* Terrain-Eigenschaften */
 const TERRAIN = {
