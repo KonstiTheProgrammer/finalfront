@@ -1,80 +1,62 @@
 /* =========================================================
    FINAL FRONT — tools/genmap.js
-   Erzeugt js/mapdata.js aus ECHTEN Geodaten:
+   Erzeugt js/mapdata.js (MEHRERE Karten) aus ECHTEN Geodaten:
    - Landform: Natural Earth ne_50m_land + ne_50m_lakes (GeoJSON, Public Domain)
-   - Höhen:    Open-Meteo Elevation API (Copernicus DEM GLO-90)
+   - Höhen:    OpenTopoData/Open-Meteo (Copernicus/ETOPO)
+   - Flüsse:   Natural Earth ne_50m_rivers_lake_centerlines
    Ausführen:  node tools/genmap.js
    ========================================================= */
 
 const fs = require('fs');
 const path = require('path');
 
-const CONFIG = {
-  W: 72, H: 80,                         // Hexgitter (odd-r, pointy-top) — kompakte Multiplayer-Karte
-  lonMin: -11, lonMax: 42,              // Europa: Irland bis Moskau
-  latMin: 34, latMax: 71.5,             // Nordafrika-Küste bis Nordkap
-  landUrls: [
+const MAPS = [
+  { id: 'europa', name: 'Europa', W: 48, H: 54, lonMin: -11, lonMax: 42, latMin: 34, latMax: 71.5 },
+  { id: 'mitteleuropa', name: 'Mitteleuropa', W: 32, H: 36, lonMin: 0, lonMax: 24, latMin: 43, latMax: 57 },
+];
+
+const URLS = {
+  land: [
     'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_land.json',
     'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_land.geojson',
   ],
-  lakesUrls: [
+  lakes: [
     'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_lakes.json',
     'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_lakes.geojson',
   ],
-  elevationApi: 'https://api.open-meteo.com/v1/elevation',
-  // Echte Hauptstadt-Koordinaten [lon, lat]
-  capitals: {
-    G: [-0.13, 51.51],   // London
-    J: [-6.26, 53.35],   // Dublin
-    F: [2.35, 48.86],    // Paris
-    L: [4.35, 50.85],    // Brüssel
-    D: [13.40, 52.52],   // Berlin
-    W: [7.45, 46.95],    // Bern
-    I: [12.50, 41.90],   // Rom
-    S: [-3.70, 40.42],   // Madrid
-    O: [-9.14, 38.72],   // Lissabon
-    N: [18.07, 59.33],   // Stockholm
-    P: [21.01, 52.23],   // Warschau
-    H: [16.37, 48.21],   // Wien
-    B: [20.46, 44.82],   // Belgrad
-    R: [37.62, 55.75],   // Moskau
-    T: [32.85, 39.93],   // Ankara
-  },
-  // Fallback-Gebirge [lon, lat, RadiusGrad], falls die Höhen-API nicht erreichbar ist
-  fallbackMountains: [
-    [8.5, 46.4, 2.6], [13, 47, 2.2],          // Alpen
-    [0.8, 42.7, 1.6],                          // Pyrenäen
-    [24.5, 47.3, 2.4], [21, 49.3, 1.4],        // Karpaten
-    [8.5, 61.5, 2.6], [14, 65, 2.6],           // Skanden
-    [18, 43.7, 1.8], [21.5, 41.8, 1.6],        // Dinariden/Balkan
-    [13.5, 42.5, 1.4], [16, 40.5, 1.2],        // Apennin
-    [-4.5, 57.2, 1.2],                         // Schottland
-    [43, 43, 2.2],                             // Kaukasus
-    [35, 38.5, 2.2], [39, 39.5, 2.4],          // Anatolien
-    [-5.5, 37, 1.0], [-3, 40.5, 0.8],          // Iberische Ketten
+  rivers: [
+    'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/50m/physical/ne_50m_rivers_lake_centerlines.json',
+    'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_rivers_lake_centerlines.geojson',
   ],
 };
 
-/* ---------- Miller-Projektion ---------- */
+const RIVER_MAX_SCALERANK = 8;
+const RIVER_MIN_CHAIN = 4;
+
+/* ---------- Miller-Projektion (pro Karte) ---------- */
 const D2R = Math.PI / 180;
 const millerY = lat => 1.25 * Math.log(Math.tan(Math.PI / 4 + 0.4 * lat * D2R));
-const Y_TOP = millerY(CONFIG.latMax);
-const Y_BOT = millerY(CONFIG.latMin);
 
-function rowLat(r) {
-  const fy = (r + 0.5) / CONFIG.H;
-  const y = Y_TOP + fy * (Y_BOT - Y_TOP);
-  return (Math.atan(Math.exp(y / 1.25)) - Math.PI / 4) / (0.4 * D2R);
-}
-function colLon(c, r) {
-  const fx = (c + 0.5 * (r & 1) + 0.5) / CONFIG.W;
-  return CONFIG.lonMin + fx * (CONFIG.lonMax - CONFIG.lonMin);
-}
-function lonLatToHex(lon, lat) {
-  const y = millerY(lat);
-  const r = Math.round(((y - Y_TOP) / (Y_BOT - Y_TOP)) * CONFIG.H - 0.5);
-  const c = Math.round(((lon - CONFIG.lonMin) / (CONFIG.lonMax - CONFIG.lonMin)) * CONFIG.W - 0.5 - 0.5 * (r & 1));
-  return [Math.max(0, Math.min(CONFIG.W - 1, c)), Math.max(0, Math.min(CONFIG.H - 1, r))];
+function makeProj(cfg) {
+  const yTop = millerY(cfg.latMax);
+  const yBot = millerY(cfg.latMin);
+  return {
+    rowLat(r) {
+      const fy = (r + 0.5) / cfg.H;
+      const y = yTop + fy * (yBot - yTop);
+      return (Math.atan(Math.exp(y / 1.25)) - Math.PI / 4) / (0.4 * D2R);
+    },
+    colLon(c, r) {
+      const fx = (c + 0.5 * (r & 1) + 0.5) / cfg.W;
+      return cfg.lonMin + fx * (cfg.lonMax - cfg.lonMin);
+    },
+    lonLatToHex(lon, lat) {
+      const y = millerY(lat);
+      const r = Math.round(((y - yTop) / (yBot - yTop)) * cfg.H - 0.5);
+      const c = Math.round(((lon - cfg.lonMin) / (cfg.lonMax - cfg.lonMin)) * cfg.W - 0.5 - 0.5 * (r & 1));
+      return [c, r];
+    },
+  };
 }
 
 /* ---------- Downloads ---------- */
@@ -94,8 +76,7 @@ async function fetchFirst(urls, label) {
   return null;
 }
 
-/* Alle Ringe (Außen + Löcher) aus einer GeoJSON-Feature-Collection */
-function collectRings(geojson) {
+function collectRings(geojson, cfg) {
   const rings = [];
   for (const f of geojson.features) {
     const g = f.geometry;
@@ -103,11 +84,10 @@ function collectRings(geojson) {
     const polys = g.type === 'Polygon' ? [g.coordinates]
       : g.type === 'MultiPolygon' ? g.coordinates : [];
     for (const poly of polys) for (const ring of poly) {
-      // Bounding-Box-Vorfilter aufs Kartenfenster
       let inBox = false;
       for (const [lon, lat] of ring) {
-        if (lon >= CONFIG.lonMin - 2 && lon <= CONFIG.lonMax + 2
-          && lat >= CONFIG.latMin - 2 && lat <= CONFIG.latMax + 2) { inBox = true; break; }
+        if (lon >= cfg.lonMin - 2 && lon <= cfg.lonMax + 2
+          && lat >= cfg.latMin - 2 && lat <= cfg.latMax + 2) { inBox = true; break; }
       }
       if (inBox) rings.push(ring);
     }
@@ -115,7 +95,6 @@ function collectRings(geojson) {
   return rings;
 }
 
-/* Scanline: für eine Breitengrad-Linie alle Kanten-Schnittpunkte (Längengrade) */
 function scanlineCrossings(rings, lat) {
   const xs = [];
   for (const ring of rings) {
@@ -132,15 +111,12 @@ function scanlineCrossings(rings, lat) {
 }
 
 function insideByParity(crossings, lon) {
-  // Anzahl Schnittpunkte links vom Punkt — ungerade = innen
   let n = 0;
   for (const x of crossings) { if (x < lon) n++; else break; }
   return (n & 1) === 1;
 }
 
 /* ---------- Höhendaten ---------- */
-/* Zwei Anbieter: OpenTopoData (ETOPO1, 1 Call/s, 1000/Tag) primär,
-   open-meteo als Fallback. Pro Batch wird notfalls gewechselt. */
 const ELEV_PROVIDERS = [
   {
     name: 'opentopodata/etopo1',
@@ -153,7 +129,7 @@ const ELEV_PROVIDERS = [
   {
     name: 'open-meteo',
     delay: 600,
-    url: b => `${CONFIG.elevationApi}?latitude=${b.map(p => p[1].toFixed(4)).join(',')}&longitude=${b.map(p => p[0].toFixed(4)).join(',')}`,
+    url: b => `https://api.open-meteo.com/v1/elevation?latitude=${b.map(p => p[1].toFixed(4)).join(',')}&longitude=${b.map(p => p[0].toFixed(4)).join(',')}`,
     parse: (json, n) => (json.elevation && json.elevation.length === n) ? json.elevation : null,
   },
 ];
@@ -162,7 +138,7 @@ async function fetchElevations(points) {
   const out = new Array(points.length).fill(null);
   const chunk = 100;
   let failed = 0;
-  let prov = 0;    // aktueller Anbieter (bleibt bei dem, der funktioniert)
+  let prov = 0;
   for (let i = 0; i < points.length; i += chunk) {
     const batch = points.slice(i, i + chunk);
     let ok = false;
@@ -186,7 +162,7 @@ async function fetchElevations(points) {
     }
     if (!ok) failed += batch.length;
     const done = Math.min(points.length, i + chunk);
-    process.stdout.write(`\r  Höhen: ${done}/${points.length} (${Math.round(done / points.length * 100)} %) via ${ELEV_PROVIDERS[prov].name}${failed ? ` — ${failed} fehlgeschlagen` : ''}   `);
+    process.stdout.write(`\r    Höhen: ${done}/${points.length} (${Math.round(done / points.length * 100)} %)   `);
   }
   console.log();
   return { out, failed };
@@ -194,7 +170,6 @@ async function fetchElevations(points) {
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/* Deterministischer Zufall für Wald */
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6D2B79F5) | 0;
@@ -204,76 +179,56 @@ function mulberry32(a) {
   };
 }
 
-/* ---------- Hauptprogramm ---------- */
-(async function main() {
-  console.log(`FINAL FRONT Kartengenerator — ${CONFIG.W}x${CONFIG.H} Hexes, Europa ${CONFIG.lonMin}..${CONFIG.lonMax}°O / ${CONFIG.latMin}..${CONFIG.latMax}°N`);
+const NEIGHBORS_EVEN = [[1, 0], [-1, 0], [0, -1], [-1, -1], [0, 1], [-1, 1]];
+const NEIGHBORS_ODD = [[1, 0], [-1, 0], [1, -1], [0, -1], [1, 1], [0, 1]];
 
-  const land = await fetchFirst(CONFIG.landUrls, 'Natural Earth Land (50m)');
-  if (!land) { console.error('FEHLER: Keine Landdaten erreichbar.'); process.exit(1); }
-  const lakes = await fetchFirst(CONFIG.lakesUrls, 'Natural Earth Seen (50m)');
+/* ---------- Eine Karte erzeugen ---------- */
+async function buildOneMap(cfg, landGeo, lakesGeo, riversGeo) {
+  console.log(`\nKarte "${cfg.id}" — ${cfg.W}x${cfg.H}, ${cfg.lonMin}..${cfg.lonMax}°O / ${cfg.latMin}..${cfg.latMax}°N`);
+  const proj = makeProj(cfg);
+  const landRings = collectRings(landGeo, cfg);
+  const lakeRings = lakesGeo ? collectRings(lakesGeo, cfg) : [];
 
-  const landRings = collectRings(land);
-  const lakeRings = lakes ? collectRings(lakes) : [];
-  console.log(`  ${landRings.length} Land-Ringe, ${lakeRings.length} See-Ringe im Fenster`);
-
-  // 1) Land/Wasser per Scanline rastern
+  // 1) Land/Wasser rastern
   const isLand = [];
-  for (let r = 0; r < CONFIG.H; r++) {
-    const lat = rowLat(r);
+  for (let r = 0; r < cfg.H; r++) {
+    const lat = proj.rowLat(r);
     const landX = scanlineCrossings(landRings, lat);
     const lakeX = scanlineCrossings(lakeRings, lat);
     const row = [];
-    for (let c = 0; c < CONFIG.W; c++) {
-      const lon = colLon(c, r);
+    for (let c = 0; c < cfg.W; c++) {
+      const lon = proj.colLon(c, r);
       row.push(insideByParity(landX, lon) && !insideByParity(lakeX, lon));
     }
     isLand.push(row);
   }
-  let landCount = isLand.flat().filter(Boolean).length;
-  console.log(`  Landform gerastert: ${landCount} Land-Hexes von ${CONFIG.W * CONFIG.H}`);
+  console.log(`  Land: ${isLand.flat().filter(Boolean).length}/${cfg.W * cfg.H} Hexes`);
 
-  // 2) Echte Höhen für alle Land-Hexes
+  // 2) Höhen
   const landPoints = [];
   const landIndex = [];
-  for (let r = 0; r < CONFIG.H; r++) for (let c = 0; c < CONFIG.W; c++) {
-    if (isLand[r][c]) { landPoints.push([colLon(c, r), rowLat(r)]); landIndex.push([c, r]); }
+  for (let r = 0; r < cfg.H; r++) for (let c = 0; c < cfg.W; c++) {
+    if (isLand[r][c]) { landPoints.push([proj.colLon(c, r), proj.rowLat(r)]); landIndex.push([c, r]); }
   }
-  console.log(`  hole echte Höhendaten (Copernicus DEM via open-meteo.com)…`);
   let elev = null;
   try {
     const res = await fetchElevations(landPoints);
-    // Teilergebnisse zählen: echte Höhe wo vorhanden, Fallback nur für Lücken
     const got = res.out.filter(x => x !== null).length;
-    console.log(`  echte Höhenwerte: ${got}/${landPoints.length}`);
     if (got > landPoints.length * 0.4) elev = res.out;
-    else console.log('  zu wenige echte Werte — nutze komplett Fallback-Gebirge.');
-  } catch (e) {
-    console.log('  Höhen-API nicht erreichbar — nutze Fallback-Gebirge: ' + e.message);
-  }
+  } catch (e) { /* Fallback unten */ }
 
   // 3) Terrain klassifizieren
   const rng = mulberry32(1337);
   const grid = [];
-  for (let r = 0; r < CONFIG.H; r++) grid.push(new Array(CONFIG.W).fill('.'));
-
+  for (let r = 0; r < cfg.H; r++) grid.push(new Array(cfg.W).fill('.'));
   const elevOf = new Map();
-  if (elev) {
-    landIndex.forEach(([c, r], i) => { if (elev[i] !== null) elevOf.set(c + r * 100000, elev[i]); });
-  }
-  const fallbackElev = (lon, lat) => {
-    let e = 150;
-    for (const [mlon, mlat, rad] of CONFIG.fallbackMountains) {
-      const d = Math.hypot((lon - mlon) * Math.cos(lat * D2R), lat - mlat) / rad;
-      if (d < 1) e = Math.max(e, 2200 * (1 - d));
-    }
-    return e;
-  };
+  if (elev) landIndex.forEach(([c, r], i) => { if (elev[i] !== null) elevOf.set(c + r * 100000, elev[i]); });
 
-  for (let r = 0; r < CONFIG.H; r++) {
-    const lat = rowLat(r);
-    for (let c = 0; c < CONFIG.W; c++) {
+  for (let r = 0; r < cfg.H; r++) {
+    const lat = proj.rowLat(r);
+    for (let c = 0; c < cfg.W; c++) {
       if (!isLand[r][c]) continue;
-      const e = elevOf.has(c + r * 100000) ? elevOf.get(c + r * 100000) : fallbackElev(colLon(c, r), lat);
+      const e = elevOf.has(c + r * 100000) ? elevOf.get(c + r * 100000) : 150;
       const roll = rng();
       let t;
       if (e >= 1600 || (e >= 1250 && roll < 0.5)) t = 'm';
@@ -286,34 +241,105 @@ function mulberry32(a) {
     }
   }
 
-  // 4) Spawns: echte Hauptstadt-Koordinaten aufs Gitter projizieren
-  const spawns = {};
-  for (const [id, [lon, lat]] of Object.entries(CONFIG.capitals)) {
-    spawns[id] = lonLatToHex(lon, lat);
+  // 4) Flüsse rastern
+  const marked = new Set();
+  if (riversGeo) {
+    for (const f of riversGeo.features) {
+      const props = f.properties || {};
+      if (String(props.featurecla || '').includes('Lake Centerline')) continue;
+      const rank = props.scalerank !== undefined ? props.scalerank : 9;
+      if (rank > RIVER_MAX_SCALERANK) continue;
+      const g = f.geometry;
+      if (!g) continue;
+      const lines = g.type === 'LineString' ? [g.coordinates]
+        : g.type === 'MultiLineString' ? g.coordinates : [];
+      for (const line of lines) {
+        for (let i = 0; i < line.length - 1; i++) {
+          const [lon1, lat1] = line[i];
+          const [lon2, lat2] = line[i + 1];
+          if (Math.max(lon1, lon2) < cfg.lonMin || Math.min(lon1, lon2) > cfg.lonMax) continue;
+          if (Math.max(lat1, lat2) < cfg.latMin || Math.min(lat1, lat2) > cfg.latMax) continue;
+          const steps = Math.max(1, Math.ceil(Math.hypot(lon2 - lon1, lat2 - lat1) / 0.04));
+          for (let s = 0; s <= steps; s++) {
+            const lon = lon1 + (lon2 - lon1) * s / steps;
+            const lat = lat1 + (lat2 - lat1) * s / steps;
+            const [c, r] = proj.lonLatToHex(lon, lat);
+            if (c < 0 || c >= cfg.W || r < 0 || r >= cfg.H) continue;
+            if (grid[r][c] === '.') continue;
+            marked.add(c + r * cfg.W);
+          }
+        }
+      }
+    }
+    // Mini-Schnipsel entfernen
+    const seen = new Set();
+    const drop = [];
+    for (const key of marked) {
+      if (seen.has(key)) continue;
+      const comp = [key];
+      seen.add(key);
+      for (let i = 0; i < comp.length; i++) {
+        const c = comp[i] % cfg.W, r = Math.floor(comp[i] / cfg.W);
+        const deltas = (r & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+        for (const [dc, dr] of deltas) {
+          const k = (c + dc) + (r + dr) * cfg.W;
+          if (marked.has(k) && !seen.has(k)) { seen.add(k); comp.push(k); }
+        }
+      }
+      if (comp.length < RIVER_MIN_CHAIN) drop.push(...comp);
+    }
+    for (const k of drop) marked.delete(k);
+  }
+  console.log(`  Flüsse: ${marked.size} Hexes`);
+
+  const rows = grid.map(r => r.join(''));
+  const riverRows = [];
+  for (let r = 0; r < cfg.H; r++) {
+    let row = '';
+    for (let c = 0; c < cfg.W; c++) row += marked.has(c + r * cfg.W) ? 'r' : '.';
+    riverRows.push(row);
+  }
+  const stats = {};
+  for (const row of rows) for (const ch of row) stats[ch] = (stats[ch] || 0) + 1;
+  console.log(`  Terrain: Wasser ${stats['.'] || 0} · Ebene ${stats['p'] || 0} · Wald ${stats['f'] || 0} · Hügel ${stats['h'] || 0} · Gebirge ${stats['m'] || 0}`);
+  return { name: cfg.name, w: cfg.W, h: cfg.H, rows, rivers: riverRows };
+}
+
+/* ---------- Hauptprogramm ---------- */
+(async function main() {
+  console.log(`FINAL FRONT Kartengenerator — ${MAPS.length} Karten`);
+  const land = await fetchFirst(URLS.land, 'Natural Earth Land (50m)');
+  if (!land) { console.error('FEHLER: Keine Landdaten erreichbar.'); process.exit(1); }
+  const lakes = await fetchFirst(URLS.lakes, 'Natural Earth Seen (50m)');
+  const rivers = await fetchFirst(URLS.rivers, 'Natural Earth Flüsse (50m)');
+
+  const maps = {};
+  for (const cfg of MAPS) {
+    maps[cfg.id] = await buildOneMap(cfg, land, lakes, rivers);
   }
 
-  // 5) js/mapdata.js schreiben
-  const rows = grid.map(r => r.join(''));
+  const entries = Object.entries(maps).map(([id, m]) => `  ${id}: {
+    name: ${JSON.stringify(m.name)},
+    w: ${m.w},
+    h: ${m.h},
+    rows: [
+${m.rows.map(r => `      '${r}',`).join('\n')}
+    ],
+    rivers: [
+${m.rivers.map(r => `      '${r}',`).join('\n')}
+    ],
+  },`).join('\n');
+
   const out = `/* Automatisch erzeugt von tools/genmap.js — NICHT von Hand editieren.
-   Quelle Landform: Natural Earth 1:50m (Public Domain)
-   Quelle Höhen:    ${elev ? 'Copernicus DEM GLO-90 via open-meteo.com' : 'prozeduraler Fallback'}
-   Fenster: ${CONFIG.lonMin}..${CONFIG.lonMax}°O, ${CONFIG.latMin}..${CONFIG.latMax}°N (Miller-Projektion)
+   Quellen: Natural Earth 1:50m (Land/Seen/Flüsse, Public Domain),
+   Höhen via OpenTopoData/Open-Meteo. Miller-Projektion.
    Erzeugt: ${new Date().toISOString()} */
-const GENMAP = {
-  w: ${CONFIG.W},
-  h: ${CONFIG.H},
-  realElevation: ${!!elev},
-  spawns: ${JSON.stringify(spawns)},
-  rows: [
-${rows.map(r => `    '${r}',`).join('\n')}
-  ],
+const GENMAPS = {
+${entries}
 };
 `;
   const outPath = path.join(__dirname, '..', 'js', 'mapdata.js');
   fs.writeFileSync(outPath, out);
-  const terrainStats = {};
-  for (const row of rows) for (const ch of row) terrainStats[ch] = (terrainStats[ch] || 0) + 1;
-  console.log(`  geschrieben: ${outPath}`);
-  console.log(`  Terrain: Wasser ${terrainStats['.'] || 0} · Ebene ${terrainStats['p'] || 0} · Wald ${terrainStats['f'] || 0} · Hügel ${terrainStats['h'] || 0} · Gebirge ${terrainStats['m'] || 0}`);
+  console.log(`\ngeschrieben: ${outPath}`);
   console.log('Fertig.');
 })();

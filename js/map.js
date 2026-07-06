@@ -6,8 +6,19 @@
    Hexgitter: odd-r offset, pointy-top.
    ========================================================= */
 
-const MAP_W = GENMAP.w;
-const MAP_H = GENMAP.h;
+/* ---------- Kartenwahl: mehrere Karten in GENMAPS ---------- */
+let CURRENT_MAP_ID = 'europa';
+let MAP_W = 1, MAP_H = 1, WORLD_W = 1, WORLD_H = 1;
+
+function selectMap(id) {
+  CURRENT_MAP_ID = GENMAPS[id] ? id : Object.keys(GENMAPS)[0];
+  const m = GENMAPS[CURRENT_MAP_ID];
+  MAP_W = m.w;
+  MAP_H = m.h;
+  WORLD_W = HEX_SIZE * SQRT3 * (MAP_W + 0.5) + HEX_SIZE * 2;
+  WORLD_H = HEX_SIZE * 1.5 * MAP_H + HEX_SIZE * 2;
+  return CURRENT_MAP_ID;
+}
 
 /* Spieler-Definitionen: 5 Farben, ein Match = 5 Spieler (Mensch + Bots).
    Startplätze werden in der Spawn-Phase frei gewählt — keine festen Spawns. */
@@ -39,8 +50,7 @@ function hexToPixel(c, r) {
     y: HEX_SIZE * 1.5 * r + HEX_SIZE,
   };
 }
-const WORLD_W = HEX_SIZE * SQRT3 * (MAP_W + 0.5) + HEX_SIZE * 2;
-const WORLD_H = HEX_SIZE * 1.5 * MAP_H + HEX_SIZE * 2;
+selectMap(CURRENT_MAP_ID);   // Standardkarte laden (setzt MAP_W/H, WORLD_W/H)
 
 function pixelToHex(x, y) {
   const rApprox = Math.round((y - HEX_SIZE) / (HEX_SIZE * 1.5));
@@ -91,9 +101,9 @@ function buildMap() {
   const rng = mulberry32(1337);
   const hexes = [];
   for (let r = 0; r < MAP_H; r++) {
-    const rowStr = GENMAP.rows[r] || '';
+    const rowStr = GENMAPS[CURRENT_MAP_ID].rows[r] || '';
     const arr = [];
-    const riverStr = (GENMAP.rivers && GENMAP.rivers[r]) || '';
+    const riverStr = (GENMAPS[CURRENT_MAP_ID].rivers && GENMAPS[CURRENT_MAP_ID].rivers[r]) || '';
     for (let c = 0; c < MAP_W; c++) {
       const terrain = TERRAIN_CODE[rowStr[c]] || 'water';
       arr.push({
@@ -132,14 +142,6 @@ function validateMap(hexes) {
   const issues = [];
   let land = 0;
   for (const row of hexes) for (const h of row) if (h.terrain !== 'water') land++;
-  if (land < MAP_W * MAP_H * 0.25) issues.push(`Nur ${land} Land-Hexes?`);
-  for (const [id, def] of Object.entries(NATION_DEFS)) {
-    const [sc, sr] = def.spawnHex;
-    let ok = false;
-    for (let r = Math.max(0, sr - 6); r <= Math.min(MAP_H - 1, sr + 6) && !ok; r++)
-      for (let c = Math.max(0, sc - 6); c <= Math.min(MAP_W - 1, sc + 6) && !ok; c++)
-        if (hexes[r][c].terrain !== 'water') ok = true;
-    if (!ok) issues.push(`Spawn von ${def.name} (${sc},${sr}) liegt mitten im Meer`);
-  }
-  return { issues, land };
+  if (land < MAP_W * MAP_H * 0.2) issues.push(`Nur ${land} Land-Hexes?`);
+  return { issues, land, map: CURRENT_MAP_ID };
 }

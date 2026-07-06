@@ -94,6 +94,18 @@ function resizeCanvas() {
   UI.canvas.height = window.innerHeight;
 }
 
+/* Nach einem Kartenwechsel: alle Render-Ebenen auf die neue Weltgröße bringen */
+function rebuildLayers() {
+  UI.mapLayer.width = Math.round(WORLD_W * UI.MAP_SCALE);
+  UI.mapLayer.height = Math.round(WORLD_H * UI.MAP_SCALE);
+  UI.ovLayer.width = Math.round(WORLD_W * UI.OV_SCALE);
+  UI.ovLayer.height = Math.round(WORLD_H * UI.OV_SCALE);
+  UI.minimap.height = Math.round(220 * WORLD_H / WORLD_W);
+  UI.minimapBase.width = UI.minimap.width;
+  UI.minimapBase.height = UI.minimap.height;
+  UI.labels = null;
+}
+
 /* Breite der linken UI (Menüleiste + ggf. offenes Panel) */
 function leftUIW() {
   return 52 + (UI.activeTab ? 308 : 0);
@@ -1632,6 +1644,7 @@ function loadNewestSave() {
   const g = Game.deserialize(pick.save);
   if (!g) { pushToast('⚠ Spielstand inkompatibel (alte Version).'); return false; }
   window.game = g;
+  rebuildLayers();
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;
   document.getElementById('start').classList.add('hidden');
   document.getElementById('gameover').classList.add('hidden');
@@ -2127,6 +2140,24 @@ function showStartScreen() {
   const sc = document.getElementById('start');
   sc.classList.remove('hidden');
   document.getElementById('gameover').classList.add('hidden');
+
+  // Kartenwahl
+  if (!UI.selectedMap || !GENMAPS[UI.selectedMap]) UI.selectedMap = Object.keys(GENMAPS)[0];
+  const mapGrid = document.getElementById('map-grid');
+  const renderMaps = () => {
+    mapGrid.innerHTML = Object.entries(GENMAPS).map(([id, m]) => {
+      let land = 0;
+      for (const row of m.rows) for (const ch of row) if (ch !== '.') land++;
+      return `<button class="nation-card map-card ${UI.selectedMap === id ? 'sel' : ''}" data-map="${id}">
+        <b>🗺️ ${m.name}</b>
+        <span class="small">${m.w}×${m.h} · ${land} Provinzen</span>
+      </button>`;
+    }).join('');
+    mapGrid.querySelectorAll('.map-card').forEach(b =>
+      b.addEventListener('click', () => { UI.selectedMap = b.dataset.map; renderMaps(); }));
+  };
+  renderMaps();
+
   const grid = document.getElementById('nation-grid');
   grid.innerHTML = Object.entries(NATION_DEFS).map(([id, def]) => {
     return `<button class="nation-card" data-nation="${id}">
@@ -2144,7 +2175,8 @@ function showStartScreen() {
 }
 
 function startGame(nationId) {
-  window.game = new Game(nationId);
+  window.game = new Game(nationId, undefined, UI.selectedMap);
+  rebuildLayers();
   lastLogLen = 0;
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;
   UI.buildMode = null;
@@ -2175,6 +2207,7 @@ function startReplay() {
   const g = Game.fromReplay(rep);
   if (!g) return;
   window.game = g;
+  rebuildLayers();
   lastLogLen = 0;
   UI.selectedDivs.clear(); UI.selectedHex = null; UI.selectedArmy = null;
   UI.buildMode = null;

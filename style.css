@@ -492,3 +492,16 @@ button.peace:hover { background: #26512e; }
   border-bottom: 1px solid #22303f;
 }
 .front-row .diplo-info { flex: 1; }
+
+/* ---------- Kartenwahl ---------- */
+#map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.map-card.sel {
+  border: 1px solid #e0b04a !important;
+  box-shadow: 0 0 10px rgba(224, 176, 74, 0.35);
+  background: #2a2413 !important;
+}

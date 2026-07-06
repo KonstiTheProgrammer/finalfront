@@ -19,9 +19,12 @@ python -m http.server 4173
 
 ## Spielprinzip (5-Spieler-Match, War-of-Dots-Stil)
 
-- **5 Spieler, eine kompakte Karte (72×80):** In der **Startphase (15 s)** wählst du deinen
-  Spawn frei per Klick — alle sehen einander, Umziehen ist erlaubt. Jeder beginnt mit
-  **einer Stadt und einer Armee Krieger**.
+- **5 Spieler, wählbare Karten:** Vor dem Match wählst du die Karte — **Europa (48×54,
+  1435 Provinzen)** oder **Mitteleuropa (32×36, 891 Provinzen)**; weitere lassen sich in
+  `tools/genmap.js` mit einem Fenster + Größe definieren. In der **Startphase (15 s)**
+  wählst du deinen Spawn frei per Klick — alle sehen einander, Umziehen ist erlaubt,
+  **kein Mindestabstand**: direkt neben dem Gegner spawnen ist eine legitime Strategie.
+  Jeder beginnt mit **einer Stadt und einer Armee Krieger**.
 - **Truppendreieck (EU4-Vorbild):** 🛡 Krieger halten die Linie und schlagen Kavallerie ·
   🐎 Kavallerie ist schnell/hart und schlägt Kanonen · 💥 Kanonen belagern (2,5× gegen
   Miliz) und schlagen Krieger — langsam und fragil.
@@ -39,11 +42,10 @@ python -m http.server 4173
 - **Echte Europakarte:** Die Karte wird aus **realen Geodaten** erzeugt — Küstenlinien von
   Natural Earth (1:50m, Public Domain) und echten Höhendaten (Copernicus-DEM via
   open-meteo.com). Alpen, Karpaten und Kaukasus liegen dort, wo sie wirklich sind; Spawns
-  sind frei wählbar. Miller-Projektion, alles startet neutral und grau
-  (aktuell kompakt auf 72×80 gerastert).
+  sind frei wählbar. Miller-Projektion, alles startet neutral und grau.
 - **🌊 Echte Flüsse** (Natural Earth): Rhein, Donau, Weichsel & Co. sind natürliche
   Verteidigungslinien — Übergänge sind langsam, Angriffe über den Fluss um bis zu 40 %
-  geschwächt, Straßen wirken als Brücken. Erzeugen: `node tools/genrivers.js`.
+  geschwächt, Straßen wirken als Brücken. Flüsse werden von `tools/genmap.js` mitgeneriert.
 - **⚔ Kessel:** Vom Nachschub abgeschnittene Gebietsteile werden rot markiert und gemeldet —
   Einkesselungen sind sichtbar, lehrbar und der Signature-Move des Spiels.
 - **🐍 Verräter-System:** Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen

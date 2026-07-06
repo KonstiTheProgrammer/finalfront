@@ -108,7 +108,9 @@ function dateStr(day) {
 
 /* ---------- Spielzustand ---------- */
 class Game {
-  constructor(playerNationId, seed) {
+  constructor(playerNationId, seed, mapId) {
+    // Karte festlegen (setzt MAP_W/H & Weltgröße), dann bauen
+    this.mapId = selectMap(mapId !== undefined ? mapId : CURRENT_MAP_ID);
     // Geseedeter Zufall (mulberry32) mit serialisierbarem Zustand:
     // gleiche Saat + gleiche Kommandos = identischer Spielverlauf.
     this.seed = (seed === undefined ? (Date.now() & 0x7fffffff) : seed) >>> 0;
@@ -432,10 +434,11 @@ class Game {
     this.spawnDivision(id, 'inf', army, true);   // … und eine Armee Krieger
   }
 
-  /* Zufälliger Startplatz mit Abstand zu den anderen (Spawn-Phase) */
+  /* Zufälliger Startplatz — Bots streuen sich, hart ist der Abstand aber nicht */
   pickSpawnSpot() {
     const taken = Object.values(this.nations).map(n => n.capital).filter(Boolean);
-    for (let minDist = BAL.spawn.minDist; minDist >= 4; minDist -= 4) {
+    const base = Math.max(6, Math.floor(Math.min(MAP_W, MAP_H) / 5));
+    for (let minDist = base; minDist >= 3; minDist -= 3) {
       for (let tries = 0; tries < 300; tries++) {
         const c = Math.floor(this.rand() * MAP_W), r = Math.floor(this.rand() * MAP_H);
         const h = this.hexAt(c, r);
@@ -447,16 +450,13 @@ class Game {
     return this.nearestFreeLand(Math.floor(MAP_W / 2), Math.floor(MAP_H / 2));
   }
 
-  /* Spawn-Phase: eigenen Startplatz verlegen (Stadt + Truppen ziehen mit) */
+  /* Spawn-Phase: eigenen Startplatz verlegen (Stadt + Truppen ziehen mit).
+     KEIN Mindestabstand — direkt neben dem Gegner spawnen ist erlaubt. */
   relocateSpawn(id, c, r) {
     if (!this.spawnPhase) return false;
     const h = this.hexAt(c, r);
     if (!h || h.terrain === 'water' || h.terrain === 'mountain') return false;
-    if (h.owner && h.owner !== id) return false;
-    for (const [oid, nat] of Object.entries(this.nations)) {
-      if (oid === id || !nat.capital) continue;
-      if (hexDist(c, r, nat.capital[0], nat.capital[1]) < 6) return false;   // zu nah am Nachbarn
-    }
+    if (h.owner && h.owner !== id) return false;   // nur nicht AUF eine fremde Stadt
     const nat = this.nations[id];
     const old = this.hexAt(...nat.capital);
     if (old) {
@@ -2193,7 +2193,7 @@ class Game {
   /* ---------- Speichern / Laden ---------- */
   serialize() {
     return JSON.stringify({
-      v: 4, day: this.day, dayFloat: this.dayFloat, player: this.player,
+      v: 4, mapId: this.mapId, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
@@ -2220,9 +2220,11 @@ class Game {
   static deserialize(json) {
     let s;
     try { s = JSON.parse(json); } catch (e) { return null; }
-    if (!s || (s.v !== 3 && s.v !== 4) || !Array.isArray(s.hexes) || s.hexes.length !== MAP_W * MAP_H) return null;
+    if (!s || (s.v !== 3 && s.v !== 4) || !Array.isArray(s.hexes)) return null;
+    const mapDef = GENMAPS[s.mapId || 'europa'];
+    if (!mapDef || s.hexes.length !== mapDef.w * mapDef.h) return null;
     if (!NATION_DEFS[s.player]) return null;
-    const g = new Game(s.player, s.seed !== undefined ? s.seed : 1);
+    const g = new Game(s.player, s.seed !== undefined ? s.seed : 1, s.mapId || 'europa');
     g.divisions = [];
     g.day = s.day; g.dayFloat = s.dayFloat;
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
@@ -2294,12 +2296,12 @@ class Game {
   /* ---------- Replay ---------- */
   getReplay() {
     if (!this._replayCapable) return null;
-    return { v: 1, seed: this.seed, player: this.player, cmds: this.cmdLog };
+    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, cmds: this.cmdLog };
   }
 
   static fromReplay(rep) {
     if (!rep || rep.seed === undefined || !NATION_DEFS[rep.player]) return null;
-    const g = new Game(rep.player, rep.seed);
+    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa');
     g._replayCmds = (rep.cmds || []).slice();
     g._replayIdx = 0;
     g.cmdLog = g._replayCmds;
