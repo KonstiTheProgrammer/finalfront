@@ -1052,6 +1052,41 @@ function render() {
     }
   }
 
+  // Ausbildungs-Standorte: Fortschrittsring + Anzahl
+  if (game.training.length && zoom >= 0.8) {
+    const sites = new Map();
+    for (const q of game.training) {
+      const k = q.c + q.r * MAP_W;
+      const s = sites.get(k);
+      if (!s || q.ready < s.ready) sites.set(k, { c: q.c, r: q.r, ready: q.ready, type: q.type, n: (s ? s.n : 0) + 1 });
+      else s.n++;
+    }
+    for (const s of sites.values()) {
+      const p = hexToPixel(s.c, s.r);
+      const dauer = BAL.trainTime[s.type] || 8;
+      const frac = Math.max(0.05, Math.min(1, 1 - (s.ready - game.dayFloat) / dauer));
+      const bx = p.x + HEX_SIZE * 0.9, by = p.y - HEX_SIZE * 0.9;
+      ctx.beginPath(); ctx.arc(bx, by, 4.6, 0, 7);
+      ctx.fillStyle = 'rgba(18,24,34,0.92)';
+      ctx.fill();
+      ctx.beginPath(); ctx.moveTo(bx, by);
+      ctx.arc(bx, by, 4.6, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+      ctx.closePath();
+      ctx.fillStyle = '#e0b34a';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(240,230,200,0.9)';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.arc(bx, by, 4.6, 0, 7); ctx.stroke();
+      if (s.n > 1) {
+        ctx.fillStyle = '#ffe9b0';
+        ctx.font = 'bold 6.5px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(s.n), bx + 6.8, by - 3);
+        ctx.textBaseline = 'alphabetic';
+      }
+    }
+  }
+
   // Gefechtsprognose (HOI-Bubble) über laufenden Kämpfen mit Spieler-Beteiligung
   if (zoom >= 0.65) {
     const bubbled = new Set();
@@ -1728,7 +1763,9 @@ function handleClick(sx, sy, additive) {
   if (hx) {
     UI.selectedHex = hx;
     const h = game.hexAt(hx.c, hx.r);
-    if (h && h.owner === game.player && UI.activeTab === 'info') UI.activeTab = 'bauen';
+    // Eigenes Feld (oder baubares Küstenwasser) → Bauliste fürs Feld
+    if (h && (h.owner === game.player
+      || (h.terrain === 'water' && game.canBuild(game.player, h, 'fischerei') === true))) UI.activeTab = 'bauen';
     // Fremde Nation angeklickt → Info-/Diplomatie-Panel (wie HOI4)
     if (h && h.owner && h.owner !== game.player) UI.activeTab = 'info';
     updateUnitbar();
@@ -1809,6 +1846,9 @@ function updateTooltip(sx, sy) {
       if (lvl < lvlCap) html += `<br><span class="tt-dim">nochmal bauen = Ausbau auf Level ${lvl + 1}${h.building === 'turm' ? ' (doppelte Reichweite)' : ''}</span>`;
     }
     if (h.road) html += ' · 🛣️';
+    const tq = game.training.filter(q => q.c === h.c && q.r === h.r);
+    if (tq.length) html += `<br><span class="tt-dim">🎖️ in Ausbildung: ${tq.map(q =>
+      `${BAL.divTypes[q.type].name} (${Math.max(0, q.ready - game.dayFloat).toFixed(0)} T.)`).join(', ')}</span>`;
     if (h.terrain !== 'water')
       html += `<br><span class="tt-dim">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
   } else if (h.terrain !== 'water') {
@@ -2030,37 +2070,71 @@ function refreshPanel() {
 }
 
 function panelBauen() {
-  let html = `<p class="hint">Bau-Modus wählen, dann auf die Karte klicken — Straßen lassen sich <b>ziehen</b>.
-    Gleiches Gebäude nochmal aufs Feld = <b>Ausbau auf Level 2/3</b> (kostet das 2-/3-fache, bringt das Doppelte/Dreifache).
-    Rechtsklick/Esc beendet.</p>`;
+  const hx = UI.selectedHex;
+  const h = hx && game.hexAt(hx.c, hx.r);
+  const strassenBtn = `<hr><button data-buildmode="strasse" class="${UI.buildMode === 'strasse' ? 'active-build' : ''}">🛣️ Straßen ziehen — ${BAL.cost.strasse} G je Feld</button>
+    <p class="small">Modus: mit gedrückter Maustaste über die Karte ziehen. Esc beendet.</p>`;
+  const mine = h && h.owner === game.player;
+  const fischbar = h && h.terrain === 'water' && game.canBuild(game.player, h, 'fischerei') === true;
+  if (!h || (!mine && !fischbar)) {
+    return `<p class="hint">Klicke ein <b>eigenes Feld</b> an — dort erscheint die Liste, was auf dem Feld
+      gebaut werden kann. 🎣 Fischerei: freies <b>Küstenwasser neben deinem Land</b> anklicken.<br><br>
+      🏙️ Städte, die Hauptstadt und 🎪 Kasernen bilden <b>Truppen aus</b> (Feld anklicken) —
+      Kasernen doppelt so schnell.</p>` + strassenBtn;
+  }
+
+  // Feld-Kopf
+  let html = `<p><b>${TERRAIN[h.terrain].name}</b>${h.river ? ' · 🌊 Fluss' : ''} (${h.c}|${h.r})`;
+  if (h.building) html += `<br>${buildingName(h.building)}${(h.level || 1) > 1 ? ` · Level ${h.level}` : ''}`;
+  if (h.road) html += ' · 🛣️ Straße';
+  if (mine && h.terrain !== 'water') html += `<br><span class="small">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
+  html += '</p>';
+
+  // Bauliste: alles, was auf DIESEM Feld geht (Ausbau eingeschlossen)
   const y = BAL.yields;
-  const items = [
-    ['mine', '⛏️ Mine', `+${y.mine.gold} Gold/Tag (Hügel: +${y.mine.hillsGold}) · überall baubar`],
-    ['forsterei', '🪓 Forsterei', `+${y.forsterei.gold} Gold und +${y.forsterei.leute}k Leute/Tag · nur im Wald`],
-    ['fischerei', '🎣 Fischerei', `+${y.fischerei.gold} Gold und +${y.fischerei.leute}k Leute/Tag · Küstenwasser neben deinem Land`],
-    ['dorf', '🏠 Dorf', `+${y.dorf.leute}k Leute/Tag · überall baubar`],
-    ['stadt', '🏙️ Stadt', `Dorf-Ausbau: +${BAL.incomeStadt} Gold und +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub · Straßen zu nahen Städten wachsen automatisch`],
-    ['turm', '🗼 Wehrturm', `Miliz umliegender Felder ×${BAL.turm.boost} · Ausbau (Level 2) = doppelte Reichweite`],
-    ['kaserne', '🎪 Kaserne', `bildet ${BAL.trainPerKaserne}k Leute/Tag zu 🎖️ Soldaten aus (× Level) — Divisionen kosten Gold + Soldaten`],
-    ['strasse', '🛣️ Straße', `Bewegung + Versorgung · überbrückt Flüsse — ziehbar!`],
-  ];
-  for (const [key, label, desc] of items) {
+  const DESCS = {
+    mine: `+${y.mine.gold} G/Tag${h.terrain === 'hills' ? ` (Hügel: +${y.mine.hillsGold})` : ''}`,
+    forsterei: `+${y.forsterei.gold} G und +${y.forsterei.leute}k 👥/Tag`,
+    fischerei: `+${y.fischerei.gold} G und +${y.fischerei.leute}k 👥/Tag`,
+    dorf: `+${y.dorf.leute}k 👥/Tag`,
+    stadt: `+${BAL.incomeStadt} G · +${BAL.leuteStadt}k 👥/Tag · Hub · Auto-Straßen zu Nachbarstädten`,
+    turm: `Miliz umliegender Felder ×${BAL.turm.boost} · Level 2 = doppelte Reichweite`,
+    kaserne: `${BAL.trainPerKaserne}k 👥→🎖️/Tag (× Level) · bildet doppelt so schnell aus`,
+  };
+  html += '<h3>Bauen</h3>';
+  let any = false;
+  for (const key of ['mine', 'forsterei', 'fischerei', 'dorf', 'stadt', 'turm', 'kaserne']) {
+    const res = game.canBuild(game.player, h, key);
+    if (res !== true) continue;
+    const up = h.building === key;
+    any = true;
     html += `<div class="build-row">
-      <button data-buildmode="${key}" class="${UI.buildMode === key ? 'active-build' : ''}">${label} — ab ${BAL.cost[key]} G</button>
-      <div class="small">${desc}</div>
+      <button data-buildat="${key}">${buildingName(key)}${up ? ` → Level ${(h.level || 1) + 1}` : ''} — ${game.buildCost(h, key)} G</button>
+      <div class="small">${DESCS[key] || ''}</div>
     </div>`;
   }
-  html += `<p class="small hint">💡 Unbebautes Land arbeitet auch: Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute — Gebäude sind um ein Vielfaches stärker.</p>`;
-  if (UI.selectedHex) {
-    const h = game.hexAt(UI.selectedHex.c, UI.selectedHex.r);
-    if (h && h.owner === game.player) {
-      html += `<hr><p><b>${TERRAIN[h.terrain].name}</b> (${h.c}|${h.r})`;
-      if (h.building) html += ` · ${buildingName(h.building)}${(h.level || 1) > 1 ? ` Lv ${h.level}` : ''}`;
-      if (h.road) html += ' · 🛣️';
-      html += `<br><span class="small">Versorgung ${Math.round(h.supply * 100)} %</span></p>`;
+  if (!any) html += `<p class="small hint">Hier geht nichts mehr — Feld belegt oder Terrain passt nicht.</p>`;
+
+  // Ausbildung an Städten/Hauptstadt/Kasernen
+  if (game.isTrainSite(h, game.player)) {
+    const fast = h.building === 'kaserne';
+    html += `<hr><h3>🎖️ Ausbilden${fast ? ' — Kaserne: doppelt so schnell!' : ''}</h3>
+      <p class="small">Die Truppe erscheint nach der Ausbildung <b>auf diesem Feld</b>.</p>`;
+    for (const ty of ['inf', 'kav', 'kan']) {
+      const t = BAL.divTypes[ty];
+      const tage = BAL.trainTime[ty] * (fast ? BAL.kaserneTrainFactor : 1);
+      html += `<div class="build-row">
+        <button data-trainat="${ty}">${t.name} — ${t.gold} G · ${t.mp}k 🎖️ · ${tage} Tage</button>
+        <div class="small">${TYPE_HINT[ty]}</div>
+      </div>`;
+    }
+    const queue = game.training.filter(q => q.c === h.c && q.r === h.r);
+    if (queue.length) {
+      html += `<p class="small"><b>In Ausbildung:</b> ${queue.map(q =>
+        `${BAL.divTypes[q.type].name} (${Math.max(0, q.ready - game.dayFloat).toFixed(0)} T.)`).join(' · ')}</p>`;
     }
   }
-  return html;
+  return html + strassenBtn;
 }
 
 const TYPE_HINT = {
@@ -2075,15 +2149,11 @@ function panelTruppen() {
   let html = `<p class="hint small"><b>Rechtsklick</b> = Marsch · Truppen erobern freies Nachbarland von selbst ·
     <b>Strg+Klick auf eine Grenze</b> = Frontlinie gegen den Nachbarn · <b>B</b> = eigene Linie ziehen ·
     <b>S/M</b> = teilen/vereinen.</p>
-    <h3>Ausbilden</h3>
-    <div class="train-grid">
-    ${['inf', 'kav', 'kan'].map(ty => {
-      const t = BAL.divTypes[ty];
-      return `<div class="train-row"><span><b>${t.name}</b><br><span class="small">${TYPE_HINT[ty]}<br>${t.gold} G · ${t.mp}k 🎖️</span></span>
-        <span><button data-train="${ty}" data-n="1">+1</button>
-        <button data-train="${ty}" data-n="3">+3</button></span></div>`;
-    }).join('')}
-    </div>
+    <h3>🎖️ Ausbilden</h3>
+    <p class="hint small">Klicke eine <b>🏙️ Stadt, deine Hauptstadt oder eine 🎪 Kaserne</b> an —
+    dort bildest du Truppen aus. <b>Kasernen sind doppelt so schnell.</b>
+    Die Truppe erscheint nach der Ausbildung am Standort.${game.training.some(q => q.nation === game.player)
+      ? `<br><b>In Ausbildung: ${game.training.filter(q => q.nation === game.player).length}</b>` : ''}</p>
     <hr><h3>Frontlinien</h3>`;
   const myFronts = game.fronts.filter(f => f.owner === game.player);
   if (!myFronts.length) {
@@ -2164,6 +2234,21 @@ function bindPanelActions(el) {
   el.querySelectorAll('[data-buildmode]').forEach(b => b.addEventListener('click', () => {
     setBuildMode(b.dataset.buildmode);
   }));
+  el.querySelectorAll('[data-buildat]').forEach(b => b.addEventListener('click', () => {
+    if (!UI.selectedHex) return;
+    const res = game.issue('build', UI.selectedHex.c, UI.selectedHex.r, b.dataset.buildat);
+    if (res === true) pushToast(`🏗️ ${buildingName(b.dataset.buildat)} gebaut.`);
+    else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
+    refreshPanel(); updateTopbar();
+  }));
+  el.querySelectorAll('[data-trainat]').forEach(b => b.addEventListener('click', () => {
+    if (!UI.selectedHex) return;
+    const ty = b.dataset.trainat;
+    const res = game.issue('trainAt', UI.selectedHex.c, UI.selectedHex.r, ty);
+    if (res === true) pushToast(`🎖️ ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
+    else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
+    refreshPanel(); updateTopbar();
+  }));
   el.querySelectorAll('[data-ally]').forEach(b => b.addEventListener('click', () => {
     const res = game.issue('ally', b.dataset.ally);
     if (res !== true) pushToast('🤝 ' + res);
@@ -2173,12 +2258,7 @@ function bindPanelActions(el) {
     game.issue('unally', b.dataset.unally);
     refreshPanel();
   }));
-  el.querySelectorAll('[data-train]').forEach(b => b.addEventListener('click', () => {
-    const n = game.issue('train', b.dataset.train, +b.dataset.n);
-    if (!n) pushToast(game._replayCmds ? '🎬 Replay — Eingaben gesperrt.' : '⚠ Zu wenig Gold oder 🎖️ Soldaten — Kasernen bilden Leute zu Soldaten aus.');
-    else pushToast(`🪖 ${n}× ${BAL.divTypes[b.dataset.train].name} aufgestellt — warten auf deine Befehle.`);
-    refreshPanel(); updateTopbar();
-  }));
+
   el.querySelectorAll('[data-selfront]').forEach(b => b.addEventListener('click', () => {
     const f = game.frontById(+b.dataset.selfront);
     if (!f) return;
@@ -2310,12 +2390,12 @@ function updateUnitbar() {
 const TUTORIAL_STEPS = [
   { text: 'Deine Armee erobert <b>freies Nachbarland von selbst</b>. Wähle sie (Klick) und schick sie per <b>Rechtsklick</b> an gute Stellen — hol dir 6 Provinzen!',
     done: g => g.nations[g.player].hexCount >= 6 },
-  { text: 'Bau eine <b>🎪 Kaserne</b> (Menü links → 🏗️). Sie bildet 👥 Leute zu 🎖️ Soldaten aus.',
+  { text: 'Klicke ein <b>freies Feld in deinem Gebiet</b> an und bau eine <b>🎪 Kaserne</b>. Sie bildet 👥 Leute zu 🎖️ Soldaten aus — und Truppen doppelt so schnell.',
     ghost: 'kaserne', done: g => g.nations[g.player].trainCap > 0 },
   { text: 'Bau ein <b>🏠 Dorf</b> (oder eine 🎣 Fischerei am Ufer) — mehr 👥 Leute als Nachschub für deine Kaserne.',
     ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.42 },
-  { text: 'Öffne das <b>🪖 Truppen-Menü</b> links und stelle <b>Krieger</b> auf (+1). Merke das Dreieck: Krieger &gt; Kavallerie &gt; Kanonen &gt; Krieger!',
-    done: g => g.divisionsOf(g.player).length >= 2 },
+  { text: 'Klicke deine <b>Hauptstadt oder Kaserne</b> an und bilde <b>Krieger</b> aus — sie erscheinen dort nach der Ausbildung. Merke das Dreieck: Krieger &gt; Kavallerie &gt; Kanonen &gt; Krieger!',
+    done: g => g.divisionsOf(g.player).length + g.training.filter(q => q.nation === g.player).length >= 2 },
   { text: '<b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Frontlinie — deine Truppen verteilen sich darauf (oder <b>B</b> drücken und selbst eine Linie ziehen). <b>3 🏛️ Hauptstädte gewinnen die Runde!</b>',
     done: g => g.fronts.some(f => f.owner === g.player) },
 ];
@@ -2385,7 +2465,7 @@ const ADVISOR_CHECKS = [
     msg: '💡 Ohne 🎪 Kaserne bekommst du keine Soldaten — bau eine (Menü links → 🏗️).' },
   { key: 'stau', cd: 90000,
     when: g => { const n = g.nations[g.player]; return n.soldaten > 30 && n.gold > 300; },
-    msg: '💡 Viele 🎖️ Soldaten warten — stelle im 🪖 Truppen-Menü neue Truppen auf!' },
+    msg: '💡 Viele 🎖️ Soldaten warten — klick eine Stadt oder Kaserne an und bilde Truppen aus!' },
   { key: 'supply', cd: 90000,
     when: g => g.divisionsOf(g.player).some(d => g.supplyModOf(d).level < 0.2),
     msg: '⚠️ Divisionen ohne Nachschub verlieren Stärke — Straßen, Städte und Kasernen versorgen.' },

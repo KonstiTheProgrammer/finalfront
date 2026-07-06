@@ -84,6 +84,10 @@ python -m http.server 4173
   🗼 **Wehrturm**: Miliz umliegender Felder ×1,5, Ausbau = doppelte Reichweite — fällt er,
   wirkt er für den Eroberer. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
   Divisionen und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
+- **Bauen per Feld-Klick:** Eigenes Feld anklicken → Liste, was genau dort gebaut werden
+  kann (inkl. Ausbau). **🎖️ Ausbildung:** Städte, Hauptstadt und Kasernen bilden Truppen
+  aus (Warteschlange, goldener Fortschrittsring) — **Kasernen doppelt so schnell**, die
+  fertige Division erscheint am Ausbildungsort.
 - **Direkte Kontrolle:** Deine Truppen gehorchen dir — Rechtsklick schickt sie exakt dorthin,
   auch mitten durch Feind- oder Neutralland (sie kämpfen sich durch) und über See (Invasionen!).
 - **Logistik:** Versorgung fließt von Hauptstadt/Städten/Kasernen über Straßen ins Land.

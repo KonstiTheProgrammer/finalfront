@@ -16,6 +16,10 @@ const BAL = {
   incomeStadt: 4.0,                   // Start-Stadt (Hauptstadt): Gold + Leute
   leuteStadt: 0.20,
   trainPerKaserne: 0.25,              // Ausbildung: Leute → Soldaten pro Kaserne (× Level)
+  // Truppen werden AUSGEBILDET (Warteschlange pro Standort) und spawnen dort:
+  // Städte/Hauptstadt bilden aus, Kasernen doppelt so schnell.
+  trainTime: { inf: 6, kav: 8, kan: 10 },   // Tage an einer Stadt
+  kaserneTrainFactor: 0.5,                  // Kaserne: halbe Zeit
   // Vier Wirtschaftsgebäude — jedes hat eine klare Rolle, Level 1–3
   // (gleiches Gebäude nochmal bauen = Ausbau, Ertrag skaliert mit dem Level):
   //   Mine (überall):        Gold             · Hügel-Bonus
@@ -167,6 +171,7 @@ class Game {
     this._damagedHexes = new Set();    // Hexes mit angeschlagener Miliz (für militiaDaily)
     this._kasernen = [];               // Cache: alle Kasernen-Hexes (recalcEconomy)
     this._tuerme = [];                 // Cache: alle Wehrturm-Hexes (recalcEconomy)
+    this.training = [];                // Ausbildungs-Warteschlange {c, r, nation, type, ready}
     this._borderCache = null;          // Cache: borderNationsOf pro Tag
     this._hasDead = false;
     this._pockets = [];                // erkannte Kessel (für Anzeige & Meldungen)
@@ -456,11 +461,13 @@ class Game {
     spawn.building = 'stadt';          // Start: eine Stadt …
     spawn.cityName = cityName;
     this.setResist(spawn);
+    spawn.resist = spawn.resistMax;    // volle Garnison ab Tag 1
     for (const [nc, nr] of neighborsOf(spawn.c, spawn.r)) {
       const h = this.hexAt(nc, nr);
       if (h && h.terrain !== 'water' && !h.owner) {
         h.owner = id;
         this.setResist(h);
+        h.resist = h.resistMax;
       }
     }
   }
@@ -673,14 +680,85 @@ class Game {
     return div;
   }
 
-  trainDivisions(nation, type, count, army) {
-    let n = 0;
-    for (let i = 0; i < count; i++) {
-      if (!this.spawnDivision(nation, type, army, false)) break;
-      n++;
+  /* Ausbildungsstätte? Städte, Hauptstadt und Kasernen bilden Truppen aus */
+  isTrainSite(h, nation) {
+    return !!h && h.owner === nation
+      && (h.capital || h.building === 'stadt' || h.building === 'kaserne');
+  }
+
+  /* Truppe am Standort in die Ausbildung geben (Warteschlange, Kosten sofort).
+     Kasernen bilden doppelt so schnell aus; die Division spawnt am Standort. */
+  queueTraining(nation, c, r, type) {
+    const h = this.hexAt(c, r);
+    if (!this.isTrainSite(h, nation)) return 'Nur in Städten, der Hauptstadt oder Kasernen';
+    const t = BAL.divTypes[type];
+    if (!t) return 'Unbekannter Typ';
+    const nat = this.nations[nation];
+    if (nat.gold < t.gold) return `Zu wenig Gold (${t.gold})`;
+    if (nat.soldaten < t.mp) return `Zu wenig Soldaten (${t.mp}k)`;
+    nat.gold -= t.gold;
+    nat.soldaten -= t.mp;
+    const dauer = BAL.trainTime[type] * (h.building === 'kaserne' ? BAL.kaserneTrainFactor : 1);
+    // hinter dem letzten Auftrag DIESES Standorts anstellen
+    let start = this.dayFloat;
+    for (const q of this.training) if (q.c === c && q.r === r) start = Math.max(start, q.ready);
+    this.training.push({ c, r, nation, type, ready: start + dauer });
+    return true;
+  }
+
+  /* Fertige Ausbildungen ausrücken lassen (läuft im festen Takt) */
+  trainingTick() {
+    if (!this.training.length) return;
+    for (let i = this.training.length - 1; i >= 0; i--) {
+      const q = this.training[i];
+      if (this.dayFloat < q.ready) continue;
+      this.training.splice(i, 1);
+      if (this.nations[q.nation] && this.nations[q.nation].alive)
+        this.spawnDivisionAt(q.nation, q.type, q.c, q.r);
     }
-    if (n > 0) { this._frontsDirtyIds.add(nation); this.economyDirty = true; }
-    return n;
+  }
+
+  /* Fertig ausgebildete Division: spawnt am Ausbildungsort (Kosten schon bezahlt) */
+  spawnDivisionAt(nation, type, c, r) {
+    const nat = this.nations[nation];
+    const t = BAL.divTypes[type];
+    if (!nat || !t) return null;
+    let h = this.hexAt(c, r);
+    if (!h || h.owner !== nation || h.terrain === 'water') {
+      // Standort verloren: an der Hauptstadt ausrücken
+      h = nat.capital ? this.hexAt(...nat.capital) : null;
+      if (!h || h.owner !== nation) {
+        const own = this.ownedHexes(nation).filter(x => x.terrain !== 'water');
+        if (!own.length) return null;
+        h = own[0];
+      }
+    }
+    const p = hexToPixel(h.c, h.r);
+    const div = {
+      id: this._divSeq++,
+      name: `${nat.divNameSeq++}. ${t.name}division`,
+      nation, type,
+      c: h.c, r: h.r, x: p.x, y: p.y,
+      str: 85, org: t.maxOrg * 0.6, moral: 1.0,
+      army: nat.armies[0] ? nat.armies[0].id : null,
+      front: null, station: null,
+      path: null, pathI: 0, moveProgress: 0,
+      queue: [],
+      attackTarget: null, inCombat: false,
+      manual: nation === this.player,
+      dead: false,
+    };
+    this.divisions.push(div);
+    if (this._divIndex) {
+      const k = div.c + div.r * MAP_W;
+      const arr = this._divIndex.get(k);
+      if (arr) arr.push(div); else this._divIndex.set(k, [div]);
+    }
+    this._frontsDirtyIds.add(nation);
+    this.economyDirty = true;
+    if (nation === this.player)
+      this.addLog(`🎖️ ${div.name} einsatzbereit${h.cityName ? ' — ' + h.cityName : ''}!`);
+    return div;
   }
 
   armyById(nation, id) { return this.nations[nation].armies.find(a => a.id === id) || null; }
@@ -2161,9 +2239,13 @@ class Game {
     // Divisionen nur vom Überschuss. Ausnahme: Armee stark dezimiert
     // (Nachkriegs-Wiederaufbau) — dann zügig nachrüsten.
     const buffer = underAttack ? 10 : (divs.length < cap * 0.5 ? 60 : 220);
+    const pending = this.training.reduce((n, q) => n + (q.nation === id ? 1 : 0), 0);
+    if (pending >= 2) return;   // nicht überbuchen — Nachschub kommt schon
     if (nat.gold >= tt.gold + buffer && nat.soldaten >= tt.mp) {
-      this.spawnDivision(id, type, nat.armies[0], false);
-      this.economyDirty = true;
+      // Kaserne bevorzugt (doppelt so schnell), sonst Hauptstadt
+      const site = this._kasernen.find(k => k.owner === id && k.building === 'kaserne')
+        || (nat.capital ? this.hexAt(...nat.capital) : null);
+      if (site && this.isTrainSite(site, id)) this.queueTraining(id, site.c, site.r, type);
     }
   }
 
@@ -2277,6 +2359,7 @@ class Game {
     this.day = Math.floor(this.dayFloat);
 
     this.economyTick(dt);
+    this.trainingTick();
     this.divisionsTick(dt);
     this.regenTick(dt);
 
@@ -2325,6 +2408,7 @@ class Game {
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
       cmds: this._replayCapable ? this.cmdLog : undefined,
       warHeat: this.warHeat,
+      training: this.training,
       exAllies: this._exAllies,
       frontSeq: this._frontSeq,
       fronts: this.fronts.map(f => ({ id: f.id, owner: f.owner, kind: f.kind, target: f.target, path: f.path, push: f.push || null })),
@@ -2401,6 +2485,7 @@ class Game {
     g.toasts = [];
     g.allianceOffers = [];
     g.warHeat = s.warHeat || {};
+    g.training = Array.isArray(s.training) ? s.training : [];
     g._exAllies = s.exAllies || {};
     g.vpLeader = s.vpLeader || null;
     g.vpDeadline = s.vpDeadline || 0;
@@ -2475,7 +2560,18 @@ Game.prototype._commands = {
     return this.build(this.player, this.hexAt(c, r), what);
   },
   train(type, n) {
-    return this.trainDivisions(this.player, type, n, this.nations[this.player].armies[0]);
+    // Kompatibilität (alte Replays): an der besten Stätte einreihen
+    let done = 0;
+    for (let i = 0; i < (n || 1); i++) {
+      const site = this._kasernen.find(k => k.owner === this.player && k.building === 'kaserne')
+        || (this.nations[this.player].capital ? this.hexAt(...this.nations[this.player].capital) : null);
+      if (!site || this.queueTraining(this.player, site.c, site.r, type) !== true) break;
+      done++;
+    }
+    return done;
+  },
+  trainAt(c, r, type) {
+    return this.queueTraining(this.player, c, r, type);
   },
   split(divIds) {
     const twins = [];
