@@ -55,7 +55,7 @@ const BAL = {
   divTypes: {
     inf: { name: 'Krieger',    gold: 60,  mp: 10, upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
     kav: { name: 'Kavallerie', gold: 120, mp: 8,  upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    gold: 180, mp: 6,  upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    kan: { name: 'Kanonen',    gold: 170, mp: 6,  upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -104,7 +104,7 @@ const BAL = {
   offerLifetime: 40,
   // Balance / Fairness (Multiplayer-tauglich)
   graceDays: 40,              // Schonfrist: so lange keine Angriffe auf Spieler
-  catchupMax: 0.35,           // Einkommensbonus kleiner Spieler (bis +35 %)
+  catchupMax: 0.30,           // Einkommensbonus kleiner Spieler (bis +30 %)
   leaderMalus: 0.25,          // Einkommensmalus des Spitzenreiters (bis -25 %)
   smallNationDefense: 1.5,    // Miliz-Bonus für Spieler unter 12 Provinzen
   smallNationHexes: 12,
@@ -118,6 +118,7 @@ const BAL = {
     vpToWin: 3,               // gehaltene Hauptstädte starten den Sieg-Countdown
     countdownDays: 50,        // Länge des Countdowns — Zeit für die Gegenkoalition
     lateStart: 0.6,           // ab 60 % der Runde: Endphase (Miliz ermüdet, Aufholbonus schwindet)
+    domination: 0.8,          // 80 % der Landfläche = sofortiger Sieg
   },
 };
 
@@ -134,9 +135,12 @@ function dateStr(day) {
 
 /* ---------- Spielzustand ---------- */
 class Game {
-  constructor(playerNationId, seed, mapId) {
+  constructor(playerNationId, seed, mapId, humans) {
     // Karte festlegen (setzt MAP_W/H & Weltgröße), dann bauen
     this.mapId = selectMap(mapId !== undefined ? mapId : CURRENT_MAP_ID);
+    // Multiplayer: Liste der menschlichen Nationen (alle Clients identisch!)
+    this._humans = Array.isArray(humans) && humans.length ? humans : null;
+    this._net = null;                  // gesetzt von der Netz-Schicht (js/net.js)
     // Geseedeter Zufall (mulberry32) mit serialisierbarem Zustand:
     // gleiche Saat + gleiche Kommandos = identischer Spielverlauf.
     this.seed = (seed === undefined ? (Date.now() & 0x7fffffff) : seed) >>> 0;
@@ -314,11 +318,12 @@ class Game {
     if (this.allied(a, b)) return 'Bereits verbündet';
     if (this.nations[a].allies.size >= BAL.maxAllies) return `Max. ${BAL.maxAllies} Allianzen`;
     if (this.nations[b].allies.size >= BAL.maxAllies) return `${this.nationName(b)} hat keine freien Bündnisplätze`;
-    if (b === this.player) {
-      if (!this.allianceOffers.find(o => o.from === a)) {
-        this.allianceOffers.push({ from: a, day: this.day });
+    if (this.nations[b] && !this.nations[b].ai) {
+      // Angebot an einen Menschen: landet in dessen Banner (to-Feld)
+      if (!this.allianceOffers.find(o => o.from === a && o.to === b)) {
+        this.allianceOffers.push({ from: a, to: b, day: this.day });
         this._offersChanged = true;
-        this.addLog(`🤝 ${this.nationName(a)} bietet dir eine Allianz an!`, true);
+        if (b === this.player) this.addLog(`🤝 ${this.nationName(a)} bietet dir eine Allianz an!`, true);
       }
       return true;
     }
@@ -371,13 +376,13 @@ class Game {
     this.addLog(`🐍 ${this.nationName(attacker)} bricht den Bund und fällt ${this.nationName(victim)} in den Rücken — VERRÄTER! ${BAL.traitor.duration} Tage geächtet: kein Handel, keine Bündnisse, Freiwild für alle.`, true);
   }
 
-  resolveOffer(from, accept) {
-    this.allianceOffers = this.allianceOffers.filter(o => o.from !== from);
+  resolveOffer(actor, from, accept) {
+    this.allianceOffers = this.allianceOffers.filter(o => !(o.from === from && (o.to || this.player) === actor));
     this._offersChanged = true;
-    if (accept && this.nations[from].alive && !this.allied(this.player, from)
-      && this.nations[this.player].allies.size < BAL.maxAllies) {
-      this.formAlliance(from, this.player);
-    } else if (!accept) {
+    if (accept && this.nations[from].alive && !this.allied(actor, from)
+      && this.nations[actor].allies.size < BAL.maxAllies) {
+      this.formAlliance(from, actor);
+    } else if (!accept && actor === this.player) {
       this.addLog(`Du hast das Bündnisangebot von ${this.nationName(from)} abgelehnt.`);
     }
   }
@@ -431,7 +436,7 @@ class Game {
       soldaten: 12,     // ausgebildete Soldaten (aus Kasernen) — Divisionen kosten Soldaten
       allies: new Set(),
       armies: [],
-      ai: id !== this.player,
+      ai: this._humans ? !this._humans.includes(id) : id !== this.player,
       aiTick: Math.floor(this.rand() * 6),
       capital: null,
       divNameSeq: 1,
@@ -664,9 +669,9 @@ class Game {
       queue: [],
       attackTarget: null,
       inCombat: false,
-      // Spieler-Divisionen starten MANUELL: sie warten auf Befehle statt
-      // automatisch zur Front zu laufen. Automatik nur auf Wunsch (Alt+Rechtsklick).
-      manual: nation === this.player,
+      // Menschliche Divisionen sind MANUELL: sie warten auf Befehle statt
+      // automatisch zur Front zu laufen — auf allen Clients identisch.
+      manual: !nat.ai,
       dead: false,
     };
     const p = hexToPixel(spawn.c, spawn.r);
@@ -745,7 +750,7 @@ class Game {
       path: null, pathI: 0, moveProgress: 0,
       queue: [],
       attackTarget: null, inCombat: false,
-      manual: nation === this.player,
+      manual: !nat.ai,
       dead: false,
     };
     this.divisions.push(div);
@@ -2047,6 +2052,20 @@ class Game {
       return;
     }
 
+    // Dominanz-Sieg: wer 80 % der Landfläche hält, gewinnt sofort
+    for (const id of alive) {
+      if (this.nations[id].hexCount >= this.totalLand * BAL.round.domination) {
+        const pct = Math.round(this.nations[id].hexCount / this.totalLand * 100);
+        this.over = {
+          win: id === this.player,
+          text: id === this.player
+            ? `Du kontrollierst ${pct} % Europas — totaler Sieg!`
+            : `${this.nationName(id)} kontrolliert ${pct} % Europas — die Runde ist entschieden.`,
+        };
+        return;
+      }
+    }
+
     // Laufenden Countdown verwalten
     if (this.vpLeader) {
       const ln = this.nations[this.vpLeader];
@@ -2328,6 +2347,7 @@ class Game {
      Echtzeit wird angesammelt und in identische TICK_DAYS-Schritte übersetzt.
      Jeder Tick ist auf jeder Maschine gleich groß — deterministisch. */
   tick(realDt) {
+    if (this._net) return;   // Multiplayer: der Server taktet (net.js ruft runTick)
     // Spawn-Phase blockiert die Uhr — außer im Replay (dort steuern die Kommandos)
     if (this.paused || this.over || (this.spawnPhase && !this._replayCmds)) return;
     this._acc += Math.min(realDt, 0.25) * BAL.daysPerSec[this.speed];
@@ -2345,7 +2365,7 @@ class Game {
       while (this._replayIdx < this._replayCmds.length
         && this._replayCmds[this._replayIdx].t === this.tickCount) {
         const c = this._replayCmds[this._replayIdx++];
-        this._exec(c.cmd, c.args);
+        this._execAs(c.n !== undefined && c.n !== null ? c.n : this.player, c.cmd, c.args);
       }
     }
     this.tickCount++;
@@ -2386,7 +2406,7 @@ class Game {
       const before = this.allianceOffers.length;
       this.allianceOffers = this.allianceOffers.filter(o => this.day - o.day < BAL.offerLifetime);
       if (this.allianceOffers.length !== before) this._offersChanged = true;
-      if (performance.now() - this._lastAutosave > 60000 && !this.over && !this._replayCmds) {
+      if (performance.now() - this._lastAutosave > 60000 && !this.over && !this._replayCmds && !this._net) {
         this._lastAutosave = performance.now();
         try {
           localStorage.setItem('finalfront_autosave', JSON.stringify({ t: Date.now(), save: this.serialize() }));
@@ -2534,51 +2554,84 @@ Game.prototype._divById = function (id) {
 
 Game.prototype.issue = function (cmd, ...args) {
   if (this._replayCmds) return null;   // Replay: Eingaben gesperrt
+  // Multiplayer: Kommandos gehen zum Server und kommen als Step zurück
+  if (this._net) return this._net.sendCmd(cmd, args);
   const fn = this._commands[cmd];
   if (!fn) return null;
   this.cmdLog.push({ t: this.tickCount, cmd, args });
-  return fn.apply(this, args);
+  this._actor = this.player;
+  const r = fn.apply(this, args);
+  this._actor = null;
+  return r;
+};
+
+/* Kommando im Namen einer bestimmten Nation ausführen (Multiplayer/Replay) */
+Game.prototype._execAs = function (nation, cmd, args) {
+  const fn = this._commands[cmd];
+  if (!fn) return;
+  this._actor = nation || this.player;
+  fn.apply(this, args);
+  this._actor = null;
+};
+
+/* Multiplayer: vom Server verteiltes Kommando anwenden (inkl. Replay-Log) */
+Game.prototype.applyNetCmd = function (nation, cmd, args) {
+  this.cmdLog.push({ t: this.tickCount, cmd, args, n: nation || undefined });
+  this._execAs(nation, cmd, args || []);
 };
 
 Game.prototype._exec = function (cmd, args) {
-  const fn = this._commands[cmd];
-  if (fn) fn.apply(this, args);
+  this._execAs(this.player, cmd, args);
 };
 
 Game.prototype._commands = {
   spawn(c, r) {
-    return this.relocateSpawn(this.player, c, r);
+    const me = this._actor || this.player;
+    return this.relocateSpawn(me, c, r);
   },
   startMatch() {
     this.endSpawnPhase();
   },
+  /* Multiplayer: Verbindungsabbruch — die KI übernimmt die Nation */
+  aiTakeover(id) {
+    const nat = this.nations[id];
+    if (!nat || nat.ai) return;
+    nat.ai = true;
+    for (const d of this.divisionsOf(id)) d.manual = false;
+    this.addLog(`🔌 ${this.nationName(id)} hat die Verbindung verloren — die KI übernimmt.`, true);
+  },
   move(divId, c, r, queue) {
+    const me = this._actor || this.player;
     const d = this._divById(divId);
-    if (d && d.nation === this.player) this.moveOrder(d, c, r, queue);
+    if (d && d.nation === me) this.moveOrder(d, c, r, queue);
   },
   build(c, r, what) {
-    return this.build(this.player, this.hexAt(c, r), what);
+    const me = this._actor || this.player;
+    return this.build(me, this.hexAt(c, r), what);
   },
   train(type, n) {
     // Kompatibilität (alte Replays): an der besten Stätte einreihen
+    const me = this._actor || this.player;
     let done = 0;
     for (let i = 0; i < (n || 1); i++) {
-      const site = this._kasernen.find(k => k.owner === this.player && k.building === 'kaserne')
-        || (this.nations[this.player].capital ? this.hexAt(...this.nations[this.player].capital) : null);
-      if (!site || this.queueTraining(this.player, site.c, site.r, type) !== true) break;
+      const site = this._kasernen.find(k => k.owner === me && k.building === 'kaserne')
+        || (this.nations[me].capital ? this.hexAt(...this.nations[me].capital) : null);
+      if (!site || this.queueTraining(me, site.c, site.r, type) !== true) break;
       done++;
     }
     return done;
   },
   trainAt(c, r, type) {
-    return this.queueTraining(this.player, c, r, type);
+    const me = this._actor || this.player;
+    return this.queueTraining(me, c, r, type);
   },
   split(divIds) {
+    const me = this._actor || this.player;
     const twins = [];
     const fronts = new Set();
     for (const id of divIds) {
       const d = this._divById(id);
-      if (d && d.nation === this.player) {
+      if (d && d.nation === me) {
         const t = this.splitDivision(d);
         if (t) {
           twins.push(t.id);
@@ -2594,25 +2647,29 @@ Game.prototype._commands = {
     return twins;
   },
   merge(divIds) {
-    const divs = divIds.map(id => this._divById(id)).filter(d => d && d.nation === this.player);
+    const me = this._actor || this.player;
+    const divs = divIds.map(id => this._divById(id)).filter(d => d && d.nation === me);
     return this.mergeDivisions(divs);
   },
   disband(divIds) {
+    const me = this._actor || this.player;
     let n = 0;
     for (const id of divIds) {
       const d = this._divById(id);
-      if (d && d.nation === this.player) { this.disbandDivision(d); n++; }
+      if (d && d.nation === me) { this.disbandDivision(d); n++; }
     }
     return n;
   },
   frontBorder(targetId, divIds) {
-    if (!this.nations[targetId] || targetId === this.player) return null;
-    const f = this.createBorderFront(this.player, targetId);
+    const me = this._actor || this.player;
+    if (!this.nations[targetId] || targetId === me) return null;
+    const f = this.createBorderFront(me, targetId);
     const n = this.assignToFrontline(divIds || [], f.id);
     return { id: f.id, n };
   },
   frontLine(path, divIds) {
-    const f = this.createLineFront(this.player, path);
+    const me = this._actor || this.player;
+    const f = this.createLineFront(me, path);
     if (!f) return null;
     const n = this.assignToFrontline(divIds || [], f.id);
     return { id: f.id, n };
@@ -2621,31 +2678,37 @@ Game.prototype._commands = {
     return this.assignToFrontline(divIds || [], frontId);
   },
   frontPush(frontId, c, r) {
+    const me = this._actor || this.player;
     const f = this.frontById(frontId);
-    if (!f || f.owner !== this.player) return false;
+    if (!f || f.owner !== me) return false;
     f.push = (c === null || c === undefined) ? null : [c, r];
     return true;
   },
   frontRemove(frontId) {
-    const i = this.fronts.findIndex(f => f.id === frontId && f.owner === this.player);
+    const me = this._actor || this.player;
+    const i = this.fronts.findIndex(f => f.id === frontId && f.owner === me);
     if (i < 0) return false;
     for (const d of this.frontDivisions(this.fronts[i])) this.releaseToArmy(d);
     this.fronts.splice(i, 1);
     return true;
   },
   release(divIds) {
+    const me = this._actor || this.player;
     for (const id of divIds) {
       const d = this._divById(id);
-      if (d && d.nation === this.player) this.releaseToArmy(d);
+      if (d && d.nation === me) this.releaseToArmy(d);
     }
   },
   ally(to) {
-    return this.offerAlliance(this.player, to);
+    const me = this._actor || this.player;
+    return this.offerAlliance(me, to);
   },
   unally(other) {
-    this.dissolveAlliance(this.player, other, this.player);
+    const me = this._actor || this.player;
+    this.dissolveAlliance(me, other, me);
   },
   answerOffer(from, accept) {
-    this.resolveOffer(from, accept);
+    const me = this._actor || this.player;
+    this.resolveOffer(me, from, accept);
   },
 };

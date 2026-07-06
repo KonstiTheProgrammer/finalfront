@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=24">
+  <link rel="stylesheet" href="style.css?v=25">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -100,6 +100,12 @@
     <div class="overlay-box">
       <h1>FINAL FRONT</h1>
       <p class="subtitle">Europa in Flammen — Echtzeit-Strategie</p>
+      <div id="mp-block">
+        <button id="btn-mp" class="wide continue">🌐 MULTIPLAYER — gegen echte Spieler</button>
+        <div id="mp-status" class="small">🌐 Multiplayer: suche Server …</div>
+        <div class="small" style="margin-top:6px"><label>Dein Name: <input id="mp-name" maxlength="20"></label></div>
+      </div>
+      <h2>— oder 🤖 Solo gegen Bots —</h2>
       <p class="intro"><b>5 Spieler, eine kompakte Europakarte.</b> Wähle in der Startphase (15 s) deinen
         Spawn frei auf der Karte — du siehst, wo die anderen starten. Jeder beginnt mit <b>einer Stadt samt
         Umland und einer Armee</b> — für alle exakt gleich. Truppen erobern freies Nachbarland von selbst; Frontlinien ziehst du per
@@ -110,6 +116,20 @@
       <div id="map-grid"></div>
       <h2>Wähle deine Farbe</h2>
       <div id="nation-grid"></div>
+    </div>
+  </div>
+
+  <!-- Multiplayer-Lobby -->
+  <div id="mp-lobby" class="overlay hidden">
+    <div class="overlay-box small-box">
+      <h1>🌐 LOBBY</h1>
+      <p id="mp-lobby-map" class="small"></p>
+      <div id="mp-lobby-list"><p class="hint">Verbinde …</p></div>
+      <button id="mp-ready" class="wide continue">▶ Bereit — los geht's!</button>
+      <button id="mp-leave" class="wide danger">← Lobby verlassen</button>
+      <p class="small hint">Die Runde startet bei <b>5 Spielern</b> — oder sobald <b>alle Anwesenden bereit</b> sind
+        (freie Plätze übernehmen Bots). Danach rotiert die Karte für die nächste Lobby.
+        Sieg: <b>3 Hauptstädte</b> halten oder <b>80 % der Karte</b> erobern.</p>
     </div>
   </div>
 
@@ -136,7 +156,8 @@
         <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
         <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt samt Umland (7 Felder) und einer Armee Krieger</b> — für alle exakt gleich.</li>
         <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien: Wer AUF einem Flussfeld steht, ist deutlich schwerer anzugreifen, und Flussfelder leisten der Eroberung länger Widerstand. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
-        <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Nach <b>600 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 360: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
+        <li><b>🌐 Multiplayer:</b> Auf dem Startbildschirm <b>MULTIPLAYER</b> wählen — du landest in der Lobby. Bei <b>5 Spielern</b> (oder wenn alle bereit sind; Rest wird KI) startet die Runde, die <b>Karte rotiert</b> von Runde zu Runde. Feste Geschwindigkeit, kein Pause/Speichern — alle spielen dieselbe Simulation.</li>
+        <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Wer <b>80 % der Karte</b> kontrolliert, gewinnt sofort (Dominanz). Nach <b>600 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 360: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
         <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>40 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
         <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab. <b>Verrat:</b> Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen angreift, ist 60 Tage <b>🐍 Verräter</b> — kein Handel, keine neuen Bündnisse, bevorzugtes Ziel aller.</li>
@@ -159,10 +180,11 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=24"></script>
-  <script src="js/map.js?v=24"></script>
-  <script src="js/game.js?v=24"></script>
-  <script src="js/ui.js?v=24"></script>
-  <script src="js/main.js?v=24"></script>
+  <script src="js/mapdata.js?v=25"></script>
+  <script src="js/map.js?v=25"></script>
+  <script src="js/game.js?v=25"></script>
+  <script src="js/ui.js?v=25"></script>
+  <script src="js/net.js?v=25"></script>
+  <script src="js/main.js?v=25"></script>
 </body>
 </html>

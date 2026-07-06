@@ -13,6 +13,7 @@ const path = require('path');
 const MAPS = [
   { id: 'europa', name: 'Europa', W: 48, H: 54, lonMin: -11, lonMax: 42, latMin: 34, latMax: 71.5 },
   { id: 'mitteleuropa', name: 'Mitteleuropa', W: 32, H: 36, lonMin: 0, lonMax: 24, latMin: 43, latMax: 57 },
+  { id: 'westeuropa', name: 'Westeuropa', W: 34, H: 40, lonMin: -11, lonMax: 9, latMin: 42, latMax: 59.5 },
 ];
 
 const URLS = {

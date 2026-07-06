@@ -505,3 +505,12 @@ button.peace:hover { background: #26512e; }
   box-shadow: 0 0 10px rgba(224, 176, 74, 0.35);
   background: #2a2413 !important;
 }
+
+/* ---------- Multiplayer-Lobby ---------- */
+#mp-block { margin-bottom: 14px; text-align: center; }
+#mp-block input { background: #1a2534; border: 1px solid #3a4a5e; color: #e8e4da; border-radius: 4px; padding: 3px 8px; }
+#mp-status { margin-top: 6px; color: #9fb2c8; }
+.mp-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin: 4px 0;
+  background: rgba(255,255,255,0.05); border-radius: 6px; }
+.mp-row.me { outline: 1px solid rgba(255,215,94,0.5); }
+.mp-row .mp-ready { margin-left: auto; color: #8fc98f; font-size: 12px; }

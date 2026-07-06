@@ -17,10 +17,31 @@ python -m http.server 4173
 # dann http://localhost:4173 öffnen
 ```
 
+## 🌐 Multiplayer (echte Spieler)
+
+Auf dem Startbildschirm **MULTIPLAYER** wählen — du landest in der Lobby. Die Runde startet
+bei **5 Spielern** oder sobald **alle Anwesenden bereit** sind (freie Plätze übernehmen Bots).
+Nach jedem Rundenstart **rotiert die Karte** (Europa → Mitteleuropa → Westeuropa) für die
+nächste Lobby. Feste Geschwindigkeit (2 Tage/s), kein Pausieren/Speichern. Bei
+Verbindungsabbruch übernimmt die KI die Nation.
+
+**Technik (100 % gratis):** deterministischer **Lockstep** — der Server
+(`server/mpserver.js`, Node + ws) simuliert nichts, er stempelt Kommandos mit der Nation des
+Absenders und taktet alle Clients mit 8 Steps/s; jeder Client rechnet dieselbe Simulation.
+Server-Discovery über ein GitHub-Gist, öffentlich per Cloudflare-Quick-Tunnel (kostenlos,
+ohne Account).
+
+**Selbst hosten:**
+```bash
+tools/mpserver/start.sh     # startet Server + Tunnel und trägt die Adresse im Gist ein
+```
+Fenster offen lassen; Ctrl+C meldet den Server sauber ab. Die Webseite findet den Server
+automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickeln).
+
 ## Spielprinzip (5-Spieler-Match, War-of-Dots-Stil)
 
-- **5 Spieler, wählbare Karten:** Vor dem Match wählst du die Karte — **Europa (48×54,
-  1435 Provinzen)** oder **Mitteleuropa (32×36, 891 Provinzen)**; weitere lassen sich in
+- **5 Spieler, wählbare Karten:** Vor dem Match wählst du die Karte — **Europa (48×54)**,
+  **Mitteleuropa (32×36)** oder **Westeuropa (34×40)**; weitere lassen sich in
   `tools/genmap.js` mit einem Fenster + Größe definieren. In der **Startphase (15 s)**
   wählst du deinen Spawn frei per Klick — alle sehen einander, Umziehen ist erlaubt,
   **kein Mindestabstand**: direkt neben dem Gegner spawnen ist eine legitime Strategie.
@@ -39,8 +60,9 @@ python -m http.server 4173
   Karte. Zugewiesene Truppen verteilen sich selbst und kämpfen dort; **S** teilt und
   verteilt neu, **M** vereint. **🎯 Vormarsch:** Front-Badge anklicken, dann ein Ziel auf
   der Karte — die Front kämpft sich dorthin vor und meldet, wenn das Ziel erreicht ist.
-- **Sieg:** Wer **3 der 5 Hauptstädte** hält, startet den 50-Tage-Countdown. Nach 1000 Tagen
-  gewinnt sonst die stärkste Macht. Eine Runde ≈ 20–30 Minuten.
+- **Sieg:** Wer **3 der 5 Hauptstädte** hält, startet den 50-Tage-Countdown — und wer
+  **80 % der Karte** kontrolliert, gewinnt sofort (Dominanz). Nach 600 Tagen gewinnt sonst
+  die stärkste Macht. Eine Runde ≈ 10–20 Minuten.
 
 ### Weitere Systeme
 
@@ -137,6 +159,9 @@ Autosave läuft automatisch (~1×/Minute); „Weiterspielen" auf dem Startbildsc
 - `js/map.js` — Nationen, Terrain-Tabellen, Hex-Mathematik
 - `js/game.js` — Simulation: Wirtschaft, Versorgung, Kampf, Moral, Fronten, Kessel, KI
 - `js/ui.js` — Canvas-Rendering, Eingabe, Panels
+- `js/net.js` — Multiplayer-Client (Lobby, Lockstep-Steps, Server-Discovery)
 - `js/main.js` — Spielschleife
+- `server/mpserver.js` — Multiplayer-Relay (Lobby, Map-Rotation, Step-Taktung)
+- `tools/mpserver/start.sh` — Server + Cloudflare-Tunnel + Gist-Update (alles gratis)
 
 Debug-API in der Konsole: `FF.game`, `FF.startGame('D')`, `FF.validate()`.

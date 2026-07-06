@@ -1480,8 +1480,8 @@ function bindInput() {
     if (e.code === 'KeyS' && UI.selectedDivs.size && !e.ctrlKey) { splitSelection(); return; }
     if (e.code === 'KeyM' && UI.selectedDivs.size) { mergeSelection(); return; }
     UI.keys.add(e.code);
-    if (e.code === 'Space') { e.preventDefault(); game.paused = !game.paused; updateTopbar(); }
-    if (e.key >= '1' && e.key <= '4') { game.speed = +e.key; game.paused = false; }
+    if (e.code === 'Space') { e.preventDefault(); if (!game._net) { game.paused = !game.paused; updateTopbar(); } }
+    if (e.key >= '1' && e.key <= '4' && !game._net) { game.speed = +e.key; game.paused = false; }
     if (e.key === '+' || e.key === '=') zoomStep(1.25);
     if (e.key === '-') zoomStep(1 / 1.25);
     if (e.code === 'Home') centerOn(...game.nations[game.player].capital, Math.max(UI.cam.zoom, 1.5));
@@ -1569,7 +1569,9 @@ function setBuildMode(mode) {
 function splitSelection() {
   if (game._replayCmds) { replayBlockedToast(); return; }
   const ids = playerSelection().map(d => d.id);
-  const twins = game.issue('split', ids) || [];
+  const res = game.issue('split', ids);
+  if (res === 'sent') { pushToast('✂️ Teilen …'); return; }
+  const twins = Array.isArray(res) ? res : [];
   twins.forEach(id => UI.selectedDivs.add(id));
   pushToast(twins.length ? `✂️ ${twins.length} Division(en) geteilt — beide stehen auf dem Feld (📚 Stapel).` : '⚠ Teilen braucht ≥ 40 Stärke.');
   updateUnitbar();
@@ -1579,7 +1581,9 @@ function splitSelection() {
 function mergeSelection() {
   if (game._replayCmds) { replayBlockedToast(); return; }
   const ids = playerSelection().map(d => d.id);
-  const merged = game.issue('merge', ids) || 0;
+  const res = game.issue('merge', ids);
+  if (res === 'sent') { pushToast('🔗 Vereinen …'); return; }
+  const merged = res || 0;
   for (const id of [...UI.selectedDivs]) {
     const d = game.divisions.find(x => x.id === id);
     if (!d || d.dead) UI.selectedDivs.delete(id);
@@ -1616,7 +1620,7 @@ function onRightTap(sx, sy, alt, shift) {
       pushToast(`🤝 Mit ${game.nationName(h.owner)} verbündet — lösen im Nationen-Tab.`);
     } else {
       const res = game.issue('ally', h.owner);
-      if (res !== true) pushToast('🤝 ' + res);
+      if (res !== true && res !== 'sent') pushToast('🤝 ' + res);
     }
   }
 }
@@ -1639,6 +1643,7 @@ function frontlineClick(hx) {
   }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('frontBorder', other, ids);
+  if (res === 'sent') { pushToast(`⚔️ Frontlinie gegen ${game.nationName(other)} …`); refreshPanel(); return true; }
   if (res) {
     pushToast(res.n
       ? `⚔️ Frontlinie gegen ${game.nationName(other)} — ${res.n} Truppen verteilen sich!`
@@ -1660,6 +1665,7 @@ function finishFrontDraw() {
   }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('frontLine', draw.path, ids);
+  if (res === 'sent') { pushToast('📏 Linie wird gezogen …'); refreshPanel(); return; }
   if (res) {
     pushToast(res.n
       ? `📏 Linie steht — ${res.n} Truppen verteilen sich darauf.`
@@ -1892,7 +1898,7 @@ function renderOffers() {
   if (!game || !game._offersChanged) return;
   game._offersChanged = false;
   const box = document.getElementById('offers');
-  box.innerHTML = game.allianceOffers.map(o => `
+  box.innerHTML = game.allianceOffers.filter(o => (o.to || game.player) === game.player).map(o => `
     <div class="offer">
       <span class="chip" style="background:${game.nationColor(o.from)}"></span>
       <b>${game.nationName(o.from)}</b>&nbsp;bietet eine Allianz an
@@ -1920,21 +1926,29 @@ function bindPanels() {
     UI.activeTab = null;
     refreshPanel();
   });
-  document.getElementById('btn-pause').addEventListener('click', () => { game.paused = !game.paused; updateTopbar(); });
+  const mpBlocked = () => {
+    if (game && game._net) { pushToast('🌐 Multiplayer — das Tempo taktet der Server.'); return true; }
+    return false;
+  };
+  document.getElementById('btn-pause').addEventListener('click', () => { if (mpBlocked()) return; game.paused = !game.paused; updateTopbar(); });
   for (const s of [1, 2, 3, 4]) {
-    document.getElementById('btn-speed' + s).addEventListener('click', () => { game.speed = s; game.paused = false; updateTopbar(); });
+    document.getElementById('btn-speed' + s).addEventListener('click', () => { if (mpBlocked()) return; game.speed = s; game.paused = false; updateTopbar(); });
   }
   document.getElementById('btn-supply').addEventListener('click', () => {
     UI.supplyOverlay = !UI.supplyOverlay;
     updateTopbar();
   });
   document.getElementById('btn-save').addEventListener('click', () => {
+    if (game && game._net) { pushToast('🌐 Multiplayer — kein Speichern, die Runde zählt!'); return; }
     try {
       localStorage.setItem('finalfront_save', JSON.stringify({ t: Date.now(), save: game.serialize() }));
       pushToast('💾 Spiel gespeichert.');
     } catch (e) { pushToast('⚠ Speichern fehlgeschlagen.'); }
   });
-  document.getElementById('btn-load').addEventListener('click', () => loadNewestSave());
+  document.getElementById('btn-load').addEventListener('click', () => {
+    if (game && game._net) { pushToast('🌐 Multiplayer — kein Laden, die Runde zählt!'); return; }
+    loadNewestSave();
+  });
   document.getElementById('btn-restart').addEventListener('click', () => showStartScreen());
   document.getElementById('spawn-ready').addEventListener('click', finishSpawnPhase);
   document.getElementById('btn-help').addEventListener('click', () => {
@@ -2237,7 +2251,7 @@ function bindPanelActions(el) {
   el.querySelectorAll('[data-buildat]').forEach(b => b.addEventListener('click', () => {
     if (!UI.selectedHex) return;
     const res = game.issue('build', UI.selectedHex.c, UI.selectedHex.r, b.dataset.buildat);
-    if (res === true) pushToast(`🏗️ ${buildingName(b.dataset.buildat)} gebaut.`);
+    if (res === true || res === 'sent') pushToast(`🏗️ ${buildingName(b.dataset.buildat)} gebaut.`);
     else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
     refreshPanel(); updateTopbar();
   }));
@@ -2245,13 +2259,13 @@ function bindPanelActions(el) {
     if (!UI.selectedHex) return;
     const ty = b.dataset.trainat;
     const res = game.issue('trainAt', UI.selectedHex.c, UI.selectedHex.r, ty);
-    if (res === true) pushToast(`🎖️ ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
+    if (res === true || res === 'sent') pushToast(`🎖️ ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
     else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
     refreshPanel(); updateTopbar();
   }));
   el.querySelectorAll('[data-ally]').forEach(b => b.addEventListener('click', () => {
     const res = game.issue('ally', b.dataset.ally);
-    if (res !== true) pushToast('🤝 ' + res);
+    if (res !== true && res !== 'sent') pushToast('🤝 ' + res);
     refreshPanel();
   }));
   el.querySelectorAll('[data-unally]').forEach(b => b.addEventListener('click', () => {
@@ -2378,7 +2392,7 @@ function updateUnitbar() {
   document.getElementById('ub-disband').onclick = () => {
     const n = game.issue('disband', playerSelection().map(d => d.id)) || 0;
     UI.selectedDivs.clear();
-    pushToast(`🗑 ${n} Division(en) aufgelöst.`);
+    pushToast(n === 'sent' ? '🗑 Auflösen …' : `🗑 ${n} Division(en) aufgelöst.`);
     updateUnitbar();
     updateTopbar();
   };
@@ -2489,7 +2503,7 @@ function advisorTick() {
 /* ---------- Spawn-Phase: Startplatz wählen ---------- */
 function updateSpawnPhase() {
   const el = document.getElementById('spawn-banner');
-  if (!game || !game.spawnPhase || game._replayCmds) { el.classList.add('hidden'); return; }
+  if (!game || !game.spawnPhase || game._replayCmds) { el.classList.add('hidden'); UI._mpReadySent = false; return; }
   el.classList.remove('hidden');
   const rest = Math.max(0, Math.ceil((UI.spawnDeadline - performance.now()) / 1000));
   const cnt = el.querySelector('#spawn-count');
@@ -2499,6 +2513,15 @@ function updateSpawnPhase() {
 
 function finishSpawnPhase() {
   if (!game || !game.spawnPhase || game._replayCmds) return;
+  if (game._net) {
+    // Multiplayer: "Bereit"-Stimme — der Server beendet die Phase für alle
+    if (!UI._mpReadySent) {
+      UI._mpReadySent = true;
+      game.issue('startMatch');
+      pushToast('✔ Bereit! Die Runde startet, sobald alle stehen (oder die Zeit abläuft).');
+    }
+    return;
+  }
   game.issue('startMatch');
   document.getElementById('spawn-banner').classList.add('hidden');
   updateTopbar();
@@ -2518,9 +2541,11 @@ function updateLog() {
 
 /* ---------- Start- und Endbildschirm ---------- */
 function showStartScreen() {
+  if (typeof NET !== 'undefined' && (NET.ws || NET.driver)) netLeave(true);
   const sc = document.getElementById('start');
   sc.classList.remove('hidden');
   document.getElementById('gameover').classList.add('hidden');
+  if (typeof netProbeForStartScreen === 'function') netProbeForStartScreen();
 
   // Kartenwahl
   if (!UI.selectedMap || !GENMAPS[UI.selectedMap]) UI.selectedMap = Object.keys(GENMAPS)[0];

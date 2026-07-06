@@ -1,0 +1,13 @@
+{
+  "name": "finalfront-mpserver",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Final Front Multiplayer-Relay (Lockstep)",
+  "main": "mpserver.js",
+  "scripts": {
+    "start": "node mpserver.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
