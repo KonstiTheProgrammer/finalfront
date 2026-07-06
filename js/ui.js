@@ -46,6 +46,11 @@ function shade(hex, f) {
   return `rgb(${r},${g},${b})`;
 }
 
+function colorA(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
 function hexCorners(cx, cy, size) {
   const pts = [];
   for (let i = 0; i < 6; i++) {
@@ -197,35 +202,39 @@ function drawTerrainArt(ctx, h, x, y, detailed) {
 /* Fluss: dezente Tönung + DURCHGEHENDE Wasserlinie zu Nachbar-Flüssen
    und zum Meer — Flüsse lesen sich als Linien, nicht als Kleckse. */
 function drawRiverAt(ctx, h, p, detailed) {
-  hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
-  ctx.fillStyle = 'rgba(58, 132, 200, 0.16)';
-  ctx.fill();
-  ctx.strokeStyle = detailed ? 'rgba(52, 122, 195, 0.85)' : 'rgba(52, 122, 195, 0.75)';
-  ctx.lineWidth = detailed ? 2.6 : 2.2;
   ctx.lineCap = 'round';
-  let connected = 0, mouths = 0;
+  // Segmente zu Nachbar-Flüssen/Meer einsammeln
+  const segs = [];
+  let mouths = 0;
   for (const [nc, nr] of neighborsOf(h.c, h.r)) {
     const nh = game.hexAt(nc, nr);
     if (!nh || (!nh.river && nh.terrain !== 'water')) continue;
     if (nh.terrain === 'water' && !nh.river) {
-      if (mouths >= 1 || connected >= 2) continue;   // genau EINE Mündung, kein Küsten-Stern
+      if (mouths >= 1 || segs.length >= 2) continue;   // genau EINE Mündung, kein Küsten-Stern
       mouths++;
     }
     const np = hexToPixel(nc, nr);
     const mx = (p.x + np.x) / 2, my = (p.y + np.y) / 2;
     // leichte Biegung: Kontrollpunkt seitlich versetzt fürs Mäandern
     const ox = (my - p.y) * 0.28, oy = (p.x - mx) * 0.28;
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-    ctx.quadraticCurveTo((p.x + mx) / 2 + ox, (p.y + my) / 2 + oy, mx, my);
-    ctx.stroke();
-    connected++;
+    segs.push([(p.x + mx) / 2 + ox, (p.y + my) / 2 + oy, mx, my]);
   }
-  if (!connected) {
-    ctx.beginPath();
-    ctx.moveTo(p.x - 5, p.y + 1);
-    ctx.quadraticCurveTo(p.x, p.y - 3, p.x + 5, p.y + 1);
-    ctx.stroke();
+  if (!segs.length) segs.push([p.x, p.y - 3, p.x + 5, p.y + 1]);
+  // Zwei Durchgänge: dunkle Fassung + heller Kern — der Fluss bleibt auch
+  // auf eingefärbtem (erobertem) Land klar lesbar.
+  const passes = [
+    [detailed ? 4.4 : 3.8, 'rgba(16, 42, 66, 0.72)'],
+    [detailed ? 2.2 : 1.8, 'rgba(132, 198, 246, 0.95)'],
+  ];
+  for (const [w, style] of passes) {
+    ctx.strokeStyle = style;
+    ctx.lineWidth = w;
+    for (const [cx, cy, mx, my] of segs) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(cx, cy, mx, my);
+      ctx.stroke();
+    }
   }
 }
 
@@ -282,33 +291,57 @@ function drawBuilding(ctx, h, x, y, detailed) {
     }
     ctx.fillStyle = '#f5c542';
     ctx.fillRect(-1, -4, 2, 1.9);
-  } else if (h.building === 'hafen') {
-    // Lagerhaus
-    ctx.fillStyle = '#7d8a99'; ctx.strokeStyle = '#232a36';
-    ctx.fillRect(-6, -2.2, 7, 4.8); ctx.strokeRect(-6, -2.2, 7, 4.8);
-    ctx.fillStyle = '#5a6675';
+  } else if (h.building === 'fischerei') {
+    // Boot
+    ctx.fillStyle = '#8a6f4a'; ctx.strokeStyle = '#3a2c18';
     ctx.beginPath();
-    ctx.moveTo(-6.7, -2.2); ctx.lineTo(-2.5, -5); ctx.lineTo(1.7, -2.2);
+    ctx.moveTo(-5.5, 0.5); ctx.lineTo(5.5, 0.5); ctx.lineTo(3.4, 3.2); ctx.lineTo(-3.4, 3.2);
     ctx.closePath(); ctx.fill(); ctx.stroke();
-    // Pier
-    ctx.fillStyle = '#8a6f4a'; ctx.strokeStyle = '#4a3a24';
-    ctx.fillRect(1.4, 1.2, 6.6, 2);
-    if (detailed) {
-      ctx.lineWidth = 0.7;
-      ctx.beginPath();
-      ctx.moveTo(3.2, 1.2); ctx.lineTo(3.2, 3.8);
-      ctx.moveTo(5.2, 1.2); ctx.lineTo(5.2, 3.8);
-      ctx.moveTo(7.2, 1.2); ctx.lineTo(7.2, 3.8);
-      ctx.stroke();
-      ctx.fillStyle = '#c9d0da';
-      ctx.fillRect(-4.9, -1.2, 2, 2);   // Tor
-    }
-    // Mast mit Wimpel
+    // Segel
     ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 0.9;
-    ctx.beginPath(); ctx.moveTo(4.6, 1.2); ctx.lineTo(4.6, -4.8); ctx.stroke();
-    ctx.fillStyle = '#4aa3d9';
-    ctx.beginPath(); ctx.moveTo(4.6, -4.8); ctx.lineTo(7.8, -4); ctx.lineTo(4.6, -3.1);
-    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(0, 0.5); ctx.lineTo(0, -5.4); ctx.stroke();
+    ctx.fillStyle = 'rgba(246,240,224,0.96)'; ctx.strokeStyle = '#232a36';
+    ctx.beginPath();
+    ctx.moveTo(0.2, -5.2); ctx.lineTo(0.2, -0.4); ctx.lineTo(4.2, -1.6);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (detailed) {
+      // Netz mit Schwimmern
+      ctx.strokeStyle = 'rgba(240,240,245,0.75)'; ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(-6.5, -2.5); ctx.quadraticCurveTo(-4, -0.5, -1.6, -2.8);
+      ctx.moveTo(-5.8, -3.6); ctx.lineTo(-5, -0.9);
+      ctx.moveTo(-3.6, -3.4); ctx.lineTo(-3.2, -1.2);
+      ctx.stroke();
+      ctx.fillStyle = '#e8d67a';
+      ctx.beginPath(); ctx.arc(-6.3, -2.6, 0.7, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(-1.8, -2.8, 0.7, 0, 7); ctx.fill();
+    }
+  } else if (h.building === 'forsterei') {
+    // Holzstapel
+    ctx.strokeStyle = '#3a2c18';
+    const log = (lx, ly) => {
+      ctx.fillStyle = '#8a6540';
+      ctx.beginPath(); ctx.arc(lx, ly, 1.9, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#c9a36c';
+      ctx.beginPath(); ctx.arc(lx, ly, 1.0, 0, 7); ctx.fill();
+    };
+    log(-4.6, 3); log(-0.8, 3); log(-2.7, 0.4);
+    // Hütte mit Säge
+    ctx.fillStyle = '#7a5c38'; ctx.strokeStyle = '#3a2c18';
+    ctx.fillRect(1.6, -0.6, 5.4, 4.4); ctx.strokeRect(1.6, -0.6, 5.4, 4.4);
+    ctx.fillStyle = '#4e6b38';
+    ctx.beginPath();
+    ctx.moveTo(0.9, -0.6); ctx.lineTo(4.3, -3.6); ctx.lineTo(7.7, -0.6);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (detailed) {
+      // Axt am Stapel
+      ctx.strokeStyle = '#5a4630'; ctx.lineWidth = 0.9;
+      ctx.beginPath(); ctx.moveTo(-4.4, -3.6); ctx.lineTo(-2, -0.8); ctx.stroke();
+      ctx.fillStyle = '#b9c2cc';
+      ctx.beginPath();
+      ctx.moveTo(-4.9, -4.2); ctx.lineTo(-3.4, -3.4); ctx.lineTo(-4.6, -2.6);
+      ctx.closePath(); ctx.fill();
+    }
   } else if (h.building === 'kaserne') {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(-5.7, 3.5, 12.3, 1.2);
@@ -327,6 +360,16 @@ function drawBuilding(ctx, h, x, y, detailed) {
     ctx.fillStyle = '#d84343';
     ctx.beginPath(); ctx.moveTo(4.7, -8); ctx.lineTo(8.4, -7.1); ctx.lineTo(4.7, -5.9);
     ctx.closePath(); ctx.fill();
+  }
+  // Ausbau-Level: goldene Punkte oben rechts (Level 2/3)
+  if (h.building && (h.level || 1) > 1) {
+    ctx.strokeStyle = 'rgba(60,45,0,0.9)';
+    ctx.lineWidth = 0.7;
+    for (let i = 0; i < h.level; i++) {
+      ctx.fillStyle = '#ffd75e';
+      ctx.beginPath(); ctx.arc(7.8, -6 + i * 3.4, 1.4, 0, 7);
+      ctx.fill(); ctx.stroke();
+    }
   }
   if (h.capital || h.vp) {
     // Siegpunkt-Hauptstädte behalten ihren Stern dauerhaft — sie sind das Rundenziel
@@ -446,10 +489,6 @@ function renderMapLayer() {
     fillHex(ctx, h, p);
     drawTerrainArt(ctx, h, p.x, p.y, false);
   }
-  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
-    const h = game.hexAt(c, r);
-    if (h.river) drawRiverAt(ctx, h, hexToPixel(c, r), false);
-  }
   ctx.strokeStyle = 'rgba(88,68,44,0.95)';
   ctx.lineWidth = 2.4;
   ctx.lineCap = 'round';
@@ -461,6 +500,11 @@ function renderMapLayer() {
     const h = game.hexAt(c, r);
     if (h.terrain === 'water') continue;
     drawBordersAt(ctx, h, hexToPixel(c, r), 2.2);
+  }
+  // Flüsse ÜBER den Grenzen: bleiben auch auf erobertem Land sichtbar
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const h = game.hexAt(c, r);
+    if (h.river) drawRiverAt(ctx, h, hexToPixel(c, r), false);
   }
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
     const h = game.hexAt(c, r);
@@ -731,10 +775,6 @@ function render() {
       fillHex(ctx, h, p);
       drawTerrainArt(ctx, h, p.x, p.y, true);
     }
-    for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
-      const h = game.hexAt(c, r);
-      if (h.river) drawRiverAt(ctx, h, hexToPixel(c, r), true);
-    }
     ctx.strokeStyle = 'rgba(88,68,44,0.95)';
     ctx.lineWidth = 2.6;
     ctx.lineCap = 'round';
@@ -747,6 +787,11 @@ function render() {
       const h = game.hexAt(c, r);
       if (h.terrain === 'water') continue;
       drawBordersAt(ctx, h, hexToPixel(c, r), bThick);
+    }
+    // Flüsse ÜBER den Grenzen: bleiben auch auf erobertem Land sichtbar
+    for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
+      const h = game.hexAt(c, r);
+      if (h.river) drawRiverAt(ctx, h, hexToPixel(c, r), true);
     }
     for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
       const h = game.hexAt(c, r);
@@ -803,7 +848,9 @@ function render() {
     }
   }
 
-  // Frontlinien des Spielers (War-of-Dots-Stil): Linie + Truppen-Badge
+  // Frontlinien des Spielers (War-of-Dots-Stil): Linie + Truppen-Badge.
+  // Badge anklicken = Front wählen, dann Ziel klicken = Vormarsch.
+  UI._frontBadges = [];
   for (const f of game.fronts) {
     if (f.owner !== game.player || !f.hexes.length) continue;
     const w = Math.max(2.5, 3.5 / zoom);
@@ -829,14 +876,15 @@ function render() {
     trace();
     ctx.stroke();
     ctx.setLineDash([]);
-    // Badge: Anzahl der Fronttruppen an der Linienmitte
+    // Badge: Anzahl der Fronttruppen an der Linienmitte (klickbar!)
     const mid = f.hexes[Math.floor(f.hexes.length / 2)];
     const mp = hexToPixel(mid.c, mid.r);
     const n = game.frontDivisions(f).length;
     const rad = 6.5 / Math.min(zoom, 1.6) + 2;
-    ctx.fillStyle = isBorder ? 'rgba(120,26,18,0.94)' : 'rgba(96,72,10,0.94)';
-    ctx.strokeStyle = isBorder ? '#ff8a70' : '#ffd75e';
-    ctx.lineWidth = 1.4 / zoom + 0.5;
+    const armed = UI.pushMode === f.id;
+    ctx.fillStyle = armed ? 'rgba(190,150,20,0.96)' : isBorder ? 'rgba(120,26,18,0.94)' : 'rgba(96,72,10,0.94)';
+    ctx.strokeStyle = armed ? '#ffffff' : isBorder ? '#ff8a70' : '#ffd75e';
+    ctx.lineWidth = (armed ? 2.2 : 1.4) / zoom + 0.5;
     ctx.beginPath(); ctx.arc(mp.x, mp.y - HEX_SIZE * 0.9, rad, 0, 7); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#fff2e0';
     ctx.font = `bold ${9 / Math.min(zoom, 1.6) + 3}px sans-serif`;
@@ -844,6 +892,18 @@ function render() {
     ctx.textBaseline = 'middle';
     ctx.fillText(String(n), mp.x, mp.y - HEX_SIZE * 0.9 + 0.5);
     ctx.textBaseline = 'alphabetic';
+    UI._frontBadges.push({ id: f.id, x: mp.x, y: mp.y - HEX_SIZE * 0.9, r: rad });
+    // Vormarsch: Pfeil von der Linienmitte zum Ziel
+    if (f.push) {
+      const tp = hexToPixel(f.push[0], f.push[1]);
+      drawArrow(ctx, mp.x, mp.y, tp.x, tp.y, 'rgba(255,215,94,0.8)');
+      hexPath(ctx, tp.x, tp.y, HEX_SIZE * 0.72);
+      ctx.strokeStyle = 'rgba(255,215,94,0.9)';
+      ctx.lineWidth = 2 / zoom + 0.8;
+      ctx.setLineDash([4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
   }
 
   // Vorschau der gezogenen Frontlinie (B-Modus)
@@ -902,42 +962,39 @@ function render() {
       ctx.font = 'bold 12px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('✕', p.x, p.y - age * 11);
-    } else if (e.type === 'gold') {
-      const ty = p.y - HEX_SIZE - 2 - age * 16;
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.lineWidth = 2.4;
-      ctx.strokeStyle = `rgba(50,35,0,${0.85 * (1 - age)})`;
-      ctx.fillStyle = `rgba(255,216,90,${0.95 * (1 - age)})`;
-      ctx.strokeText('+' + e.amount + ' G', p.x, ty);
-      ctx.fillText('+' + e.amount + ' G', p.x, ty);
     }
   }
 
-  // Handelsschiffe (weit draußen ausblenden — sonst wirken sie wie Krümel)
-  if (zoom >= 0.6) {
-    for (const s of game.ships) {
-      if (s.x < UI.cam.x - 30 || s.x > UI.cam.x + UI.canvas.width / zoom + 30
-        || s.y < UI.cam.y - 30 || s.y > UI.cam.y + UI.canvas.height / zoom + 30) continue;
-      drawShip(ctx, s, now);
-    }
-  }
 
-  // Umkämpfte Hexes: Widerstands-Balken
-  if (zoom > 1.0) {
+  // Umkämpfte Hexes: das Feld füllt sich von unten mit der Farbe des
+  // Eroberers — je weniger Widerstand, desto voller (kein Balken mehr)
+  if (zoom > 0.45) {
     for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
       const h = game.hexAt(c, r);
       if (h.terrain === 'water' || !h._atkT || game.dayFloat - h._atkT > 1.5 || h.resist >= h.resistMax) continue;
+      const by = h._atkBy && NATION_DEFS[h._atkBy] ? NATION_DEFS[h._atkBy].color : '#ffffff';
+      const prog = Math.max(0.06, 1 - h.resist / h.resistMax);
       const p = hexToPixel(c, r);
-      const bw = 15;
-      ctx.fillStyle = 'rgba(10,10,14,0.8)';
-      ctx.fillRect(p.x - bw / 2, p.y - HEX_SIZE - 4, bw, 2.8);
-      ctx.fillStyle = '#e8e4da';
-      ctx.fillRect(p.x - bw / 2 + 0.4, p.y - HEX_SIZE - 3.6, (bw - 0.8) * Math.max(0, h.resist / h.resistMax), 2);
+      ctx.save();
+      hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
+      ctx.clip();
+      ctx.fillStyle = colorA(by, 0.5 + 0.1 * Math.sin(now / 170));
+      const fh = 2 * HEX_SIZE * prog;
+      ctx.fillRect(p.x - HEX_SIZE - 1, p.y + HEX_SIZE - fh, HEX_SIZE * 2 + 2, fh + 1);
+      // Wasserlinie obendrauf, damit der Füllstand klar lesbar ist
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fillRect(p.x - HEX_SIZE - 1, p.y + HEX_SIZE - fh, HEX_SIZE * 2 + 2, 0.9);
+      ctx.restore();
     }
   }
 
-  // Divisionen
+  // Divisionen — Stapel fächern leicht auf und zeigen oben rechts ihre Anzahl
+  const stackN = new Map(), stackI = new Map();
+  for (const d of game.divisions) {
+    if (d.dead) continue;
+    const k = d.c + d.r * MAP_W;
+    stackN.set(k, (stackN.get(k) || 0) + 1);
+  }
   for (const d of game.divisions) {
     if (d.dead) continue;
     const target = hexToPixel(d.c, d.r);
@@ -945,7 +1002,60 @@ function render() {
     d.y += (target.y - d.y) * 0.18;
     if (d.x < UI.cam.x - 40 || d.x > UI.cam.x + UI.canvas.width / zoom + 40
       || d.y < UI.cam.y - 40 || d.y > UI.cam.y + UI.canvas.height / zoom + 40) continue;
-    drawDivision(ctx, d, zoom);
+    const k = d.c + d.r * MAP_W;
+    const n = stackN.get(k) || 1;
+    if (n > 1) {
+      const idx = stackI.get(k) || 0;
+      stackI.set(k, idx + 1);
+      const off = idx - (n - 1) / 2;
+      ctx.save();
+      ctx.translate(off * 3.4, off * -2.4);
+      drawDivision(ctx, d, zoom);
+      ctx.restore();
+      if (idx === n - 1) {
+        // Stapel-Badge: Anzahl der Armeen auf dem Feld
+        const bx = d.x + 12.5, by = d.y - 10.5;
+        ctx.fillStyle = 'rgba(20,26,36,0.95)';
+        ctx.strokeStyle = '#f2e7c8';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(bx, by, 5.6, 0, 7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffe9b0';
+        ctx.font = 'bold 7.5px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(n), bx, by + 0.5);
+        ctx.textBaseline = 'alphabetic';
+      }
+    } else {
+      drawDivision(ctx, d, zoom);
+    }
+  }
+
+  // Gefechtsprognose (HOI-Bubble) über laufenden Kämpfen mit Spieler-Beteiligung
+  if (zoom >= 0.65) {
+    const bubbled = new Set();
+    for (const a of game.divisions) {
+      if (a.dead || !a.attackTarget) continue;
+      const def = game.divisionAt(a.attackTarget[0], a.attackTarget[1]);
+      if (!def || def.dead || def.nation === a.nation) continue;
+      if (a.nation !== game.player && def.nation !== game.player) continue;
+      if (bubbled.has(def.id)) continue;
+      bubbled.add(def.id);
+      const atkers = game.divisions.filter(x => !x.dead && x.nation === a.nation && x.attackTarget
+        && x.attackTarget[0] === def.c && x.attackTarget[1] === def.r);
+      const share = battleOdds(atkers, def);
+      const myShare = a.nation === game.player ? share : 1 - share;
+      const p2 = hexToPixel(def.c, def.r);
+      drawOddsBubble(ctx, (a.x + p2.x) / 2, (a.y + p2.y) / 2 - 9, myShare, zoom, false);
+    }
+  }
+  // Hover-Prognose: gewinnt meine Auswahl gegen die Armee unterm Cursor?
+  if (UI.hoverHex && UI.selectedDivs.size && !UI._overUI && !game.spawnPhase) {
+    const hd = game.divisionAt(UI.hoverHex.c, UI.hoverHex.r);
+    if (hd && !hd.dead && hd.nation !== game.player && game.hostile(game.player, hd.nation)) {
+      const sel = playerSelection();
+      if (sel.length) drawOddsBubble(ctx, hd.x, hd.y - HEX_SIZE * 1.7, battleOdds(sel, hd), zoom, true);
+    }
   }
 
   // Städtenamen (Hauptstädte)
@@ -1075,27 +1185,56 @@ function render() {
   drawMinimap();
 }
 
-function drawShip(ctx, s, now) {
-  const bob = Math.sin(now / 320 + s.x * 0.13) * 0.7;
-  const x = s.x, y = s.y + bob;
-  const col = NATION_DEFS[s.from] ? NATION_DEFS[s.from].color : '#888';
+/* Grobe Gefechtsprognose wie in HOI: Anteil der eigenen Schlagkraft.
+   RPS-Dreieck, Gelände, Fluss, Org, Versorgung und Kessel fließen ein. */
+function battleOdds(attackers, def) {
+  const dt = BAL.divTypes[def.type];
+  const dh = game.hexAt(def.c, def.r);
+  const terr = TERRAIN[dh.terrain].def * (dh.river ? 1 / BAL.river.attackInto : 1);
+  let atk = 0;
+  const typeCount = {};
+  for (const a of attackers) {
+    let p = game.attackPower(a) * ((BAL.rps[a.type] && BAL.rps[a.type][def.type]) || 1);
+    const ah = game.hexAt(a.c, a.r);
+    if (ah && ah.river) p *= BAL.river.attackFrom;
+    p *= 0.35 + 0.65 * (a.org / BAL.divTypes[a.type].maxOrg);
+    atk += p;
+    typeCount[a.type] = (typeCount[a.type] || 0) + 1;
+  }
+  atk /= Math.max(0.4, terr);
+  const mainType = Object.keys(typeCount).sort((x, y) => typeCount[y] - typeCount[x])[0] || 'inf';
+  const defP = game.attackPower(def) * dt.defF
+    * ((BAL.rps[def.type] && BAL.rps[def.type][mainType]) || 1)
+    * (0.35 + 0.65 * def.org / dt.maxOrg)
+    + dh.resist * 0.02;   // die örtliche Miliz hilft dem Verteidiger etwas
+  return atk / Math.max(0.001, atk + defP);
+}
+
+/* Grün = du gewinnst, Gelb = knapp, Rot = Finger weg */
+function drawOddsBubble(ctx, x, y, share, zoom, big) {
+  const pct = Math.round(share * 100);
+  const col = share >= 0.58 ? '#3fae53' : share >= 0.42 ? '#d7a83c' : '#cc4536';
+  const r = (big ? 10.5 : 8.5) / Math.min(zoom, 1.8) + 3;
   ctx.save();
-  // Kielwasser
-  ctx.strokeStyle = 'rgba(220,235,245,0.25)';
-  ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(x - 5.5, y + 1.6); ctx.lineTo(x - 9, y + 1.6); ctx.stroke();
-  // Rumpf
-  ctx.fillStyle = shade(col, 0.9);
-  ctx.strokeStyle = 'rgba(10,14,20,0.85)';
-  ctx.lineWidth = 0.8;
   ctx.beginPath();
-  ctx.moveTo(x - 4.2, y); ctx.lineTo(x + 4.2, y); ctx.lineTo(x + 2.5, y + 2.4); ctx.lineTo(x - 2.5, y + 2.4);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
-  // Segel
-  ctx.fillStyle = 'rgba(246,240,224,0.96)';
-  ctx.beginPath();
-  ctx.moveTo(x - 0.2, y - 0.6); ctx.lineTo(x - 0.2, y - 5.6); ctx.lineTo(x + 3.6, y - 1.2);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.moveTo(x, y + r + 3.5);
+  ctx.lineTo(x - 3, y + r - 1.5);
+  ctx.lineTo(x + 3, y + r - 1.5);
+  ctx.closePath();
+  ctx.fillStyle = col;
+  ctx.fill();
+  ctx.beginPath(); ctx.arc(x, y, r, 0, 7);
+  ctx.fillStyle = col;
+  ctx.fill();
+  ctx.lineWidth = 1.4 / zoom + 0.4;
+  ctx.strokeStyle = 'rgba(16,20,28,0.85)';
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${(big ? 8.5 : 7.5) / Math.min(zoom, 1.8) + 2.5}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(pct + '%', x, y + 0.5);
+  ctx.textBaseline = 'alphabetic';
   ctx.restore();
 }
 
@@ -1238,11 +1377,23 @@ function bindInput() {
 
   cv.addEventListener('wheel', e => {
     e.preventDefault();
-    const w = screenToWorld(e.clientX, e.clientY);
-    const factor = e.deltaY < 0 ? 1.16 : 1 / 1.16;
-    UI.cam.zoom = Math.min(4.5, Math.max(Math.min(0.3, fitZoom() * 0.9), UI.cam.zoom * factor));
-    UI.cam.x = w.x - e.clientX / UI.cam.zoom;
-    UI.cam.y = w.y - e.clientY / UI.cam.zoom;
+    const zoomAt = factor => {
+      const w = screenToWorld(e.clientX, e.clientY);
+      UI.cam.zoom = Math.min(4.5, Math.max(Math.min(0.3, fitZoom() * 0.9), UI.cam.zoom * factor));
+      UI.cam.x = w.x - e.clientX / UI.cam.zoom;
+      UI.cam.y = w.y - e.clientY / UI.cam.zoom;
+    };
+    if (e.ctrlKey) {
+      // Trackpad-Pinch (macOS meldet ctrlKey): sanft zoomen
+      zoomAt(Math.exp(-e.deltaY * 0.014));
+    } else if (Math.abs(e.deltaX) > 0.01 || Math.abs(e.deltaY) < 40) {
+      // Zwei-Finger-Scroll auf dem Trackpad: Karte schwenken (umsehen)
+      UI.cam.x += e.deltaX / UI.cam.zoom;
+      UI.cam.y += e.deltaY / UI.cam.zoom;
+    } else {
+      // klassisches Mausrad (große Einzelschritte): zoomen
+      zoomAt(e.deltaY < 0 ? 1.16 : 1 / 1.16);
+    }
   }, { passive: false });
 
   window.addEventListener('keydown', e => {
@@ -1270,8 +1421,11 @@ function bindInput() {
       }
     }
     if (e.code === 'Escape') {
-      // Kaskade: erst Zeichenmodus/Baumodus, dann Auswahl, dann Panel schließen
-      if (UI.frontDraw) {
+      // Kaskade: erst Vormarsch-/Zeichen-/Baumodus, dann Auswahl, dann Panel
+      if (UI.pushMode) {
+        UI.pushMode = null;
+        pushToast('Vormarsch-Auswahl abgebrochen.');
+      } else if (UI.frontDraw) {
         UI.frontDraw = null;
         UI.canvas.style.cursor = '';
       } else if (UI.buildMode) {
@@ -1339,7 +1493,7 @@ function splitSelection() {
   const ids = playerSelection().map(d => d.id);
   const twins = game.issue('split', ids) || [];
   twins.forEach(id => UI.selectedDivs.add(id));
-  pushToast(twins.length ? `✂️ ${twins.length} Division(en) geteilt.` : '⚠ Teilen braucht ≥ 40 Stärke und einen freien Nachbarplatz.');
+  pushToast(twins.length ? `✂️ ${twins.length} Division(en) geteilt — beide stehen auf dem Feld (📚 Stapel).` : '⚠ Teilen braucht ≥ 40 Stärke.');
   updateUnitbar();
 }
 
@@ -1452,6 +1606,38 @@ function handleClick(sx, sy, additive) {
     return;
   }
 
+  // Front-Badge angeklickt? → Front wählen, der nächste Klick setzt das Vormarschziel
+  if (!game._replayCmds && UI._frontBadges) {
+    for (const b of UI._frontBadges) {
+      if ((w.x - b.x) ** 2 + (w.y - b.y) ** 2 <= (b.r * 1.35) ** 2) {
+        const f = game.frontById(b.id);
+        if (f) {
+          UI.pushMode = f.id;
+          UI.selectedDivs.clear();
+          game.frontDivisions(f).forEach(d => UI.selectedDivs.add(d.id));
+          updateUnitbar();
+          pushToast('🎯 Front gewählt — klicke jetzt ein ZIEL auf der Karte: die Front rückt dorthin vor (Esc bricht ab).');
+        }
+        return;
+      }
+    }
+  }
+  // Vormarschziel setzen (Front wurde eben per Badge gewählt)
+  if (UI.pushMode && !game._replayCmds) {
+    const fid = UI.pushMode;
+    UI.pushMode = null;
+    const hx = pixelToHex(w.x, w.y);
+    const h = hx && game.hexAt(hx.c, hx.r);
+    if (h && h.terrain !== 'water' && game.frontById(fid)) {
+      game.issue('frontPush', fid, hx.c, hx.r);
+      pushToast('🎯 Vormarsch! Die Fronttruppen kämpfen sich Richtung Ziel vor.');
+      refreshPanel();
+    } else {
+      pushToast('⚠ Kein gültiges Ziel — Vormarsch abgebrochen.');
+    }
+    return;
+  }
+
   let clickedDiv = null, bestD = (14 / Math.max(UI.cam.zoom, 0.6)) ** 2 + 60;
   for (const d of game.divisions) {
     if (d.dead) continue;
@@ -1480,8 +1666,14 @@ function handleClick(sx, sy, additive) {
       if (UI.selectedDivs.has(clickedDiv.id)) UI.selectedDivs.delete(clickedDiv.id);
       else UI.selectedDivs.add(clickedDiv.id);
     } else {
+      // Klick auf ein Feld mit Stapel: ALLE Armeen dort auswählen —
+      // die Leiste unten listet sie einzeln (Karte = einzeln wählen)
       UI.selectedDivs.clear();
-      UI.selectedDivs.add(clickedDiv.id);
+      const stack = clickedDiv.nation === game.player
+        ? game.divisionsAt(clickedDiv.c, clickedDiv.r).filter(x => x.nation === game.player)
+        : [clickedDiv];
+      stack.forEach(x => UI.selectedDivs.add(x.id));
+      if (stack.length > 1) pushToast(`📚 ${stack.length} Armeen auf diesem Feld — unten einzeln anwählbar.`);
     }
     UI.selectedHex = null;
     updateUnitbar();
@@ -1558,24 +1750,24 @@ function updateTooltip(sx, sy) {
     if (h.vp) html += ' · <b>🏛️ Siegpunkt-Hauptstadt</b>';
     if (h.cityName) html += ` · <b>${h.cityName}</b>`;
     if (h.building) {
-      html += `<br>${buildingName(h.building)}`;
-      const eff = h.building === 'dorf' ? `+${BAL.leuteDorf}k Leute/Tag`
+      const lvl = h.level || 1;
+      html += `<br>${buildingName(h.building)}${lvl > 1 ? ` <b>· Level ${lvl}</b>` : ''}`;
+      const y = BAL.yields[h.building];
+      const eff = y ? [
+        y.gold ? `+${(((h.building === 'mine' && h.terrain === 'hills') ? y.hillsGold : y.gold) * lvl).toFixed(1)} Gold/Tag` : '',
+        y.leute ? `+${(y.leute * lvl).toFixed(2)}k Leute/Tag` : '',
+      ].filter(Boolean).join(' · ')
         : h.building === 'stadt' ? `+${BAL.incomeStadt} Gold · +${BAL.leuteStadt}k Leute/Tag`
-        : h.building === 'mine' ? `+${h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine} Gold/Tag`
-        : h.building === 'kaserne' ? `bildet ${BAL.trainPerKaserne}k Leute/Tag zu Soldaten aus`
-        : '';
+          : h.building === 'kaserne' ? `bildet ${(BAL.trainPerKaserne * lvl).toFixed(2)}k Leute/Tag zu Soldaten aus`
+            : '';
       if (eff) html += ` <span class="tt-dim">(${eff})</span>`;
-      if (h.building === 'hafen') {
-        const partners = Object.keys(game.nations).filter(x => x !== h.owner
-          && game.nations[x].alive && (game.nations[x].ports || 0) > 0
-          && game.tradePartners(h.owner, x)).length;
-        html += `<br><span class="tt-dim">🚢 Handelspartner: ${partners} · hier verdient: ${Math.round(h._tradeEarned || 0)} G</span>`;
-      }
+      if (lvl < BAL.maxLevel && h.building !== 'stadt') html += `<br><span class="tt-dim">nochmal bauen = Ausbau auf Level ${lvl + 1}</span>`;
     }
     if (h.road) html += ' · 🛣️';
-    html += `<br><span class="tt-dim">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${h.resistMax}</span>`;
+    if (h.terrain !== 'water')
+      html += `<br><span class="tt-dim">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
   } else if (h.terrain !== 'water') {
-    html += ` — <span class="tt-dim">neutral (Miliz ${Math.round(h.resist)}/${h.resistMax})</span>`;
+    html += ` — <span class="tt-dim">neutral (Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)})</span>`;
   }
   const d = game.divisionAt(UI.hoverHex.c, UI.hoverHex.r);
   if (d) {
@@ -1590,7 +1782,7 @@ function updateTooltip(sx, sy) {
 }
 
 function buildingName(b) {
-  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', kaserne: '🎪 Kaserne', hafen: '🚢 Hafen' }[b] || b;
+  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', forsterei: '🪓 Forsterei', fischerei: '🎣 Fischerei', kaserne: '🎪 Kaserne' }[b] || b;
 }
 
 /* =========================================================
@@ -1793,26 +1985,30 @@ function refreshPanel() {
 }
 
 function panelBauen() {
-  let html = `<p class="hint">Bau-Modus wählen, dann auf die Karte klicken — Straßen lassen sich <b>ziehen</b>. Rechtsklick/Esc beendet.</p>`;
+  let html = `<p class="hint">Bau-Modus wählen, dann auf die Karte klicken — Straßen lassen sich <b>ziehen</b>.
+    Gleiches Gebäude nochmal aufs Feld = <b>Ausbau auf Level 2/3</b> (kostet das 2-/3-fache, bringt das Doppelte/Dreifache).
+    Rechtsklick/Esc beendet.</p>`;
+  const y = BAL.yields;
   const items = [
-    ['dorf', '🏠 Dorf', `erzeugt Leute: +${BAL.leuteDorf}k/Tag`],
-    ['stadt', '🏙️ Stadt', `Dorf-Ausbau: +${BAL.incomeStadt} Gold und +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub`],
-    ['mine', '⛏️ Mine', `erzeugt Gold: +${BAL.incomeMine}–${BAL.incomeMineBerg}/Tag (Hügel/Gebirge)`],
-    ['hafen', '🚢 Hafen', `bringt Gold per Seehandel (beide Seiten verdienen) · Versorgungs-Hub · nur am Ufer`],
-    ['kaserne', '🎪 Kaserne', `bildet ${BAL.trainPerKaserne}k Leute/Tag zu 🎖️ Soldaten aus — Divisionen kosten Gold + Soldaten`],
-    ['strasse', '🛣️ Straße', `Bewegung + Versorgung — ziehbar!`],
+    ['mine', '⛏️ Mine', `+${y.mine.gold} Gold/Tag (Hügel: +${y.mine.hillsGold}) · überall baubar`],
+    ['forsterei', '🪓 Forsterei', `+${y.forsterei.gold} Gold und +${y.forsterei.leute}k Leute/Tag · nur im Wald`],
+    ['fischerei', '🎣 Fischerei', `+${y.fischerei.gold} Gold und +${y.fischerei.leute}k Leute/Tag · Küstenwasser neben deinem Land`],
+    ['dorf', '🏠 Dorf', `+${y.dorf.leute}k Leute/Tag · überall baubar`],
+    ['kaserne', '🎪 Kaserne', `bildet ${BAL.trainPerKaserne}k Leute/Tag zu 🎖️ Soldaten aus (× Level) — Divisionen kosten Gold + Soldaten`],
+    ['strasse', '🛣️ Straße', `Bewegung + Versorgung · überbrückt Flüsse — ziehbar!`],
   ];
   for (const [key, label, desc] of items) {
     html += `<div class="build-row">
-      <button data-buildmode="${key}" class="${UI.buildMode === key ? 'active-build' : ''}">${label} — ${BAL.cost[key]} G</button>
+      <button data-buildmode="${key}" class="${UI.buildMode === key ? 'active-build' : ''}">${label} — ab ${BAL.cost[key]} G</button>
       <div class="small">${desc}</div>
     </div>`;
   }
+  html += `<p class="small hint">💡 Unbebautes Land arbeitet auch: Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute — Gebäude sind um ein Vielfaches stärker.</p>`;
   if (UI.selectedHex) {
     const h = game.hexAt(UI.selectedHex.c, UI.selectedHex.r);
     if (h && h.owner === game.player) {
       html += `<hr><p><b>${TERRAIN[h.terrain].name}</b> (${h.c}|${h.r})`;
-      if (h.building) html += ` · ${buildingName(h.building)}`;
+      if (h.building) html += ` · ${buildingName(h.building)}${(h.level || 1) > 1 ? ` Lv ${h.level}` : ''}`;
       if (h.road) html += ' · 🛣️';
       html += `<br><span class="small">Versorgung ${Math.round(h.supply * 100)} %</span></p>`;
     }
@@ -1854,8 +2050,11 @@ function panelTruppen() {
       : `📏 Linie ${f.id}`;
     html += `<div class="front-row">
       <div class="diplo-info"><b>${label}</b>
-        <span class="small">${divs.length} Truppen · ${f.hexes.length} Felder</span></div>
+        <span class="small">${divs.length} Truppen · ${f.hexes.length} Felder${f.push ? ' · 🎯 Vormarsch läuft' : ''}</span></div>
       <button class="mini" data-selfront="${f.id}" title="Truppen dieser Front auswählen">👥</button>
+      ${f.push
+        ? `<button class="mini" data-stoppush="${f.id}" title="Vormarsch stoppen — die Front hält">⏹</button>`
+        : `<button class="mini" data-pushfront="${f.id}" title="Vormarsch: danach ein Ziel auf der Karte anklicken">🎯</button>`}
       <button class="mini danger" data-delfront="${f.id}" title="Front auflösen — Truppen werden frei">✖</button>
     </div>`;
   }
@@ -1950,12 +2149,21 @@ function bindPanelActions(el) {
     pushToast('Front aufgelöst — die Truppen sind wieder frei.');
     refreshPanel();
   }));
+  el.querySelectorAll('[data-pushfront]').forEach(b => b.addEventListener('click', () => {
+    UI.pushMode = +b.dataset.pushfront;
+    pushToast('🎯 Jetzt ein Ziel auf der Karte anklicken — die Front rückt dorthin vor (Esc bricht ab).');
+  }));
+  el.querySelectorAll('[data-stoppush]').forEach(b => b.addEventListener('click', () => {
+    game.issue('frontPush', +b.dataset.stoppush, null, null);
+    pushToast('⏹ Vormarsch gestoppt — die Front hält die Linie.');
+    refreshPanel();
+  }));
 }
 
 /* =========================================================
    EINHEITEN-LEISTE (unten, HOI4-Stil)
    ========================================================= */
-const TYPE_SHORT = { inf: 'INF', gar: 'GAR', pz: 'PZ', art: 'ART' };
+const TYPE_SHORT = { inf: 'KRI', kav: 'KAV', kan: 'KAN' };
 
 function updateUnitbar() {
   const bar = document.getElementById('unitbar');
@@ -1981,14 +2189,18 @@ function updateUnitbar() {
     const status = front
       ? `⚔ Frontdienst${front.kind === 'border' ? ' gegen ' + game.nationName(front.target) : ' (Linie)'}`
       : '🎮 dein Befehl';
+    const stackN = game.divisionsAt(d.c, d.r).length;
+    const stackHtml = stackN > 1 ? ` · <b>📚 ${stackN} auf diesem Feld</b>` : '';
     head.innerHTML = `<b>${d.name}</b><span class="small"> ${status}${wp}</span>
-      <span class="small ub-stats">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)}/${t.maxOrg} · ${moralIcon}${supWarn}</span>
+      <span class="small ub-stats">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)}/${t.maxOrg} · ${moralIcon}${supWarn}${stackHtml}</span>
       <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
   } else {
     const avgStr = sel.reduce((s, d) => s + d.str, 0) / sel.length;
     const frontN = sel.filter(d => d.front != null).length;
+    const sameHex = sel.every(x => x.c === sel[0].c && x.r === sel[0].r);
+    const stackHtml = sameHex ? ` · <b>📚 ${sel.length} auf diesem Feld</b>` : '';
     head.innerHTML = `<b>${sel.length} Truppen</b><span class="small"> · Ø Stärke ${Math.round(avgStr)} % · ${frontN ? frontN + '× ⚔ Frontdienst' : 'alle frei'}</span>
-      <span class="small ub-stats">Rechtsklick = Marsch · Strg+Klick Grenze = Front · B = Linie</span>
+      <span class="small ub-stats">Rechtsklick = Marsch · Strg+Klick Grenze = Front · B = Linie${stackHtml}</span>
       <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
   }
 
@@ -2053,8 +2265,8 @@ const TUTORIAL_STEPS = [
     done: g => g.nations[g.player].hexCount >= 6 },
   { text: 'Bau eine <b>🎪 Kaserne</b> (Menü links → 🏗️). Sie bildet 👥 Leute zu 🎖️ Soldaten aus.',
     ghost: 'kaserne', done: g => g.nations[g.player].trainCap > 0 },
-  { text: 'Bau ein <b>🏠 Dorf</b> — mehr 👥 Leute als Nachschub für deine Kaserne.',
-    ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.29 },
+  { text: 'Bau ein <b>🏠 Dorf</b> (oder eine 🎣 Fischerei am Ufer) — mehr 👥 Leute als Nachschub für deine Kaserne.',
+    ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.42 },
   { text: 'Öffne das <b>🪖 Truppen-Menü</b> links und stelle <b>Krieger</b> auf (+1). Merke das Dreieck: Krieger &gt; Kavallerie &gt; Kanonen &gt; Krieger!',
     done: g => g.divisionsOf(g.player).length >= 2 },
   { text: '<b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Frontlinie — deine Truppen verteilen sich darauf (oder <b>B</b> drücken und selbst eine Linie ziehen). <b>3 🏛️ Hauptstädte gewinnen die Runde!</b>',
@@ -2129,7 +2341,7 @@ const ADVISOR_CHECKS = [
     msg: '💡 Viele 🎖️ Soldaten warten — stelle im 🪖 Truppen-Menü neue Truppen auf!' },
   { key: 'supply', cd: 90000,
     when: g => g.divisionsOf(g.player).some(d => g.supplyModOf(d).level < 0.2),
-    msg: '⚠️ Divisionen ohne Nachschub verlieren Stärke — Straßen, Städte und Häfen versorgen.' },
+    msg: '⚠️ Divisionen ohne Nachschub verlieren Stärke — Straßen, Städte und Kasernen versorgen.' },
 ];
 
 function advisorTick() {

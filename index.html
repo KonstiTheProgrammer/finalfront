@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -13,7 +13,7 @@
   <div id="topbar">
     <div class="tb-group" id="tb-nation"></div>
     <div class="tb-group" title="Gold (Einkommen/Tag)">🪙 <span id="tb-gold">0</span></div>
-    <div class="tb-group" title="Leute (Zuwachs/Tag) — kommen aus Dörfern und Städten">👥 <span id="tb-mp">0</span></div>
+    <div class="tb-group" title="Leute (Zuwachs/Tag) — kommen aus Dörfern, Fischereien und Forstereien">👥 <span id="tb-mp">0</span></div>
     <div class="tb-group" title="Soldaten (Ausbildung/Tag) — Kasernen bilden Leute zu Soldaten aus; Divisionen kosten Gold + Soldaten">🎖️ <span id="tb-sold">0</span></div>
     <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
     <div class="tb-group" title="Gehaltene Hauptstädte — 3 starten den Sieg-Countdown!">🏛️ <span id="tb-vp">1/3</span></div>
@@ -131,21 +131,24 @@
       <ul class="help-list">
         <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = alle eigenen Truppen</b>. Ausgewählte Truppen erscheinen in der <b>Einheiten-Leiste unten</b> (Teilen, Vereinen, Front lösen, Auflösen).</li>
         <li><b>Teilen &amp; Vereinen:</b> <b>S</b> teilt ausgewählte Divisionen in zwei Hälften · <b>M</b> vereint ausgewählte Divisionen gleichen Typs</li>
-        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen ziehen exakt dorthin und kämpfen sich durch (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte</b> (werden der Reihe nach abgelaufen). Truppen erobern <b>freies Nachbarland von selbst</b>, Feld für Feld.</li>
-        <li><b>⚔ Frontlinien:</b> <b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Front entlang des Grenzverlaufs (wächst mit) · <b>B</b> = eigene Linie über die Karte ziehen (hält Stellung). Zugewiesene Truppen <b>verteilen sich selbst</b> auf der Linie und kämpfen dort. <b>S</b> teilt Front-Truppen und verteilt sie neu. Front lösen: Truppen-Menü oder Einheiten-Leiste.</li>
-        <li><b>Karte:</b> Rechts-/Mittel-Ziehen oder WASD = verschieben · Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
+        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen ziehen exakt dorthin und kämpfen sich durch (Küste über See = Invasion) · <b>Shift+Rechtsklick = Wegpunkte</b> (werden der Reihe nach abgelaufen). Truppen <b>marschieren nicht ins Neutralland</b> — sie stehen daneben und nehmen es ein: das Feld <b>füllt sich langsam mit deiner Farbe</b> (je stärker die Truppe, desto schneller). ⛰️ Bergfelder sind viel zäher, 🌊 Flussfelder etwas zäher.</li>
+        <li><b>⚔ Frontlinien:</b> <b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Front entlang des Grenzverlaufs (wächst mit) · <b>B</b> = eigene Linie über die Karte ziehen (hält Stellung). Zugewiesene Truppen <b>verteilen sich selbst</b> auf der Linie und kämpfen dort. <b>S</b> teilt Front-Truppen und verteilt sie neu. Front lösen: Truppen-Menü oder Einheiten-Leiste. <b>🎯 Vormarsch:</b> Front-Badge (Kreis mit Truppenzahl) anklicken, dann ein Ziel auf der Karte — die Front kämpft sich dorthin vor.</li>
+        <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
         <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt samt Umland (7 Felder) und einer Armee Krieger</b> — für alle exakt gleich.</li>
-        <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
+        <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien: Wer AUF einem Flussfeld steht, ist deutlich schwerer anzugreifen, und Flussfelder leisten der Eroberung länger Widerstand. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
         <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Nach <b>600 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 360: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
         <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>40 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
         <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab. <b>Verrat:</b> Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen angreift, ist 60 Tage <b>🐍 Verräter</b> — kein Handel, keine neuen Bündnisse, bevorzugtes Ziel aller.</li>
         <li><b>Bauen:</b> Menüleiste links → 🏗️ → Gebäude wählen → auf die Karte klicken. Straßen lassen sich <b>ziehen</b>. Esc beendet.</li>
-        <li><b>Wirtschaftskette:</b> 🏠 Dörfer erzeugen <b>👥 Leute</b> · 🏙️ Städte erzeugen Leute <b>und</b> Gold · ⛏️ Minen und 🚢 Häfen bringen Gold · 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> — neue Divisionen und Verstärkung kosten Gold + Soldaten · 🛣️ Straßen = Bewegung + Versorgung</li>
-        <li><b>Seehandel:</b> Baue einen <b>🚢 Hafen an einem Ufer</b> — er schickt Handelsschiffe zu Häfen anderer Nationen, und <b>beide Seiten verdienen Gold</b> pro Ankunft (längere Routen = mehr). Kein Handel mit Nationen, mit denen du gerade kämpfst; Verbündete handeln immer. Häfen sind zudem Versorgungs-Hubs.</li>
+        <li><b>Wirtschaft — 4 Gebäude mit klaren Rollen:</b> ⛏️ <b>Mine</b> = Gold (überall, Hügel-Bonus) · 🪓 <b>Forsterei</b> = viel Gold + etwas Leute (nur Wald) · 🎣 <b>Fischerei</b> = etwas Gold + viele Leute (Küstenwasser neben deinem Land) · 🏠 <b>Dorf</b> = nur Leute. Dazu: 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> (Divisionen kosten Gold + Soldaten) · 🛣️ Straßen = Bewegung + Versorgung.</li>
+        <li><b>Ausbau-Level:</b> Gleiches Gebäude nochmal aufs Feld bauen = <b>Level 2/3</b> (goldene Punkte am Gebäude) — kostet das 2-/3-fache, bringt das Doppelte/Dreifache. Auch Kasernen sind ausbaubar.</li>
+        <li><b>Passives Land:</b> Unbebautes eigenes Land arbeitet mit — Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute. Gebäude sind um ein Vielfaches stärker.</li>
+        <li><b>📚 Armee-Stapel:</b> Mehrere Armeen können auf einem Feld stehen (z. B. nach dem Teilen) — der Stapel zeigt oben rechts seine Anzahl. Klick aufs Feld wählt alle; in der Einheiten-Leiste unten wählst du sie einzeln an.</li>
+        <li><b>Gefechtsprognose:</b> Über laufenden Kämpfen und beim Zeigen auf eine feindliche Armee (mit eigener Auswahl) erscheint die <b>HOI-Bubble</b>: Grün = du gewinnst, Gelb = knapp, Rot = Finger weg. RPS-Dreieck, Gelände, Fluss, Organisation und Kessel sind eingerechnet.</li>
         <li><b>Truppendreieck (EU4-Stil):</b> 🛡 <b>Krieger</b> halten die Linie und schlagen Kavallerie · 🐎 <b>Kavallerie</b> ist schnell und schlägt Kanonen · 💥 <b>Kanonen</b> belagern (2,5× gegen Miliz) und schlagen Krieger — aber langsam und fragil.</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
-        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert — Küsten evakuieren über See.</li>
+        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation umschlossen sind, fallen ihr kampflos zu.</li>
         <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
         <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · <b>B</b> Frontlinie ziehen · S/M teilen/vereinen · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
       </ul>
@@ -153,10 +156,10 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=21"></script>
-  <script src="js/map.js?v=21"></script>
-  <script src="js/game.js?v=21"></script>
-  <script src="js/ui.js?v=21"></script>
-  <script src="js/main.js?v=21"></script>
+  <script src="js/mapdata.js?v=22"></script>
+  <script src="js/map.js?v=22"></script>
+  <script src="js/game.js?v=22"></script>
+  <script src="js/ui.js?v=22"></script>
+  <script src="js/main.js?v=22"></script>
 </body>
 </html>

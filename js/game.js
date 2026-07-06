@@ -13,23 +13,31 @@ const BAL = {
   //   Dorf → Leute · Stadt → Leute + Gold · Mine/Hafen → Gold
   //   Kaserne bildet Leute zu Soldaten aus · Divisionen kosten Gold + Soldaten
   baseIncome: 2.5,                    // Staatskasse (Grundeinkommen)
-  incomeStadt: 4.0,
-  incomeMine: 6.0,
-  incomeMineBerg: 8.0,
-  landIncomePerHex: 0.03,             // Territorium zahlt Steuern (kompakte Karte)
-  leuteDorf: 0.10,                    // Dorf: nur Leute
-  leuteStadt: 0.20,                   // Stadt: Leute UND Gold
-  trainPerKaserne: 0.25,              // Ausbildung: Leute → Soldaten pro Kaserne
-  // Baukosten
-  cost: { strasse: 25, dorf: 60, mine: 120, kaserne: 150, hafen: 180, stadt: 250 },
-  // Seehandel
-  trade: {
-    shipEveryDays: 4,        // jeder Hafen schickt alle N Tage ein Schiff
-    baseGold: 10,
-    goldPerDist: 0.7,        // längere Routen = mehr Gewinn
-    shipSpeed: 7,            // Hexes/Tag
-    warCooldown: 25,         // Tage ohne Kampf, bis Handel wieder möglich
+  incomeStadt: 4.0,                   // Start-Stadt (Hauptstadt): Gold + Leute
+  leuteStadt: 0.20,
+  trainPerKaserne: 0.25,              // Ausbildung: Leute → Soldaten pro Kaserne (× Level)
+  // Vier Wirtschaftsgebäude — jedes hat eine klare Rolle, Level 1–3
+  // (gleiches Gebäude nochmal bauen = Ausbau, Ertrag skaliert mit dem Level):
+  //   Mine (überall):        Gold             · Hügel-Bonus
+  //   Forsterei (nur Wald):  viel Gold + etwas Leute
+  //   Fischerei (Küstenmeer): etwas Gold + viele Leute
+  //   Dorf (überall):        nur Leute
+  yields: {
+    mine:      { gold: 5.0, leute: 0,    hillsGold: 6.5 },
+    forsterei: { gold: 6.0, leute: 0.06 },
+    fischerei: { gold: 2.5, leute: 0.16 },
+    dorf:      { gold: 0,   leute: 0.22 },
   },
+  maxLevel: 3,
+  // Unbebautes eigenes Land arbeitet auch — nur viel schwächer als ein Gebäude
+  passive: {
+    plains:   { gold: 0.05, leute: 0.010 },
+    forest:   { gold: 0.30, leute: 0.004 },
+    hills:    { gold: 0.35, leute: 0.002 },
+    mountain: { gold: 0.45, leute: 0 },
+  },
+  // Baukosten (Ausbau auf Level N kostet das N-fache)
+  cost: { strasse: 25, dorf: 60, fischerei: 90, mine: 110, forsterei: 130, kaserne: 150 },
   // Truppendreieck nach EU4-Vorbild:
   //   Krieger schlagen Kavallerie · Kavallerie schlägt Kanonen · Kanonen schlagen Krieger
   divTypes: {
@@ -51,14 +59,17 @@ const BAL = {
   militiaResist: 35,
   militiaResistStadt: 60,
   militiaResistHauptstadt: 90,
-  militiaResistNeutral: 25,
-  neutralDmgBonus: 1.0,
+  militiaResistNeutral: 20,
+  neutralDmgBonus: 1.35,
   neutralCounter: 0.5,
-  militiaRegen: 1.2,
+  militiaRegen: 1.1,
+  // Gelände wehrt sich: Berge sind Festungen, Flussfelder zäh (aber machbar)
+  terrainResist: { plains: 1.0, forest: 1.15, hills: 1.35, mountain: 2.2 },
+  riverResist: 1.35,
   militiaCounter: 0.25,
   seaAssaultMalus: 0.5,
   // Versorgung (kompakte Karte)
-  supplyHub: { capital: 1.0, stadt: 0.85, hafen: 0.7, kaserne: 0.6 },
+  supplyHub: { capital: 1.0, stadt: 0.85, kaserne: 0.6 },
   supplyDecay: 0.05,
   roadCostFactor: 0.5,
   seaMinSupply: 0.25,
@@ -71,8 +82,9 @@ const BAL = {
   moralBaselinePull: 0.03,
   // Bewegung (Hexes/Tag) — kompakte Karte, gemächliches Tempo
   moveSpeed: 2.6,
-  // Flüsse: Übergänge sind langsam und gefährlich — Straßen überbrücken sie
-  river: { moveFactor: 1.6, attackFrom: 0.6, attackInto: 0.85 },
+  // Flüsse: Übergänge sind langsam und gefährlich — Straßen überbrücken sie.
+  // Wer AM Fluss verteidigt, hat einen echten Vorteil (attackInto).
+  river: { moveFactor: 1.6, attackFrom: 0.6, attackInto: 0.72 },
   // Verrat: Ex-Verbündeten schnell angreifen macht dich öffentlich zum Verräter
   traitor: { window: 25, duration: 60 },
   // Politik
@@ -135,9 +147,7 @@ class Game {
     this.log = [];
     this.toasts = [];
     this.effects = [];
-    this.ships = [];                // Handelsschiffe unterwegs
     this.warHeat = {};              // 'A|B' -> Tag des letzten Kampfs
-    this._seaRoutes = new Map();    // Cache für Seewege
     this.allianceOffers = [];       // {from, day} — Angebote an den Spieler
     this._offersChanged = false;
     this.over = null;
@@ -147,7 +157,6 @@ class Game {
     this._supplyDirtyIds = new Set();
     this._frontsDirtyIds = new Set();
     this._damagedHexes = new Set();    // Hexes mit angeschlagener Miliz (für militiaDaily)
-    this._ports = [];                  // Cache: alle Hafen-Hexes (recalcEconomy)
     this._kasernen = [];               // Cache: alle Kasernen-Hexes (recalcEconomy)
     this._borderCache = null;          // Cache: borderNationsOf pro Tag
     this._hasDead = false;
@@ -228,6 +237,14 @@ class Game {
     return this.divisions.find(d => !d.dead && d.c === c && d.r === r) || null;
   }
 
+  divisionsAt(c, r) {
+    if (this._divIndex) {
+      const arr = this._divIndex.get(c + r * MAP_W);
+      return arr ? arr.filter(d => !d.dead) : [];
+    }
+    return this.divisions.filter(d => !d.dead && d.c === c && d.r === r);
+  }
+
   _rebuildDivIndex() {
     this._divIndex = new Map();
     for (const d of this.divisions) {
@@ -268,16 +285,6 @@ class Game {
       if (nh && nh.terrain === 'water') return true;
     }
     return false;
-  }
-
-  /* Handel möglich? Verbündete immer, sonst nur ohne frische Kämpfe */
-  tradePartners(a, b) {
-    if (a === b || !this.nations[a] || !this.nations[b]) return false;
-    if (!this.nations[a].alive || !this.nations[b].alive) return false;
-    if (this.isTraitor(a) || this.isTraitor(b)) return false;   // Verräter sind vom Handel ausgeschlossen
-    if (this.allied(a, b)) return true;
-    const heat = this.warHeat[[a, b].sort().join('|')];
-    return heat === undefined || this.day - heat > BAL.trade.warCooldown;
   }
 
   /* Darf 'nation' das Hex angreifen? (Neutral: immer; Nationen erst nach der Schonfrist) */
@@ -553,6 +560,9 @@ class Game {
       const nat = this.nations[h.owner];
       if (nat && nat.alive && nat.hexCount < BAL.smallNationHexes) base *= BAL.smallNationDefense;
     }
+    // Gelände verteidigt mit: Berge sind Festungen, Flussfelder zäh
+    base *= BAL.terrainResist[h.terrain] || 1;
+    if (h.river) base *= BAL.riverResist;
     h.resistMax = base;
     if (h.resist <= 0 || h.resist > base) h.resist = base;
   }
@@ -684,26 +694,20 @@ class Game {
     this.economyDirty = true;
   }
 
-  /* Division teilen: zwei halbe Divisionen (S-Taste) */
+  /* Division teilen: zwei halbe Divisionen auf DEMSELBEN Feld (S-Taste) —
+     Stapel zeigen ihre Anzahl, Klick aufs Feld listet die Armeen. */
   splitDivision(div) {
     if (div.dead || div.str < 40) return null;
-    // freien Nachbarplatz suchen
-    let spot = null;
-    for (const [nc, nr] of neighborsOf(div.c, div.r)) {
-      const h = this.hexAt(nc, nr);
-      if (h && h.owner === div.nation && h.terrain !== 'water' && !this.divisionAt(nc, nr)) { spot = h; break; }
-    }
-    if (!spot) return null;
     const nat = this.nations[div.nation];
     const t = BAL.divTypes[div.type];
     const half = div.str / 2;
     div.str = half;
-    const p = hexToPixel(spot.c, spot.r);
+    const p = hexToPixel(div.c, div.r);
     const twin = {
       id: this._divSeq++,
       name: `${nat.divNameSeq++}. ${t.name}division`,
       nation: div.nation, type: div.type,
-      c: spot.c, r: spot.r, x: p.x, y: p.y,
+      c: div.c, r: div.r, x: p.x, y: p.y,
       str: half, org: div.org, moral: div.moral,
       army: div.army, front: div.front, station: null,
       path: null, pathI: 0, moveProgress: 0,
@@ -755,40 +759,58 @@ class Game {
     return merged;
   }
 
-  /* ---------- Bauen ---------- */
+  /* ---------- Bauen ----------
+     Vier Wirtschaftsgebäude + Kaserne + Straße. Gleiches Gebäude nochmal
+     bauen = Ausbau auf Level 2/3 (Kosten & Ertrag skalieren mit dem Level). */
+  buildCost(h, what) {
+    const up = h && h.building === what && what !== 'strasse';
+    return BAL.cost[what] * (up ? (h.level || 1) + 1 : 1);
+  }
+
   canBuild(nation, h, what) {
-    if (!h || h.owner !== nation) return 'Nicht dein Gebiet';
-    const nat = this.nations[nation];
-    const cost = BAL.cost[what];
-    if (what === 'strasse') {
+    if (!h) return 'Kein Feld';
+    if (!BAL.cost[what]) return 'Gibt es nicht mehr';
+    // Fischerei ist das einzige Gebäude im Meer — auf Küstenwasser neben eigenem Land
+    if (what === 'fischerei') {
+      if (h.terrain !== 'water') return 'Nur auf Küstenwasser';
+      if (h.owner && h.owner !== nation) return 'Fremdes Gewässer';
+      if (h.building === 'fischerei') {
+        if ((h.level || 1) >= BAL.maxLevel) return `Schon Level ${BAL.maxLevel} (max.)`;
+      } else if (h.building) return 'Feld belegt';
+      if (!neighborsOf(h.c, h.r).some(([nc, nr]) => {
+        const nh = this.hexAt(nc, nr);
+        return nh && nh.owner === nation && nh.terrain !== 'water';
+      })) return 'Braucht eigenes Land am Ufer';
+    } else if (h.owner !== nation) {
+      return 'Nicht dein Gebiet';
+    } else if (what === 'strasse') {
       if (h.terrain === 'water') return 'Nicht im Meer';
       if (h.road) return 'Bereits Straße';
-    } else if (what === 'stadt') {
-      if (h.building !== 'dorf') return 'Braucht ein Dorf (Ausbau)';
-    } else if (what === 'mine') {
-      if (h.terrain !== 'hills' && h.terrain !== 'mountain') return 'Nur auf Hügeln/Gebirge';
-      if (h.building) return 'Feld belegt';
-    } else if (what === 'hafen') {
-      if (!TERRAIN[h.terrain].buildable) return TERRAIN[h.terrain].name + ' — nicht bebaubar';
-      if (h.building) return 'Feld belegt';
-      if (!this.isCoastal(h)) return 'Nur am Ufer (Küstenfeld)';
     } else {
       if (!TERRAIN[h.terrain].buildable) return TERRAIN[h.terrain].name + ' — nicht bebaubar';
-      if (h.building) return 'Feld belegt';
+      if (what === 'forsterei' && h.terrain !== 'forest') return 'Nur im Wald';
+      if (h.building === what) {
+        if ((h.level || 1) >= BAL.maxLevel) return `Schon Level ${BAL.maxLevel} (max.)`;
+      } else if (h.building) return 'Feld belegt';
     }
-    if (nat.gold < cost) return `Zu wenig Gold (${cost})`;
+    const cost = this.buildCost(h, what);
+    if (this.nations[nation].gold < cost) return `Zu wenig Gold (${cost})`;
     return true;
   }
 
   build(nation, h, what) {
     const ok = this.canBuild(nation, h, what);
     if (ok !== true) return ok;
-    this.nations[nation].gold -= BAL.cost[what];
+    this.nations[nation].gold -= this.buildCost(h, what);
     if (what === 'strasse') h.road = true;
-    else if (what === 'stadt') { h.building = 'stadt'; this.setResist(h); }
-    else { h.building = what; this.setResist(h); }
-    if (what === 'hafen') this._ports.push(h);
-    else if (what === 'kaserne') this._kasernen.push(h);
+    else if (h.building === what) h.level = (h.level || 1) + 1;   // Ausbau
+    else {
+      h.building = what;
+      h.level = 1;
+      if (what === 'fischerei') h.owner = nation;   // Küstenwasser gehört jetzt dir
+      this.setResist(h);
+      if (what === 'kaserne') this._kasernen.push(h);
+    }
     this._supplyDirtyIds.add(nation);
     this.economyDirty = true;
     this.markDirty(h.c, h.r);
@@ -802,22 +824,30 @@ class Game {
       nat.leutePerDay = 0;
       nat.trainCap = 0;      // Ausbildungskapazität der Kasernen (Leute → Soldaten)
       nat.hexCount = 0;
-      nat.ports = 0;
       nat.staedte = 0;
     }
-    this._ports = [];
     this._kasernen = [];
     for (const row of this.hexes) for (const h of row) {
       if (!h.owner) continue;
       const nat = this.nations[h.owner];
       if (!nat) continue;
-      nat.hexCount++;
-      nat.incomePerDay += BAL.landIncomePerHex;
-      if (h.building === 'dorf') nat.leutePerDay += BAL.leuteDorf;
-      else if (h.building === 'stadt') { nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; nat.staedte++; }
-      else if (h.building === 'mine') nat.incomePerDay += h.terrain === 'mountain' ? BAL.incomeMineBerg : BAL.incomeMine;
-      else if (h.building === 'hafen') { nat.ports++; this._ports.push(h); }
-      else if (h.building === 'kaserne') { this._kasernen.push(h); nat.trainCap += BAL.trainPerKaserne; }
+      if (h.terrain !== 'water') nat.hexCount++;   // Fischerei-Wasser zählt nicht als Provinz
+      const lvl = h.level || 1;
+      const y = BAL.yields[h.building];
+      if (y) {
+        // Gebäude-Ertrag × Level (Mine: Hügel-Bonus)
+        const gold = (h.building === 'mine' && h.terrain === 'hills') ? y.hillsGold : y.gold;
+        nat.incomePerDay += gold * lvl;
+        nat.leutePerDay += y.leute * lvl;
+      } else if (h.building === 'stadt') {
+        nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; nat.staedte++;
+      } else if (h.building === 'kaserne') {
+        this._kasernen.push(h); nat.trainCap += BAL.trainPerKaserne * lvl;
+      } else {
+        // Unbebautes Land arbeitet passiv — viel schwächer als jedes Gebäude
+        const p = BAL.passive[h.terrain];
+        if (p) { nat.incomePerDay += p.gold; nat.leutePerDay += p.leute; }
+      }
     }
     for (const d of this.divisions) {
       if (!d.dead) this.nations[d.nation].incomePerDay -= BAL.divTypes[d.type].upkeep;
@@ -882,7 +912,6 @@ class Game {
       let hub = 0;
       if (h.capital) hub = BAL.supplyHub.capital;
       else if (h.building === 'stadt') hub = BAL.supplyHub.stadt;
-      else if (h.building === 'hafen') hub = BAL.supplyHub.hafen;
       else if (h.building === 'kaserne') hub = BAL.supplyHub.kaserne;
       h.supply = hub;
       if (hub > 0) hpush(hub, h);
@@ -1208,7 +1237,7 @@ class Game {
   createBorderFront(owner, target) {
     let f = this.fronts.find(x => x.owner === owner && x.kind === 'border' && x.target === target);
     if (!f) {
-      f = { id: this._frontSeq++, owner, kind: 'border', target, path: null, hexes: [] };
+      f = { id: this._frontSeq++, owner, kind: 'border', target, path: null, hexes: [], push: null };
       this.fronts.push(f);
       this.refreshFront(f);
     }
@@ -1227,7 +1256,7 @@ class Game {
       clean.push([p[0], p[1]]);
     }
     if (clean.length < 2) return null;
-    const f = { id: this._frontSeq++, owner, kind: 'line', target: null, path: clean, hexes: [] };
+    const f = { id: this._frontSeq++, owner, kind: 'line', target: null, path: clean, hexes: [], push: null };
     this.fronts.push(f);
     this.refreshFront(f);
     return f;
@@ -1296,6 +1325,13 @@ class Game {
         continue;
       }
       this.refreshFront(f);
+      if (f.push) {
+        const ph = this.hexAt(f.push[0], f.push[1]);
+        if (!ph || ph.terrain === 'water' || ph.owner === f.owner) {
+          f.push = null;
+          if (f.owner === this.player) this.addLog('🎯 Vormarschziel erreicht — die Front hält die neue Linie.', true);
+        }
+      }
       if (divs.length) f._empty = undefined;
       else if (f._empty === undefined) f._empty = this.day;
       if ((f._empty !== undefined && this.day - f._empty > 20)
@@ -1312,6 +1348,15 @@ class Game {
   pickFrontTarget(div) {
     const f = this.frontById(div.front);
     if (!f) { div.front = null; return null; }
+    // Vormarsch: Ziel gesetzt → alles Angreifbare Richtung Ziel nehmen
+    if (f.push) {
+      const [pc, pr] = f.push;
+      const cur = hexDist(div.c, div.r, pc, pr);
+      const t = this.scoreTargets(div,
+        nh => this.attackable(div.nation, nh) && hexDist(nh.c, nh.r, pc, pr) <= cur,
+        nh => (cur - hexDist(nh.c, nh.r, pc, pr)) * 5);
+      if (t) return t;
+    }
     return this.scoreTargets(div, nh => {
       if (f.kind === 'border') return nh.owner === f.target && this.hostile(div.nation, f.target);
       return this.attackable(div.nation, nh) && nh.owner !== null;   // gezogene Linie: Feinde abwehren
@@ -1431,7 +1476,7 @@ class Game {
     return this.scoreTargets(div, nh => this.frontMatches(army, nh));
   }
 
-  scoreTargets(div, matchFn) {
+  scoreTargets(div, matchFn, biasFn) {
     const myPow = this.attackPower(div);
     let best = null, bestScore = -Infinity;
     for (const [nc, nr] of neighborsOf(div.c, div.r)) {
@@ -1454,6 +1499,7 @@ class Game {
       if (nh.vp) score += 12;   // Siegpunkt-Hauptstädte sind das Rundenziel
       if (nh.river) score -= 3; // Flussübergänge meiden, wenn es Alternativen gibt
       if (this._atkCount && this._atkCount.get(nc + nr * MAP_W)) score += 6;
+      if (biasFn) score += biasFn(nh);
       if (score > bestScore) { bestScore = score; best = nh; }
     }
     return best;
@@ -1462,7 +1508,9 @@ class Game {
   attackPower(div) {
     const t = BAL.divTypes[div.type];
     const sup = this.supplyModOf(div);
-    return (div.str / 100) * div.moral * sup.mod * t.atk;
+    const h = this.hexAt(div.c, div.r);
+    const pocket = h && h._pocket ? 0.55 : 1;   // eingekesselt: kaum Kampfkraft (HOI)
+    return (div.str / 100) * div.moral * sup.mod * t.atk * pocket;
   }
 
   resolveCombat(atk, targetHex, dt) {
@@ -1480,6 +1528,7 @@ class Game {
 
     const def = this.divisionAt(targetHex.c, targetHex.r);
     targetHex._atkT = this.dayFloat;
+    targetHex._atkBy = atk.nation;   // fürs Einfärben der Eroberungs-Animation
     const now = performance.now();
     if (!atk._fxT || now - atk._fxT > 300) {
       atk._fxT = now;
@@ -1502,8 +1551,10 @@ class Game {
       // Endphase: Angreifer schlagen härter durch — Stellungskriege lösen sich,
       // Hauptstädte fallen, die Runde findet ihren Sieger
       const lateAtk = 1 + 0.5 * this.lateFactor();
-      def.org -= power * BAL.atkBase * BAL.orgDmg * lateAtk * dt;
-      def.str -= power * BAL.atkBase * BAL.strDmg * lateAtk * dt;
+      const dh = this.hexAt(def.c, def.r);
+      const pocketDmg = dh && dh._pocket ? 1.45 : 1;   // im Kessel: leicht zu vernichten
+      def.org -= power * BAL.atkBase * BAL.orgDmg * lateAtk * pocketDmg * dt;
+      def.str -= power * BAL.atkBase * BAL.strDmg * lateAtk * pocketDmg * dt;
       atk.org -= defPower * BAL.atkBase * BAL.orgDmg * 0.75 * dt;
       atk.str -= defPower * BAL.atkBase * BAL.strDmg * 0.6 * dt;
       if (def.str <= 5) this.destroyDivision(def, atk.nation);
@@ -1583,15 +1634,13 @@ class Game {
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
     this._damagedHexes.add(h);
-    if (!this.divisionAt(h.c, h.r)) {
-      this._placeDiv(div, h.c, h.r);
-      // Marschbefehl fortsetzen: das eroberte Hex war der nächste Wegpunkt
-      if (div.path && div.pathI < div.path.length
-        && div.path[div.pathI][0] === h.c && div.path[div.pathI][1] === h.r) {
-        div.pathI++;
-        div.moveProgress = 0;
-        if (div.pathI >= div.path.length) { div.path = null; if (div.manual) div.station = [div.c, div.r]; }
-      }
+    // Die Truppe bleibt STEHEN — das Land wird von der Position aus übernommen
+    // (War-of-Dots). War das Feld das Marschziel, ist der Befehl erledigt;
+    // führt der Pfad weiter, marschiert sie im nächsten Schritt normal durch.
+    if (div.path && div.pathI >= div.path.length - 1
+      && div.path[div.path.length - 1][0] === h.c && div.path[div.path.length - 1][1] === h.r) {
+      div.path = null;
+      if (div.manual) div.station = [div.c, div.r];
     }
     div.attackTarget = null;
     div.moral = Math.min(BAL.moralMax, div.moral + (loser ? BAL.moralWin : BAL.moralWin * 0.3));
@@ -1680,7 +1729,8 @@ class Game {
 
   checkElimination(loser, winner) {
     if (!loser || !this.nations[loser] || !this.nations[loser].alive) return;
-    if (this.ownedHexes(loser).length === 0) this.surrender(loser, winner);
+    // Nur Landbesitz zählt — eine einsame Fischerei hält kein Reich am Leben
+    if (!this.ownedHexes(loser).some(h => h.terrain !== 'water')) this.surrender(loser, winner);
   }
 
   /* ---------- Kessel: eingeschlossene Gebietsteile sichtbar machen ---------- */
@@ -1705,7 +1755,7 @@ class Game {
         let hasHub = false, minKey = sk;
         for (let i = 0; i < comp.length; i++) {
           const h = comp[i];
-          if (h.capital || h.building === 'stadt' || h.building === 'hafen' || h.building === 'kaserne') hasHub = true;
+          if (h.capital || h.building === 'stadt' || h.building === 'kaserne') hasHub = true;
           for (const [nc, nr] of neighborsOf(h.c, h.r)) {
             const nh = this.hexAt(nc, nr);
             if (!nh || nh.owner !== id || nh.terrain === 'water') continue;
@@ -1737,6 +1787,76 @@ class Game {
     }
     this._pocketKeys = new Set(pockets.map(p => p.key));
     this._pockets = pockets;
+  }
+
+  /* ---------- Umzingelt = verloren ----------
+     Kleine Gebiete (neutral ODER feindlich), die vollständig von EINER
+     Nation umschlossen sind, fallen kampflos an den Umzingler — wie in
+     Hearts of Iron. Hauptstädte, Siegpunkte und verteidigende Divisionen
+     verhindern den Fall. */
+  encircleDaily() {
+    if (this.day < 2) return;
+    const divAt = new Map();   // Feld -> Nationen der dort stehenden Divisionen
+    for (const d of this.divisions) {
+      if (d.dead) continue;
+      const k = d.c + d.r * MAP_W;
+      const arr = divAt.get(k);
+      if (arr) arr.push(d.nation); else divAt.set(k, [d.nation]);
+    }
+    const seen = new Set();
+    for (const row of this.hexes) for (const start of row) {
+      if (start.terrain === 'water') continue;
+      const sk = start.c + start.r * MAP_W;
+      if (seen.has(sk)) continue;
+      seen.add(sk);
+      const owner = start.owner;
+      const comp = [start];
+      const bound = new Set();      // Land-Besitzer rund um das Gebiet
+      const inside = new Set();     // Nationen mit Divisionen im Gebiet
+      let blocked = false;
+      for (let i = 0; i < comp.length; i++) {
+        const h = comp[i];
+        if (h.capital || h.vp) blocked = true;
+        const dn = divAt.get(h.c + h.r * MAP_W);
+        if (dn) for (const n of dn) inside.add(n);
+        for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+          const nh = this.hexAt(nc, nr);
+          if (!nh || nh.terrain === 'water') continue;
+          if (nh.owner === owner) {
+            const nk = nc + nr * MAP_W;
+            if (!seen.has(nk)) { seen.add(nk); comp.push(nh); }
+          } else {
+            bound.add(nh.owner || '~');
+          }
+        }
+      }
+      if (blocked || comp.length > 12 || bound.size !== 1) continue;
+      const N = [...bound][0];
+      if (N === '~' || !this.nations[N] || !this.nations[N].alive) continue;
+      if (owner && (this.day < BAL.graceDays || !this.hostile(N, owner))) continue;
+      if ([...inside].some(n => n !== N)) continue;   // Verteidiger drin: kein Autofall
+      for (const h of comp) {
+        h.owner = N;
+        this.setResist(h);
+        h.resist = h.resistMax * 0.5;
+        this._damagedHexes.add(h);
+        this.markDirty(h.c, h.r);
+      }
+      this._supplyDirtyIds.add(N);
+      this._frontsDirtyIds.add(N);
+      this._borderCache = null;
+      this.economyDirty = true;
+      this.labelsDirty = true;
+      if (owner) {
+        this._supplyDirtyIds.add(owner);
+        this._frontsDirtyIds.add(owner);
+        this.warHeat[[N, owner].sort().join('|')] = this.day;
+        this.addLog(`🔒 Umzingelt! ${comp.length} Provinz(en) von ${this.nationName(owner)} fallen kampflos an ${this.nationName(N)}.`, owner === this.player || N === this.player);
+        this.checkElimination(owner, N);
+      } else if (N === this.player) {
+        this.addLog(`🔒 Eingekreist — ${comp.length} neutrale Provinz(en) schließen sich dir an!`);
+      }
+    }
   }
 
   /* ---------- Rundenmodus: Sieg über Hauptstädte ---------- */
@@ -1817,146 +1937,6 @@ class Game {
     }
   }
 
-  /* ---------- Seehandel ---------- */
-  findWaterPath(ph, qh) {
-    let start = null, goal = null;
-    for (const [nc, nr] of neighborsOf(ph.c, ph.r)) {
-      const nh = this.hexAt(nc, nr);
-      if (nh && nh.terrain === 'water') { start = nh; break; }
-    }
-    for (const [nc, nr] of neighborsOf(qh.c, qh.r)) {
-      const nh = this.hexAt(nc, nr);
-      if (nh && nh.terrain === 'water') { goal = nh; break; }
-    }
-    if (!start || !goal) return null;
-    const sKey = start.c + start.r * MAP_W, gKey = goal.c + goal.r * MAP_W;
-    const cacheKey = sKey + '|' + gKey;
-    if (this._seaRoutes.has(cacheKey)) return this._seaRoutes.get(cacheKey);
-
-    // A* nur über Wasser
-    const heap = [[0, 0, start.c, start.r]];
-    const hpush = it => {
-      heap.push(it);
-      let i = heap.length - 1;
-      while (i > 0) {
-        const p = (i - 1) >> 1;
-        if (heap[p][0] <= heap[i][0]) break;
-        const t = heap[p]; heap[p] = heap[i]; heap[i] = t; i = p;
-      }
-    };
-    const hpop = () => {
-      const top = heap[0], last = heap.pop();
-      if (heap.length) {
-        heap[0] = last;
-        let i = 0;
-        for (;;) {
-          const l = 2 * i + 1, rr = l + 1; let m = i;
-          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
-          if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr;
-          if (m === i) break;
-          const t = heap[m]; heap[m] = heap[i]; heap[i] = t; i = m;
-        }
-      }
-      return top;
-    };
-    const came = new Map();
-    const gScore = new Map([[sKey, 0]]);
-    let found = false, iter = 0;
-    while (heap.length && iter++ < 16000) {
-      const [f, g, c, r] = hpop();
-      if (c + r * MAP_W === gKey) { found = true; break; }
-      for (const [nc, nr] of neighborsOf(c, r)) {
-        const nh = this.hexAt(nc, nr);
-        if (!nh || nh.terrain !== 'water') continue;
-        const ng = g + 1;
-        const nKey = nc + nr * MAP_W;
-        if (!gScore.has(nKey) || gScore.get(nKey) > ng) {
-          gScore.set(nKey, ng);
-          came.set(nKey, c + r * MAP_W);
-          hpush([ng + hexDist(nc, nr, goal.c, goal.r), ng, nc, nr]);
-        }
-      }
-    }
-    let path = null;
-    if (found) {
-      path = [];
-      let cur = gKey;
-      while (cur !== undefined) {
-        path.unshift([cur % MAP_W, Math.floor(cur / MAP_W)]);
-        if (cur === sKey) break;
-        cur = came.get(cur);
-      }
-    }
-    if (this._seaRoutes.size > 500) this._seaRoutes.clear();
-    this._seaRoutes.set(cacheKey, path);
-    this._seaRoutes.set(gKey + '|' + sKey, path ? [...path].reverse() : null);
-    return path;
-  }
-
-  tradeDaily() {
-    const ports = this._ports.filter(h =>
-      h.building === 'hafen' && h.owner && this.nations[h.owner].alive);
-    for (const p of ports) {
-      if (p._nextShipDay === undefined)
-        p._nextShipDay = this.day + 1 + Math.floor(this.rand() * BAL.trade.shipEveryDays);
-      if (this.day < p._nextShipDay) continue;
-      const cands = ports.filter(q => q.owner !== p.owner && this.tradePartners(p.owner, q.owner));
-      if (!cands.length) { p._nextShipDay = this.day + 2; continue; }
-      const q = cands[Math.floor(this.rand() * cands.length)];
-      const path = this.findWaterPath(p, q);
-      if (!path || path.length < 2) { p._nextShipDay = this.day + 3; continue; }
-      p._nextShipDay = this.day + BAL.trade.shipEveryDays;
-      const sp = hexToPixel(path[0][0], path[0][1]);
-      this.ships.push({
-        path, i: 0, prog: 0, x: sp.x, y: sp.y,
-        from: p.owner, origin: [p.c, p.r], target: [q.c, q.r],
-        gold: Math.round(BAL.trade.baseGold + path.length * BAL.trade.goldPerDist),
-      });
-    }
-  }
-
-  shipsTick(dt) {
-    if (!this.ships.length) return;
-    const speed = BAL.trade.shipSpeed * dt;
-    const arrived = [];
-    for (const s of this.ships) {
-      s.prog += speed;
-      while (s.prog >= 1 && s.i < s.path.length - 1) { s.prog -= 1; s.i++; }
-      const [c1, r1] = s.path[s.i];
-      const [c2, r2] = s.path[Math.min(s.i + 1, s.path.length - 1)];
-      const p1 = hexToPixel(c1, r1), p2 = hexToPixel(c2, r2);
-      const f = Math.min(1, s.prog);
-      s.x = p1.x + (p2.x - p1.x) * f;
-      s.y = p1.y + (p2.y - p1.y) * f;
-      if (s.i >= s.path.length - 1) arrived.push(s);
-    }
-    for (const s of arrived) {
-      this.ships.splice(this.ships.indexOf(s), 1);
-      const th = this.hexAt(...s.target);
-      // Zielhafen muss noch existieren
-      if (!th || th.building !== 'hafen' || !th.owner || !this.nations[th.owner].alive) continue;
-      const seller = this.nations[s.from];
-      const buyer = this.nations[th.owner];
-      if (seller && seller.alive) {
-        seller.gold += s.gold;
-        seller.tradeEarned = (seller.tradeEarned || 0) + s.gold;
-        const oh = this.hexAt(...s.origin);
-        if (oh) {
-          oh._tradeEarned = (oh._tradeEarned || 0) + s.gold;
-          this.effects.push({ type: 'gold', c: s.origin[0], r: s.origin[1], amount: s.gold, t: performance.now() });
-        }
-      }
-      buyer.gold += s.gold;
-      buyer.tradeEarned = (buyer.tradeEarned || 0) + s.gold;
-      th._tradeEarned = (th._tradeEarned || 0) + s.gold;
-      this.effects.push({ type: 'gold', c: th.c, r: th.r, amount: s.gold, t: performance.now() });
-      if (!this._firstTradeToast && (th.owner === this.player || s.from === this.player)) {
-        this._firstTradeToast = true;
-        this.addLog(`🚢 Seehandel läuft! Jede Schiffsankunft bringt beiden Häfen Gold.`, true);
-      }
-    }
-  }
-
   /* ---------- Regeneration / Verschleiß ---------- */
   regenTick(dt) {
     for (const div of this.divisions) {
@@ -2017,38 +1997,55 @@ class Game {
     const count = w => own.filter(h => h.building === w).length;
     const buildable = x => TERRAIN[x.terrain].buildable && !x.building;
 
-    // Neue Wirtschaftskette: Dörfer geben KEIN Gold mehr. Die KI verfolgt
-    // EIN Sparziel nach dem anderen — sonst verzettelt sie sich in billigen
-    // Bauten und erreicht Stadt (270 G) oder Kaserne nie (Oszillation).
-    const doerfer = count('dorf'), staedte = count('stadt');
+    // Vier Gebäude, klare Rollen: die KI verfolgt EIN Sparziel nach dem
+    // anderen — sonst verzettelt sie sich in billigen Bauten (Oszillation).
+    const doerfer = count('dorf'), fischereien = count('fischerei');
+    const minen = count('mine'), forstereien = count('forsterei');
     const kasernen = count('kaserne');
-    const wantKas = 1 + (staedte >= 1 ? Math.floor(own.length / 45) : 0);
-    const wantStadt = 1 + Math.floor(own.length / 50);
-    const wantHafen = 1 + Math.floor(own.length / 90);
-    // Genug Dörfer, um die Kasernen zu füttern (1 Kaserne frisst 0.25k/Tag)
-    const wantDorf = Math.max(2, Math.floor(own.length * 0.06), kasernen * 3 - staedte * 2);
-    const mineSpots = own.filter(h => (h.terrain === 'hills' || h.terrain === 'mountain') && !h.building);
+    const leuteGeb = doerfer + fischereien;
+    const goldGeb = minen + forstereien;
+    const landN = nat.hexCount || own.length;
+    const wantKas = 1 + Math.floor(landN / 45);
+    const wantLeute = Math.max(2, kasernen * 2, Math.floor(landN * 0.08));
+    const wantGold = Math.max(1, Math.floor(landN * 0.10));
     const spotNear = maxDist => () => this.findBuildSpot(id, cc, cr, buildable, maxDist, own);
+    const forestSpot = () => this.findBuildSpot(id, cc, cr, x => x.terrain === 'forest' && !x.building, 24, own);
+    // Fischerei: freies Küstenwasser neben eigenem Land
+    const fischSpot = () => {
+      for (const h of own) {
+        if (h.terrain === 'water') continue;
+        for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+          const nh = this.hexAt(nc, nr);
+          if (nh && nh.terrain === 'water' && !nh.building && !nh.owner) return nh;
+        }
+      }
+      return null;
+    };
 
     const plan = [];
-    if (doerfer + staedte < 2) plan.push(['dorf', spotNear(14)]);
+    if (leuteGeb < 1) plan.push(['dorf', spotNear(14)]);
     if (kasernen < wantKas) plan.push(['kaserne', spotNear(14)]);
-    if (staedte < wantStadt)
-      plan.push(['stadt', () => own.find(h => h.building === 'dorf') || null]);
-    // Leute-Mangel (< 20 Tage Ausbildungs-Reserve): Dörfer VOR Minen ziehen,
-    // sonst verhungern die Kasernen reicher Minen-Nationen
-    if (nat.leute < nat.trainCap * 20 && doerfer + staedte < wantDorf)
+    // Leute-Mangel (< 20 Tage Ausbildungs-Reserve): Leute-Gebäude zuerst —
+    // Fischerei bevorzugt (mehr Leute), sonst Dorf
+    if (nat.leute < nat.trainCap * 20 && leuteGeb < wantLeute) {
+      plan.push(['fischerei', fischSpot]);
       plan.push(['dorf', spotNear(16)]);
-    if (mineSpots.length)
-      plan.push(['mine', () => mineSpots[0]]);
-    if ((nat.ports || 0) < wantHafen)
-      plan.push(['hafen', () => this.findBuildSpot(id, cc, cr, x => buildable(x) && this.isCoastal(x), 24, own)]);
-    if (doerfer + staedte < wantDorf) plan.push(['dorf', spotNear(16)]);
+    }
+    if (goldGeb < wantGold) {
+      plan.push(['forsterei', forestSpot]);   // Wald zuerst: bester Ertrag
+      plan.push(['mine', spotNear(18)]);
+    }
+    if (leuteGeb < wantLeute) plan.push(['dorf', spotNear(16)]);
+    // Reiche Nationen bauen aus: bestehende Gold-Gebäude auf Level 2/3
+    if (nat.gold > 420) {
+      const up = own.find(h => (h.building === 'mine' || h.building === 'forsterei') && (h.level || 1) < BAL.maxLevel);
+      if (up) plan.push([up.building, () => up]);
+    }
 
     for (const [what, findSpot] of plan) {
       const spot = findSpot();
-      if (!spot) continue;                    // unbaubar (z. B. Binnenland ohne Küste) → nächstes Ziel
-      if (nat.gold < BAL.cost[what]) return;  // sparen aufs wichtigste erreichbare Ziel
+      if (!spot) continue;                             // kein Platz → nächstes Ziel
+      if (nat.gold < this.buildCost(spot, what)) return;  // sparen aufs wichtigste erreichbare Ziel
       return this.build(id, spot, what);
     }
     // 8) Straße Richtung Front — nur vom Überschuss, Divisionen gehen vor
@@ -2198,7 +2195,6 @@ class Game {
     this.economyTick(dt);
     this.divisionsTick(dt);
     this.regenTick(dt);
-    this.shipsTick(dt);
 
     if (this.day !== prevDay) {
       if (this._hasDead) {   // tote Divisionen aus dem Array räumen (sonst wachsen alle Schleifen ewig)
@@ -2215,10 +2211,10 @@ class Game {
       this.frontsDaily();
       this.supplyDaily();
       this.militiaDaily();
-      this.tradeDaily();
       this.aiDaily();
       this.vpDaily();
       this.pocketsDaily();
+      this.encircleDaily();
       // Abgelaufene Bündnisangebote entfernen
       const before = this.allianceOffers.length;
       this.allianceOffers = this.allianceOffers.filter(o => this.day - o.day < BAL.offerLifetime);
@@ -2239,7 +2235,7 @@ class Game {
   /* ---------- Speichern / Laden ---------- */
   serialize() {
     return JSON.stringify({
-      v: 4, mapId: this.mapId, day: this.day, dayFloat: this.dayFloat, player: this.player,
+      v: 5, mapId: this.mapId, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
@@ -2247,8 +2243,8 @@ class Game {
       warHeat: this.warHeat,
       exAllies: this._exAllies,
       frontSeq: this._frontSeq,
-      fronts: this.fronts.map(f => ({ id: f.id, owner: f.owner, kind: f.kind, target: f.target, path: f.path })),
-      hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist)]),
+      fronts: this.fronts.map(f => ({ id: f.id, owner: f.owner, kind: f.kind, target: f.target, path: f.path, push: f.push || null })),
+      hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist), h.building ? (h.level || 1) : 0]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
         alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), soldaten: +n.soldaten.toFixed(2),
         traitorUntil: n.traitorUntil,
@@ -2266,7 +2262,7 @@ class Game {
   static deserialize(json) {
     let s;
     try { s = JSON.parse(json); } catch (e) { return null; }
-    if (!s || (s.v !== 3 && s.v !== 4) || !Array.isArray(s.hexes)) return null;
+    if (!s || (s.v !== 3 && s.v !== 4 && s.v !== 5) || !Array.isArray(s.hexes)) return null;
     const mapDef = GENMAPS[s.mapId || 'europa'];
     if (!mapDef || s.hexes.length !== mapDef.w * mapDef.h) return null;
     if (!NATION_DEFS[s.player]) return null;
@@ -2282,12 +2278,14 @@ class Game {
     const flat = g.hexes.flat();
     // Erst alles zurück auf neutral
     for (const h of flat) {
-      if (h.terrain === 'water') continue;
-      h.owner = null; h.building = null; h.road = false; h.capital = false;
+      h.owner = null; h.building = null; h.level = 0; h.road = false; h.capital = false;
     }
     s.hexes.forEach((hs, i) => {
       const h = flat[i];
-      h.owner = hs[0]; h.building = hs[1]; h.road = !!hs[2]; h.capital = !!hs[3];
+      h.owner = hs[0];
+      h.building = hs[1] === 'hafen' ? null : hs[1];   // Häfen gibt es nicht mehr
+      h.level = h.building ? (hs[5] || 1) : 0;
+      h.road = !!hs[2]; h.capital = !!hs[3];
       g.setResist(h); h.resist = hs[4];
     });
     for (const [id, ns] of Object.entries(s.nations)) {
@@ -2318,7 +2316,6 @@ class Game {
     g.log = [];
     g.toasts = [];
     g.allianceOffers = [];
-    g.ships = [];
     g.warHeat = s.warHeat || {};
     g._exAllies = s.exAllies || {};
     g.vpLeader = s.vpLeader || null;
@@ -2442,6 +2439,12 @@ Game.prototype._commands = {
   },
   frontAssign(frontId, divIds) {
     return this.assignToFrontline(divIds || [], frontId);
+  },
+  frontPush(frontId, c, r) {
+    const f = this.frontById(frontId);
+    if (!f || f.owner !== this.player) return false;
+    f.push = (c === null || c === undefined) ? null : [c, r];
+    return true;
   },
   frontRemove(frontId) {
     const i = this.fronts.findIndex(f => f.id === frontId && f.owner === this.player);

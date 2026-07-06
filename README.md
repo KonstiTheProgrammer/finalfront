@@ -28,12 +28,15 @@ python -m http.server 4173
 - **Truppendreieck (EU4-Vorbild):** 🛡 Krieger halten die Linie und schlagen Kavallerie ·
   🐎 Kavallerie ist schnell/hart und schlägt Kanonen · 💥 Kanonen belagern (2,5× gegen
   Miliz) und schlagen Krieger — langsam und fragil.
-- **Langsames Erobern:** Jedes Feld ist ein kleiner Kampf (Multiplayer-Pacing). Truppen
-  erobern **freies Nachbarland von selbst** (zufälliges Feld, Warteschlangen-Gefühl).
+- **Erobern ohne Reinlaufen (War-of-Dots):** Truppen marschieren nicht ins Neutralland —
+  sie stehen daneben und nehmen es ein: das Feld **füllt sich langsam mit der Farbe des
+  Eroberers** (truppenstärke-abhängig). ⛰️ Berge leisten doppelten Widerstand, 🌊 Flussfelder
+  sind zäher und verteidigen sich besser. Idle-Truppen nibbeln Nachbarland von selbst.
 - **⚔ Frontlinien statt Automatik:** **Strg+Klick auf die Grenze** zu einem Nachbarn erzeugt
   eine Front entlang des Grenzverlaufs (wächst mit) · **B** zieht eine eigene Linie über die
   Karte. Zugewiesene Truppen verteilen sich selbst und kämpfen dort; **S** teilt und
-  verteilt neu, **M** vereint.
+  verteilt neu, **M** vereint. **🎯 Vormarsch:** Front-Badge anklicken, dann ein Ziel auf
+  der Karte — die Front kämpft sich dorthin vor und meldet, wenn das Ziel erreicht ist.
 - **Sieg:** Wer **3 der 5 Hauptstädte** hält, startet den 50-Tage-Countdown. Nach 1000 Tagen
   gewinnt sonst die stärkste Macht. Eine Runde ≈ 20–30 Minuten.
 
@@ -46,8 +49,10 @@ python -m http.server 4173
 - **🌊 Echte Flüsse** (Natural Earth): Rhein, Donau, Weichsel & Co. sind natürliche
   Verteidigungslinien — Übergänge sind langsam, Angriffe über den Fluss um bis zu 40 %
   geschwächt, Straßen wirken als Brücken. Flüsse werden von `tools/genmap.js` mitgeneriert.
-- **⚔ Kessel:** Vom Nachschub abgeschnittene Gebietsteile werden rot markiert und gemeldet —
-  Einkesselungen sind sichtbar, lehrbar und der Signature-Move des Spiels.
+- **⚔ Kessel (HOI-Stil):** Vom Nachschub abgeschnittene Gebietsteile werden rot markiert;
+  eingeschlossene Divisionen kämpfen mit halber Kraft und nehmen +45 % Schaden. **🔒 Umzingelt
+  = verloren:** kleine Gebiete (≤ 12 Felder, ohne Hauptstadt/Verteidiger), die komplett von
+  EINER Nation umschlossen sind, fallen ihr kampflos zu.
 - **🐍 Verräter-System:** Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen
   angreift, ist 60 Tage öffentlich geächtet — kein Handel, keine Bündnisse, Freiwild.
 - **Easy Entry:** Das erste Match führt mit 5 kontextuellen Aufgaben durch Eroberung und
@@ -67,15 +72,13 @@ python -m http.server 4173
   Snowballing wird gebremst, Aufholen bleibt möglich.
 - **Allianzen:** Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Angebot; die Gegenseite
   muss annehmen. Angebote an dich erscheinen als Banner. Max. 2 Allianzen.
-- **Seehandel:** Baue einen 🚢 **Hafen an einem Ufer** — er schickt automatisch Handelsschiffe
-  zu Häfen anderer Nationen. Bei jeder Ankunft verdienen **beide Seiten Gold** (längere Routen
-  bringen mehr). Kein Handel mit Nationen, mit denen du in den letzten Tagen gekämpft hast;
-  Verbündete handeln immer. Häfen sind außerdem Versorgungs-Hubs (Küsteninvasionen!).
 - Verliert eine Nation ihre Hauptstadt, verlegt sie sie — ist das Reich zu klein, geht es unter.
-- **Wirtschaftskette:** 🏠 Dörfer erzeugen **Leute**, 🏙️ Städte erzeugen Leute **und** Gold
-  (Ausbau eines Dorfs, Versorgungs-Hub), ⛏️ Minen bringen Gold (nur Hügel/Gebirge), 🚢 Häfen
-  bringen Gold per Seehandel. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue Divisionen
-  und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
+- **Wirtschaft — 4 Gebäude mit klaren Rollen und Ausbau-Leveln:** ⛏️ **Mine** = Gold (überall,
+  Hügel-Bonus) · 🪓 **Forsterei** = viel Gold + etwas Leute (nur Wald) · 🎣 **Fischerei** =
+  etwas Gold + viele Leute (Küstenwasser neben eigenem Land) · 🏠 **Dorf** = nur Leute.
+  Gleiches Gebäude nochmal bauen = **Level 2/3** (Kosten & Ertrag skalieren). Unbebautes Land
+  arbeitet passiv mit (viel schwächer). 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
+  Divisionen und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
 - **Direkte Kontrolle:** Deine Truppen gehorchen dir — Rechtsklick schickt sie exakt dorthin,
   auch mitten durch Feind- oder Neutralland (sie kämpfen sich durch) und über See (Invasionen!).
 - **Logistik:** Versorgung fließt von Hauptstadt/Städten/Kasernen über Straßen ins Land.
@@ -85,6 +88,11 @@ python -m http.server 4173
 - **Einkesselung** vernichtet Divisionen ohne Rückzugsweg; an der Küste werden sie über See
   evakuiert (Dünkirchen). Wer Hauptstadt **und** 40 % seines Landes verliert, kapituliert —
   alles Land geht an den Eroberer.
+- **Gefechtsprognose (HOI-Bubble):** Über laufenden Kämpfen und beim Zeigen auf feindliche
+  Armeen (mit eigener Auswahl) zeigt eine grün/gelb/rote Bubble die Gewinnchance —
+  RPS-Dreieck, Gelände, Fluss, Organisation und Kessel eingerechnet.
+- **📚 Armee-Stapel:** Mehrere Armeen können auf einem Feld stehen (Split teilt an Ort und
+  Stelle); der Stapel zeigt seine Anzahl, Klick listet die Armeen in der Einheiten-Leiste.
 - Die KI baut, rüstet, erklärt Kriege und schließt Frieden — die Welt wartet nicht.
 
 ## Steuerung
@@ -100,8 +108,9 @@ python -m http.server 4173
 | **Strg+Klick auf eine Grenze** | Frontlinie gegen den Nachbarn — Auswahl verteilt sich darauf |
 | **B** + Linie ziehen | eigene Frontlinie über die Karte zeichnen |
 | Rechtsklick ohne Auswahl auf fremde Nation | Allianz anbieten |
-| Rechts-/Mittel-Ziehen / WASD | Karte verschieben |
-| Mausrad / Minimap | Zoom / springen |
+| Zwei-Finger-Scroll (Trackpad) / Rechts-/Mittel-Ziehen / WASD | Karte verschieben (umsehen) |
+| Pinch / Mausrad / Minimap | Zoom / springen |
+| Klick auf Front-Badge → Klick aufs Ziel | 🎯 Front-Vormarsch |
 | Bauen-Tab → Karte klicken | Bau-Modus; Straßen lassen sich ziehen |
 | V | Versorgungs-Overlay |
 | Pos1 | zur Hauptstadt |
@@ -117,7 +126,7 @@ Autosave läuft automatisch (~1×/Minute); „Weiterspielen" auf dem Startbildsc
   Region/Auflösung oben in `CONFIG` einstellbar (Bounding-Box, Gittergröße).
 - `js/mapdata.js` — die generierte Karte (nicht von Hand editieren)
 - `js/map.js` — Nationen, Terrain-Tabellen, Hex-Mathematik
-- `js/game.js` — Simulation: Wirtschaft, Versorgung, Kampf, Moral, Fronten, Seehandel, KI
+- `js/game.js` — Simulation: Wirtschaft, Versorgung, Kampf, Moral, Fronten, Kessel, KI
 - `js/ui.js` — Canvas-Rendering, Eingabe, Panels
 - `js/main.js` — Spielschleife
 
