@@ -189,20 +189,72 @@ async function buildOneMap(cfg, landGeo, lakesGeo, riversGeo) {
   const landRings = collectRings(landGeo, cfg);
   const lakeRings = lakesGeo ? collectRings(lakesGeo, cfg) : [];
 
-  // 1) Land/Wasser rastern
+  // 1) Land/Wasser rastern — SUPERSAMPLING: 9 Messpunkte pro Hex (3 Breiten x 3 Längen),
+  //    Mehrheitsentscheid. Glättet Küsten bei grober Auflösung enorm.
+  const latStep = (cfg.latMax - cfg.latMin) / cfg.H;
+  const lonStep = (cfg.lonMax - cfg.lonMin) / cfg.W;
   const isLand = [];
   for (let r = 0; r < cfg.H; r++) {
     const lat = proj.rowLat(r);
-    const landX = scanlineCrossings(landRings, lat);
-    const lakeX = scanlineCrossings(lakeRings, lat);
+    const lats = [lat - latStep * 0.3, lat, lat + latStep * 0.3];
+    const landXs = lats.map(l => scanlineCrossings(landRings, l));
+    const lakeXs = lats.map(l => scanlineCrossings(lakeRings, l));
     const row = [];
     for (let c = 0; c < cfg.W; c++) {
       const lon = proj.colLon(c, r);
-      row.push(insideByParity(landX, lon) && !insideByParity(lakeX, lon));
+      let votes = 0;
+      for (let i = 0; i < 3; i++) {
+        for (const dl of [-lonStep * 0.3, 0, lonStep * 0.3]) {
+          if (insideByParity(landXs[i], lon + dl) && !insideByParity(lakeXs[i], lon + dl)) votes++;
+        }
+      }
+      row.push(votes >= 5);
     }
     isLand.push(row);
   }
-  console.log(`  Land: ${isLand.flat().filter(Boolean).length}/${cfg.W * cfg.H} Hexes`);
+
+  // 1b) Bereinigung: Splitter-Inseln versenken, Mini-Buchten füllen
+  const nbCount = (grid2, c, r, val) => {
+    let n = 0, tot = 0;
+    const deltas = (r & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+    for (const [dc, dr] of deltas) {
+      const cc = c + dc, rr = r + dr;
+      if (cc < 0 || cc >= cfg.W || rr < 0 || rr >= cfg.H) continue;
+      tot++;
+      if (grid2[rr][cc] === val) n++;
+    }
+    return [n, tot];
+  };
+  // Buchten: Wasser mit >= 5 Land-Nachbarn wird Land
+  for (let pass = 0; pass < 2; pass++) {
+    for (let r = 0; r < cfg.H; r++) for (let c = 0; c < cfg.W; c++) {
+      if (!isLand[r][c]) {
+        const [n, tot] = nbCount(isLand, c, r, true);
+        if (tot === 6 && n >= 5) isLand[r][c] = true;
+      }
+    }
+  }
+  // Inseln: zusammenhängende Landflächen <= 2 Hexes versenken
+  {
+    const seen = new Set();
+    for (let r = 0; r < cfg.H; r++) for (let c = 0; c < cfg.W; c++) {
+      if (!isLand[r][c] || seen.has(c + r * cfg.W)) continue;
+      const comp = [[c, r]];
+      seen.add(c + r * cfg.W);
+      for (let i = 0; i < comp.length; i++) {
+        const [cc, rr] = comp[i];
+        const deltas = (rr & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+        for (const [dc, dr] of deltas) {
+          const nc = cc + dc, nr = rr + dr;
+          if (nc < 0 || nc >= cfg.W || nr < 0 || nr >= cfg.H) continue;
+          const k = nc + nr * cfg.W;
+          if (isLand[nr][nc] && !seen.has(k)) { seen.add(k); comp.push([nc, nr]); }
+        }
+      }
+      if (comp.length <= 2) for (const [cc, rr] of comp) isLand[rr][cc] = false;
+    }
+  }
+  console.log(`  Land: ${isLand.flat().filter(Boolean).length}/${cfg.W * cfg.H} Hexes (supersampled + bereinigt)`);
 
   // 2) Höhen
   const landPoints = [];
@@ -241,6 +293,22 @@ async function buildOneMap(cfg, landGeo, lakesGeo, riversGeo) {
     }
   }
 
+  // 3b) Terrain glätten: einsame Berge werden Hügel, einsame Hügel Ebene —
+  //     keine wilden Einzel-Pixel mehr auf kleinen Karten
+  for (let r = 0; r < cfg.H; r++) for (let c = 0; c < cfg.W; c++) {
+    const t = grid[r][c];
+    if (t !== 'm' && t !== 'h') continue;
+    let rough = 0;
+    const deltas = (r & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+    for (const [dc, dr] of deltas) {
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nc >= cfg.W || nr < 0 || nr >= cfg.H) continue;
+      if (grid[nr][nc] === 'm' || grid[nr][nc] === 'h') rough++;
+    }
+    if (t === 'm' && rough === 0) grid[r][c] = 'h';
+    else if (t === 'h' && rough === 0 && rng() < 0.5) grid[r][c] = 'p';
+  }
+
   // 4) Flüsse rastern
   const marked = new Set();
   if (riversGeo) {
@@ -269,6 +337,30 @@ async function buildOneMap(cfg, landGeo, lakesGeo, riversGeo) {
             marked.add(c + r * cfg.W);
           }
         }
+      }
+    }
+    // Verdickungen ausdünnen: Zellen mit >= 3 Fluss-Nachbarn fliegen raus,
+    // wenn zwei ihrer Nachbarn ohnehin direkt verbunden sind — aus Klumpen
+    // werden wieder LINIEN.
+    for (let pass = 0; pass < 3; pass++) {
+      for (const key of [...marked].sort((a, b) => a - b)) {
+        const c = key % cfg.W, r = Math.floor(key / cfg.W);
+        const deltas = (r & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+        const nbs = [];
+        for (const [dc, dr] of deltas) {
+          const k = (c + dc) + (r + dr) * cfg.W;
+          if (marked.has(k)) nbs.push([c + dc, r + dr]);
+        }
+        if (nbs.length < 3) continue;
+        let pairAdj = false;
+        for (let i = 0; i < nbs.length && !pairAdj; i++) {
+          for (let j = i + 1; j < nbs.length; j++) {
+            const [c1, r1] = nbs[i], [c2, r2] = nbs[j];
+            const d2 = (r1 & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+            if (d2.some(([dc, dr]) => c1 + dc === c2 && r1 + dr === r2)) { pairAdj = true; break; }
+          }
+        }
+        if (pairAdj) marked.delete(key);
       }
     }
     // Mini-Schnipsel entfernen
@@ -302,6 +394,32 @@ async function buildOneMap(cfg, landGeo, lakesGeo, riversGeo) {
   const stats = {};
   for (const row of rows) for (const ch of row) stats[ch] = (stats[ch] || 0) + 1;
   console.log(`  Terrain: Wasser ${stats['.'] || 0} · Ebene ${stats['p'] || 0} · Wald ${stats['f'] || 0} · Hügel ${stats['h'] || 0} · Gebirge ${stats['m'] || 0}`);
+
+  // 5) Fairness-Check: größte Landmasse muss dominieren (spielbare Karte)
+  {
+    const seen = new Set();
+    let biggest = 0, totalLand = 0;
+    for (let r = 0; r < cfg.H; r++) for (let c = 0; c < cfg.W; c++) {
+      if (grid[r][c] === '.') continue;
+      totalLand++;
+      if (seen.has(c + r * cfg.W)) continue;
+      const comp = [[c, r]];
+      seen.add(c + r * cfg.W);
+      for (let i = 0; i < comp.length; i++) {
+        const [cc, rr] = comp[i];
+        const deltas = (rr & 1) ? NEIGHBORS_ODD : NEIGHBORS_EVEN;
+        for (const [dc, dr] of deltas) {
+          const nc = cc + dc, nr = rr + dr;
+          if (nc < 0 || nc >= cfg.W || nr < 0 || nr >= cfg.H) continue;
+          const k = nc + nr * cfg.W;
+          if (grid[nr][nc] !== '.' && !seen.has(k)) { seen.add(k); comp.push([nc, nr]); }
+        }
+      }
+      biggest = Math.max(biggest, comp.length);
+    }
+    const share = Math.round(biggest / totalLand * 100);
+    console.log(`  Fairness: größte Landmasse ${biggest}/${totalLand} Hexes (${share} %)${share < 60 ? '  ⚠ KARTE ZERSPLITTERT?' : ''}`);
+  }
   return { name: cfg.name, w: cfg.W, h: cfg.H, rows, rivers: riverRows };
 }
 

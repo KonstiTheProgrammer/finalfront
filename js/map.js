@@ -134,6 +134,14 @@ function buildMap() {
     }
     if (total === 6 && landN >= 5) h.terrain = 'plains';
   }
+  // Flachwasser markieren (Wasser mit Landkontakt) — für den Küstensaum im Renderer
+  for (let r = 0; r < MAP_H; r++) for (let c = 0; c < MAP_W; c++) {
+    const h = hexes[r][c];
+    if (h.terrain !== 'water') continue;
+    for (const [nc, nr] of neighborsOf(c, r)) {
+      if (hexes[nr][nc].terrain !== 'water') { h.coastal = true; break; }
+    }
+  }
   return hexes;
 }
 

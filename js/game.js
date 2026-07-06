@@ -86,12 +86,14 @@ const BAL = {
   smallNationHexes: 12,
   // Spawn-Phase: Startplatz frei wählen, alle sehen einander
   spawn: { seconds: 15, minDist: 12 },
-  // Rundenmodus & Sieg über Hauptstädte (5 Spieler)
+  // Rundenmodus & Sieg über Hauptstädte (5 Spieler).
+  // 600 Tage passen zum echten Pacing der kleinen Karten — so greift die
+  // Endphase wirklich, statt hinter dem Rundenende zu liegen.
   round: {
-    days: 1000,               // Rundenlänge in Spieltagen (≈ 17–33 min je nach Tempo)
+    days: 600,                // Rundenlänge in Spieltagen (≈ 10–20 min je nach Tempo)
     vpToWin: 3,               // gehaltene Hauptstädte starten den Sieg-Countdown
     countdownDays: 50,        // Länge des Countdowns — Zeit für die Gegenkoalition
-    lateStart: 0.7,           // ab 70 % der Runde: Endphase (Miliz ermüdet, Aufholbonus schwindet)
+    lateStart: 0.6,           // ab 60 % der Runde: Endphase (Miliz ermüdet, Aufholbonus schwindet)
   },
 };
 
@@ -421,17 +423,40 @@ class Game {
 
     const spawn = this.pickSpawnSpot();
     if (!spawn) { nat.alive = false; return; }
-    spawn.owner = id;
-    spawn.capital = true;
-    spawn.building = 'stadt';          // Start: eine Stadt …
-    spawn.cityName = def.capitalName;
-    this.setResist(spawn);
+    this.claimSpawnArea(id, spawn, def.capitalName);
     nat.capital = [spawn.c, spawn.r];
 
     const army = this.createArmy(id, '1. Armee');
     army.target = 'EXPAND';
     army.mode = 'attack';
     this.spawnDivision(id, 'inf', army, true);   // … und eine Armee Krieger
+  }
+
+  /* Symmetrischer Start: Hauptstadt + Ring aus freiem Nachbarland —
+     jeder Spieler beginnt mit demselben Fußabdruck (Multiplayer-Fairness) */
+  claimSpawnArea(id, spawn, cityName) {
+    spawn.owner = id;
+    spawn.capital = true;
+    spawn.building = 'stadt';          // Start: eine Stadt …
+    spawn.cityName = cityName;
+    this.setResist(spawn);
+    for (const [nc, nr] of neighborsOf(spawn.c, spawn.r)) {
+      const h = this.hexAt(nc, nr);
+      if (h && h.terrain !== 'water' && !h.owner) {
+        h.owner = id;
+        this.setResist(h);
+      }
+    }
+  }
+
+  /* Wie viel Land liegt im Umkreis? (Bots meiden Mini-Inseln) */
+  landNearby(c, r, radius) {
+    let n = 0;
+    for (let dr = -radius; dr <= radius; dr++) for (let dc = -radius; dc <= radius; dc++) {
+      const h = this.hexAt(c + dc, r + dr);
+      if (h && h.terrain !== 'water' && hexDist(c, r, c + dc, r + dr) <= radius) n++;
+    }
+    return n;
   }
 
   /* Zufälliger Startplatz — Bots streuen sich, hart ist der Abstand aber nicht */
@@ -444,6 +469,7 @@ class Game {
         const h = this.hexAt(c, r);
         if (!h || h.terrain === 'water' || h.terrain === 'mountain' || h.owner) continue;
         if (taken.some(([tc, tr]) => hexDist(c, r, tc, tr) < minDist)) continue;
+        if (this.landNearby(c, r, 3) < 14) continue;   // keine Mini-Inseln/Zipfel
         return h;
       }
     }
@@ -458,19 +484,16 @@ class Game {
     if (!h || h.terrain === 'water' || h.terrain === 'mountain') return false;
     if (h.owner && h.owner !== id) return false;   // nur nicht AUF eine fremde Stadt
     const nat = this.nations[id];
-    const old = this.hexAt(...nat.capital);
-    if (old) {
-      old.owner = null; old.capital = false; old.building = null;
-      old.cityName = null; old.vp = false;
-      this.setResist(old);
-      this.markDirty(old.c, old.r);
+    // Altes Startgebiet (Stadt + Ring) komplett räumen
+    for (const row of this.hexes) for (const hh of row) {
+      if (hh.owner !== id) continue;
+      hh.owner = null; hh.capital = false; hh.building = null;
+      hh.cityName = null; hh.vp = false;
+      this.setResist(hh);
+      this.markDirty(hh.c, hh.r);
     }
-    h.owner = id;
-    h.capital = true;
-    h.building = 'stadt';
-    h.cityName = NATION_DEFS[id].capitalName;
+    this.claimSpawnArea(id, h, NATION_DEFS[id].capitalName);
     h.vp = true;
-    this.setResist(h);
     nat.capital = [c, r];
     const vpe = this.vpHexes.find(v => v.id === id);
     if (vpe) { vpe.c = c; vpe.r = r; }
@@ -490,6 +513,29 @@ class Game {
   endSpawnPhase() {
     if (!this.spawnPhase) return;
     this.spawnPhase = false;
+    // Truppen an den Rand des Startgebiets stellen — sie nibbeln sofort los
+    for (const [id, nat] of Object.entries(this.nations)) {
+      if (!nat.alive) continue;
+      let edge = null;
+      for (const row of this.hexes) {
+        for (const h of row) {
+          if (h.owner !== id) continue;
+          for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+            const nh = this.hexAt(nc, nr);
+            if (nh && nh.terrain !== 'water' && nh.owner === null) { edge = h; break; }
+          }
+          if (edge) break;
+        }
+        if (edge) break;
+      }
+      if (edge) {
+        for (const d of this.divisionsOf(id)) {
+          this._placeDiv(d, edge.c, edge.r);
+          const p = hexToPixel(edge.c, edge.r);
+          d.x = p.x; d.y = p.y;
+        }
+      }
+    }
     this.recalcEconomy();
     this.recalcAllSupply();
     this.vpRecount();

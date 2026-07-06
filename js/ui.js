@@ -194,19 +194,46 @@ function drawTerrainArt(ctx, h, x, y, detailed) {
   }
 }
 
-/* Fluss: blaue Tönung + geschwungene Wasserlinie */
-function drawRiverAt(ctx, p, detailed) {
+/* Fluss: dezente Tönung + DURCHGEHENDE Wasserlinie zu Nachbar-Flüssen
+   und zum Meer — Flüsse lesen sich als Linien, nicht als Kleckse. */
+function drawRiverAt(ctx, h, p, detailed) {
   hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
-  ctx.fillStyle = 'rgba(58, 132, 200, 0.30)';
+  ctx.fillStyle = 'rgba(58, 132, 200, 0.16)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(36, 104, 172, 0.6)';
-  ctx.lineWidth = detailed ? 2 : 1.6;
+  ctx.strokeStyle = detailed ? 'rgba(52, 122, 195, 0.85)' : 'rgba(52, 122, 195, 0.75)';
+  ctx.lineWidth = detailed ? 2.6 : 2.2;
   ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(p.x - 6.5, p.y + 1.5);
-  ctx.quadraticCurveTo(p.x - 2.5, p.y - 3, p.x + 0.5, p.y + 0.5);
-  ctx.quadraticCurveTo(p.x + 3.5, p.y + 3.5, p.x + 6.5, p.y - 1);
-  ctx.stroke();
+  let connected = 0, mouths = 0;
+  for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+    const nh = game.hexAt(nc, nr);
+    if (!nh || (!nh.river && nh.terrain !== 'water')) continue;
+    if (nh.terrain === 'water' && !nh.river) {
+      if (mouths >= 1 || connected >= 2) continue;   // genau EINE Mündung, kein Küsten-Stern
+      mouths++;
+    }
+    const np = hexToPixel(nc, nr);
+    const mx = (p.x + np.x) / 2, my = (p.y + np.y) / 2;
+    // leichte Biegung: Kontrollpunkt seitlich versetzt fürs Mäandern
+    const ox = (my - p.y) * 0.28, oy = (p.x - mx) * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.quadraticCurveTo((p.x + mx) / 2 + ox, (p.y + my) / 2 + oy, mx, my);
+    ctx.stroke();
+    connected++;
+  }
+  if (!connected) {
+    ctx.beginPath();
+    ctx.moveTo(p.x - 5, p.y + 1);
+    ctx.quadraticCurveTo(p.x, p.y - 3, p.x + 5, p.y + 1);
+    ctx.stroke();
+  }
+}
+
+/* Flachwasser: heller Saum entlang der Küsten gibt der Karte Tiefe */
+function drawShallowAt(ctx, p, size) {
+  hexPath(ctx, p.x, p.y, size);
+  ctx.fillStyle = 'rgba(96, 156, 205, 0.20)';
+  ctx.fill();
 }
 
 function drawBuilding(ctx, h, x, y, detailed) {
@@ -411,11 +438,17 @@ function renderMapLayer() {
 
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
     const h = game.hexAt(c, r);
-    if (h.terrain === 'water') continue;
+    if (h.terrain === 'water') {
+      if (h.coastal) drawShallowAt(ctx, hexToPixel(c, r), HEX_SIZE + 0.55);
+      continue;
+    }
     const p = hexToPixel(c, r);
     fillHex(ctx, h, p);
-    if (h.river) drawRiverAt(ctx, p, false);
     drawTerrainArt(ctx, h, p.x, p.y, false);
+  }
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+    const h = game.hexAt(c, r);
+    if (h.river) drawRiverAt(ctx, h, hexToPixel(c, r), false);
   }
   ctx.strokeStyle = 'rgba(88,68,44,0.95)';
   ctx.lineWidth = 2.4;
@@ -462,7 +495,10 @@ function renderOverviewRegion(c0, r0, c1, r1, rx, ry, rw, rh) {
   // Flächen: flache Farben, leicht überlappend gegen Fugen
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
     const h = game.hexAt(c, r);
-    if (h.terrain === 'water') continue;
+    if (h.terrain === 'water') {
+      if (h.coastal) drawShallowAt(ctx, hexToPixel(c, r), HEX_SIZE + 1.1);
+      continue;
+    }
     const p = hexToPixel(c, r);
     hexPath(ctx, p.x, p.y, HEX_SIZE + 1.1);
     ctx.fillStyle = h.owner ? NATION_DEFS[h.owner].color : NEUTRAL_COLOR;
@@ -687,11 +723,17 @@ function render() {
     ctx.fillRect(UI.cam.x - 50, UI.cam.y - 50, UI.canvas.width / zoom + 100, UI.canvas.height / zoom + 100);
     for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
       const h = game.hexAt(c, r);
-      if (h.terrain === 'water') continue;
+      if (h.terrain === 'water') {
+        if (h.coastal) drawShallowAt(ctx, hexToPixel(c, r), HEX_SIZE + 0.55);
+        continue;
+      }
       const p = hexToPixel(c, r);
       fillHex(ctx, h, p);
-      if (h.river) drawRiverAt(ctx, p, true);
       drawTerrainArt(ctx, h, p.x, p.y, true);
+    }
+    for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
+      const h = game.hexAt(c, r);
+      if (h.river) drawRiverAt(ctx, h, hexToPixel(c, r), true);
     }
     ctx.strokeStyle = 'rgba(88,68,44,0.95)';
     ctx.lineWidth = 2.6;
