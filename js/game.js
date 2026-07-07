@@ -8,7 +8,8 @@
 /* ---------- Balance-Konstanten ---------- */
 const BAL = {
   // Spielgeschwindigkeit: deutlich entschleunigt, damit man reagieren kann
-  daysPerSec: [0, 0.5, 1, 2.5, 6],
+  // (die Anzeige bleibt durch Interpolation trotzdem flüssig)
+  daysPerSec: [0, 0.3, 0.6, 1.5, 3.5],
   // Wirtschaftskette (pro Tag):
   //   Alle Truppen rekrutieren 👥 LEUTE. Dazu Rohstoffe:
   //   ⛏️ Mine → 🔩 Eisen (für Kanonen) · 🚜 Farm → 🐎 Pferde (für Kavallerie)

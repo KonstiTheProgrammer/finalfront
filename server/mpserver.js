@@ -15,7 +15,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 8571;
-const STEP_MS = +process.env.STEP_MS || 125;   // 8 Ticks/s = 2 Spieltage/s — feste MP-Geschwindigkeit
+const STEP_MS = +process.env.STEP_MS || 250;   // 4 Ticks/s = 1 Spieltag/s — feste MP-Geschwindigkeit (entschleunigt)
 const SLOTS = ['A', 'B', 'C', 'D', 'E'];
 const MAPS = ['europa', 'mitteleuropa', 'westeuropa'];   // Map-Rotation (5-Spieler-Runden)
 const MAP_NAMES = { europa: 'Europa', mitteleuropa: 'Mitteleuropa', westeuropa: 'Westeuropa', duell: 'Duell-Insel' };

@@ -23,7 +23,7 @@ Zwei Warteschlangen auf dem Startbildschirm: die **5-Spieler-Runde** (Karte roti
 Europa → Mitteleuropa → Westeuropa) und das **⚔️ 1v1-Duell** auf der spiegelsymmetrisch
 fairen **Duell-Insel** (startet bei 2 Spielern, gespiegelte Startseiten, Sieg mit 2
 Hauptstädten oder 80 %). Runden starten bei voller Lobby oder sobald **alle Anwesenden
-bereit** sind (freie Plätze übernehmen Bots). Feste Geschwindigkeit (2 Tage/s), kein
+bereit** sind (freie Plätze übernehmen Bots). Feste Geschwindigkeit (1 Tag/s), kein
 Pausieren/Speichern. Bei Verbindungsabbruch übernimmt die KI die Nation. **Enter = Chat.**
 
 **Technik (100 % gratis):** deterministischer **Lockstep** — der Server
