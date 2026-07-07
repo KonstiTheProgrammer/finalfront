@@ -1047,8 +1047,6 @@ function render() {
       ctx.strokeStyle = `rgba(255,60,40,${0.8 * (1 - age)})`;
       ctx.lineWidth = 2.4;
       ctx.stroke();
-      const fp = hexToPixel(e.fc, e.fr);
-      drawArrow(ctx, fp.x, fp.y, p.x, p.y, `rgba(255,90,60,${0.85 * (1 - age)})`);
     } else if (e.type === 'capture') {
       hexPath(ctx, p.x, p.y, HEX_SIZE * (1 - age * 0.3));
       ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - age)})`;
@@ -1069,21 +1067,18 @@ function render() {
       const h = game.hexAt(c, r);
       if (h.terrain === 'water' || !h._atkT || game.dayFloat - h._atkT > 1.5 || h.resist >= h.resistMax) continue;
       const by = h._atkBy && NATION_DEFS[h._atkBy] ? NATION_DEFS[h._atkBy].color : '#ffffff';
-      const prog = Math.max(0.06, 1 - h.resist / h.resistMax);
-      // Anzeige-Füllstand gleitet dem Tick-Wert weich hinterher
+      const prog = Math.max(0.05, 1 - h.resist / h.resistMax);
+      // Anzeige-Füllstand gleitet dem Tick-Wert extra weich hinterher
       if (h._dispProg === undefined || h._dispProg - prog > 0.3) h._dispProg = prog;
-      else h._dispProg += (prog - h._dispProg) * ease;
+      else h._dispProg += (prog - h._dispProg) * (1 - Math.exp(-rdt * 5));
       const p = hexToPixel(c, r);
-      ctx.save();
-      hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
-      ctx.clip();
-      ctx.fillStyle = colorA(by, 0.5 + 0.1 * Math.sin(now / 170));
-      const fh = 2 * HEX_SIZE * h._dispProg;
-      ctx.fillRect(p.x - HEX_SIZE - 1, p.y + HEX_SIZE - fh, HEX_SIZE * 2 + 2, fh + 1);
-      // Wasserlinie obendrauf, damit der Füllstand klar lesbar ist
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.fillRect(p.x - HEX_SIZE - 1, p.y + HEX_SIZE - fh, HEX_SIZE * 2 + 2, 0.9);
-      ctx.restore();
+      // Die Farbe breitet sich vom ZENTRUM zum Rand aus (wachsendes Hexagon)
+      hexPath(ctx, p.x, p.y, (HEX_SIZE + 0.55) * Math.min(1, h._dispProg));
+      ctx.fillStyle = colorA(by, 0.52 + 0.08 * Math.sin(now / 200));
+      ctx.fill();
+      ctx.strokeStyle = colorA(by, 0.95);
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
     }
   }
 
@@ -1175,6 +1170,16 @@ function render() {
         ctx.fillText(String(s.n), bx + 6.8, by - 3);
         ctx.textBaseline = 'alphabetic';
       }
+    }
+  }
+
+  // Laufende Gefechte: Pfeil zeigt LIVE vom Angreifer aufs Ziel —
+  // die Kampfrichtung ist auf einen Blick lesbar
+  if (zoom >= 0.5) {
+    for (const a of game.divisions) {
+      if (a.dead || !a.attackTarget) continue;
+      const tp = hexToPixel(a.attackTarget[0], a.attackTarget[1]);
+      drawArrow(ctx, a.x, a.y, tp.x, tp.y, colorA(NATION_DEFS[a.nation].color, 0.85));
     }
   }
 
@@ -1646,7 +1651,7 @@ function paintBuild(sx, sy) {
 function replayBlockedToast() {
   if (performance.now() - (UI._replayToastT || 0) < 2500) return;
   UI._replayToastT = performance.now();
-  pushToast('🎬 Replay läuft — Eingaben sind gesperrt (🔄 beendet).');
+  pushToast('🎬🔒');
 }
 
 function setBuildMode(mode) {
@@ -1696,7 +1701,7 @@ function onRightTap(sx, sy, alt, shift) {
     const ownOrAllied = h.owner === game.player || (h.owner && game.allied(game.player, h.owner));
     const hostileOwned = h.owner && !ownOrAllied;
     if (hostileOwned && h.terrain !== 'water' && game.day < BAL.graceDays) {
-      pushToast(`⏳ Schonfrist: Angriffe auf Nationen erst in ${BAL.graceDays - game.day} Tagen.`);
+      pushToast(`🕊️ ${BAL.graceDays - game.day}📅`);
       return;
     }
     // Direkter Marsch-/Angriffsbefehl · Shift = Wegpunkt anhängen
@@ -1706,7 +1711,7 @@ function onRightTap(sx, sy, alt, shift) {
   // Ohne Auswahl: Rechtsklick auf fremdes Land = Allianz anbieten
   if (h.owner && h.owner !== game.player && game.nations[h.owner].alive) {
     if (game.allied(game.player, h.owner)) {
-      pushToast(`🤝 Mit ${game.nationName(h.owner)} verbündet — lösen im Nationen-Tab.`);
+      pushToast(`🤝 ${game.nationName(h.owner)}`);
     } else {
       const res = game.issue('ally', h.owner);
       if (res !== true && res !== 'sent') pushToast('🤝 ' + res);
@@ -1727,7 +1732,7 @@ function frontlineClick(hx) {
   if (!other) for (const [nc, nr] of neighborsOf(hx.c, hx.r)) check(game.hexAt(nc, nr));
   if (!other) return false;
   if (game.allied(game.player, other)) {
-    pushToast(`🤝 ${game.nationName(other)} ist dein Verbündeter — keine Front nötig.`);
+    pushToast(`🤝 ${game.nationName(other)}`);
     return true;
   }
   const ids = playerSelection().map(d => d.id);
@@ -1742,7 +1747,7 @@ function finishFrontDraw() {
   UI.frontDraw = null;
   UI.canvas.style.cursor = '';
   if (!draw || draw.path.length < 2) {
-    if (draw) pushToast('📏 Linie zu kurz — B drücken und über die Karte ziehen.');
+    if (draw) pushToast('⚠📏');
     refreshPanel();
     return;
   }
@@ -1815,7 +1820,7 @@ function handleClick(sx, sy, additive) {
       // Doppelklick: alle eigenen Truppen auswählen
       UI.selectedDivs.clear();
       game.divisionsOf(game.player).forEach(d => UI.selectedDivs.add(d.id));
-      pushToast(`👥 Alle ${UI.selectedDivs.size} Truppen ausgewählt.`);
+      pushToast(`👥 ${UI.selectedDivs.size} ✔`);
     } else if (additive && clickedDiv.nation === game.player) {
       // Strg/Shift: hinzufügen bzw. wieder abwählen
       if (UI.selectedDivs.has(clickedDiv.id)) UI.selectedDivs.delete(clickedDiv.id);
@@ -1911,8 +1916,16 @@ function updateTooltip(sx, sy) {
   }
   const d = game.divisionAt(UI.hoverHex.c, UI.hoverHex.r);
   if (d) {
+    const dt2 = BAL.divTypes[d.type];
+    const sup2 = game.supplyModOf(d);
+    const broke2 = game.nations[d.nation] && game.nations[d.nation]._broke;
+    // Warum diese Org? Regen = Basis × Versorgung × Moral, 0 im Gefecht
+    const regen = d.inCombat ? 0 : BAL.orgRegen * sup2.mod * d.moral;
+    const mIcon = d.moral >= 1.05 ? '😄' : d.moral >= 0.85 ? '🙂' : d.moral >= 0.65 ? '😐' : '😟';
     html += `<hr><span class="chip" style="background:${NATION_DEFS[d.nation].color}"></span> ${TYPE_ICON[d.type]}
-      <span class="tt-dim">💪${Math.round(d.str)} · ⚡${Math.round(d.org)} · ${Math.round(d.moral * 100)}%</span>`;
+      <span class="tt-dim">💪${Math.round(d.str)}</span>
+      <br>⚡ ${Math.round(d.org)}/${dt2.maxOrg} <b>${d.inCombat ? '⚔' : '▲' + regen.toFixed(1)}</b>
+      <br><span class="tt-dim">⚡▲${BAL.orgRegen} × 🚚${Math.round(sup2.mod * 100)}% × ${mIcon}${d.moral.toFixed(2)}${d.inCombat ? ' · ⚔0' : ''}${broke2 ? ' · 💸' : ''}</span>`;
   }
   tip.innerHTML = html;
   tip.style.display = 'block';
@@ -1976,7 +1989,7 @@ function bindPanels() {
     refreshPanel();
   });
   const mpBlocked = () => {
-    if (game && game._net) { pushToast('🌐 Multiplayer — das Tempo taktet der Server.'); return true; }
+    if (game && game._net) { pushToast('🌐⏱'); return true; }
     return false;
   };
   document.getElementById('btn-pause').addEventListener('click', () => { if (mpBlocked()) return; game.paused = !game.paused; updateTopbar(); });
@@ -1992,14 +2005,14 @@ function bindPanels() {
     if (b) b.addEventListener('click', () => { UI.hud[k] = !UI.hud[k]; applyHud(); });
   }
   document.getElementById('btn-save').addEventListener('click', () => {
-    if (game && game._net) { pushToast('🌐 Multiplayer — kein Speichern, die Runde zählt!'); return; }
+    if (game && game._net) { pushToast('🌐🚫💾'); return; }
     try {
       localStorage.setItem('finalfront_save', JSON.stringify({ t: Date.now(), save: game.serialize() }));
-      pushToast('💾 Spiel gespeichert.');
-    } catch (e) { pushToast('⚠ Speichern fehlgeschlagen.'); }
+      pushToast('💾✔');
+    } catch (e) { pushToast('💾⚠'); }
   });
   document.getElementById('btn-load').addEventListener('click', () => {
-    if (game && game._net) { pushToast('🌐 Multiplayer — kein Laden, die Runde zählt!'); return; }
+    if (game && game._net) { pushToast('🌐🚫📂'); return; }
     loadNewestSave();
   });
   document.getElementById('btn-restart').addEventListener('click', () => showStartScreen());
@@ -2020,9 +2033,9 @@ function loadNewestSave() {
   const a = readSlot('finalfront_save');
   const b = readSlot('finalfront_autosave');
   const pick = (a && b) ? (a.t >= b.t ? a : b) : (a || b);
-  if (!pick) { pushToast('⚠ Kein Spielstand gefunden.'); return false; }
+  if (!pick) { pushToast('📂⚠'); return false; }
   const g = Game.deserialize(pick.save);
-  if (!g) { pushToast('⚠ Spielstand inkompatibel (alte Version).'); return false; }
+  if (!g) { pushToast('📂⚠'); return false; }
   window.game = g;
   rebuildLayers();
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;
@@ -2176,12 +2189,15 @@ function panelBauen() {
   let any = false;
   for (const key of ['mine', 'farm', 'forsterei', 'fischerei', 'dorf', 'stadt', 'turm', 'kaserne']) {
     const res = game.canBuild(game.player, h, key);
-    if (res !== true) continue;
+    // Platzierung unmöglich (Terrain/belegt) -> gar nicht zeigen;
+    // nur zu teuer (⚠🪙) -> zeigen, aber AUSGEGRAUT
+    const zuTeuer = typeof res === 'string' && res.startsWith('⚠🪙');
+    if (res !== true && !zuTeuer) continue;
     const up = h.building === key;
     any = true;
-    html += `<button class="icon-btn" data-buildat="${key}">
+    html += `<button class="icon-btn${zuTeuer ? ' locked' : ''}" ${zuTeuer ? 'disabled' : ''} data-buildat="${key}">
       <span class="ib-icon">${buildingName(key)}${up ? '▲' : ''}</span>
-      <span class="ib-cost">${game.buildCost(game.player, h, key)} 🪙</span>
+      <span class="ib-cost${zuTeuer ? ' missing' : ''}">${game.buildCost(game.player, h, key)} 🪙</span>
       <span class="ib-yield">${YIELD[key] || ''}</span>
     </button>`;
   }
@@ -2190,14 +2206,22 @@ function panelBauen() {
 
   if (game.isTrainSite(h, game.player)) {
     const fast = h.building === 'kaserne';
+    const nat = game.nations[game.player];
     html += `<hr><div class="icon-grid">`;
     for (const ty of ['inf', 'kav', 'kan']) {
       const t = BAL.divTypes[ty];
       const tage = BAL.trainTime[ty] * (fast ? BAL.kaserneTrainFactor : 1);
-      const extra = (t.pferde ? ` ${t.pferde}🐎` : '') + (t.eisen ? ` ${t.eisen}🔩` : '');
-      html += `<button class="icon-btn" data-trainat="${ty}">
+      // fehlende Posten ROT hervorheben, Button ausgrauen
+      const fehltLeute = nat.leute < t.mp;
+      const fehltEisen = t.eisen && nat.eisen < t.eisen;
+      const fehltPferde = t.pferde && nat.pferde < t.pferde;
+      const locked = fehltLeute || fehltEisen || fehltPferde;
+      const kosten = `<span class="${fehltLeute ? 'missing' : ''}">${t.mp}👥</span>`
+        + (t.pferde ? ` <span class="${fehltPferde ? 'missing' : ''}">${t.pferde}🐎</span>` : '')
+        + (t.eisen ? ` <span class="${fehltEisen ? 'missing' : ''}">${t.eisen}🔩</span>` : '');
+      html += `<button class="icon-btn${locked ? ' locked' : ''}" ${locked ? 'disabled' : ''} data-trainat="${ty}">
         <span class="ib-icon">${TYPE_ICON[ty]}</span>
-        <span class="ib-cost">${t.mp}👥${extra}</span>
+        <span class="ib-cost">${kosten}</span>
         <span class="ib-yield">⏱${tage} · ${t.upkeep}🪙</span>
       </button>`;
     }
@@ -2312,7 +2336,7 @@ function bindPanelActions(el) {
       centerOn(mid.c, mid.r, Math.max(UI.cam.zoom, 1.6));
     }
     updateUnitbar();
-    pushToast(`👥 ${UI.selectedDivs.size} Truppen der Front ausgewählt.`);
+    pushToast(`👥 ${UI.selectedDivs.size} ✔`);
   }));
   el.querySelectorAll('[data-delfront]').forEach(b => b.addEventListener('click', () => {
     game.issue('frontRemove', +b.dataset.delfront);
@@ -2451,25 +2475,25 @@ function updateTutorial() {
     UI._tutRendered = -1;
     if (UI.tutorialStep >= TUTORIAL_STEPS.length) {
       markTutorialDone();
-      pushToast('🎓 Einführung abgeschlossen — Europa wartet. Viel Erfolg!');
+      pushToast('🎓✔');
       el.classList.add('hidden');
       return;
     }
-    pushToast('✅ Aufgabe geschafft!');
+    pushToast('✅');
   }
   const s = TUTORIAL_STEPS[UI.tutorialStep];
   el.classList.remove('hidden');
   if (UI._tutRendered !== UI.tutorialStep) {
     UI._tutRendered = UI.tutorialStep;
     el.innerHTML = `<div class="tut-head"><span>🎓 AUFGABE ${UI.tutorialStep + 1}/${TUTORIAL_STEPS.length}</span>
-        <button class="mini" id="tut-skip" title="Einführung überspringen">✕</button></div>
+        <button class="mini" id="tut-skip">✕</button></div>
       <div class="tut-text">${s.text}</div>`;
     el.querySelector('#tut-skip').onclick = () => {
       markTutorialDone();
       UI.tutorialStep = -1;
       UI._ghost = null;
       el.classList.add('hidden');
-      pushToast('🎓 Einführung übersprungen — ❓ oben rechts hilft jederzeit.');
+      pushToast('🎓✖');
     };
   }
   // Geister-Bauplatz vorschlagen (für Kasernen-/Dorf-Aufgabe)
@@ -2545,7 +2569,7 @@ function finishSpawnPhase() {
     if (!UI._mpReadySent) {
       UI._mpReadySent = true;
       game.issue('startMatch');
-      pushToast('✔ Bereit! Die Runde startet, sobald alle stehen (oder die Zeit abläuft).');
+      pushToast('✔⏳');
     }
     return;
   }
@@ -2636,7 +2660,7 @@ function startGame(nationId) {
 /* ---------- Replay ---------- */
 function startReplay() {
   const rep = game && game.getReplay ? game.getReplay() : null;
-  if (!rep) { pushToast('⚠ Für dieses Spiel ist kein Replay verfügbar.'); return; }
+  if (!rep) { pushToast('🎬⚠'); return; }
   const g = Game.fromReplay(rep);
   if (!g) return;
   window.game = g;

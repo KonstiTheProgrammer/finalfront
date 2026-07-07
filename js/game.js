@@ -69,12 +69,17 @@ const BAL = {
   // kostet KEIN Gold. Dafür kostet der laufende UNTERHALT Gold, gestaffelt
   // nach Qualität der Truppe (Pleite → Moralverfall).
   divTypes: {
-    inf: { name: 'Krieger',    mp: 12,                upkeep: 1.5, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 3.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 4.5, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    mp: 12,                upkeep: 1.2, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 2.4, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 3.6, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
+  // Unterhalt: Basis × Stärkefaktor × Armeegrößen-Staffel × Auslandszuschlag —
+  // große Armeen und Feldzüge in der Ferne fressen überproportional Sold
+  upkeepStrFloor: 0.5,     // halber Sold für ausgeblutete Divisionen
+  upkeepRamp: 0.06,        // +6 % je weiterer Division
+  upkeepAbroad: 1.4,       // Zuschlag außerhalb des eigenen Gebiets
   brokeMoralDrain: 0.08,   // Staatskasse leer + Minus: Moralverlust/Tag
   reinforceRate: 3.0,
   reinforceMpCost: 0.1,
@@ -237,9 +242,9 @@ class Game {
     this.recalcEconomy();
     this.recalcAllSupply();
     this.updateFronts();
-    this.addLog(`🌍 Europa liegt brach, ${dateStr(0)}. Du führst ${this.nationName(playerNationId)}.`);
+    this.addLog(`🌍 ${this.nationName(playerNationId)}`);
     if (BAL.graceDays > 0)
-      this.addLog(`⏳ Schonfrist: ${BAL.graceDays} Tage nur Expansion.`);
+      this.addLog(`🕊️ ${BAL.graceDays}📅`);
   }
 
   /* ---------- Hilfen ---------- */
@@ -347,7 +352,7 @@ class Game {
       if (!this.allianceOffers.find(o => o.from === a && o.to === b)) {
         this.allianceOffers.push({ from: a, to: b, day: this.day });
         this._offersChanged = true;
-        if (b === this.player) this.addLog(`🤝 ${this.nationName(a)} bietet dir eine Allianz an!`, true);
+        if (b === this.player) this.addLog(`🤝❓ ${this.nationName(a)}`, true);
       }
       return true;
     }
@@ -356,7 +361,7 @@ class Game {
       this.formAlliance(a, b);
       return true;
     }
-    return `${this.nationName(b)} lehnt ab`;
+    return `✖ ${this.nationName(b)}`;
   }
 
   allianceDecide(from, to) {
@@ -372,7 +377,7 @@ class Game {
   formAlliance(a, b) {
     this.nations[a].allies.add(b);
     this.nations[b].allies.add(a);
-    this.addLog(`🤝 Allianz geschlossen: ${this.nationName(a)} & ${this.nationName(b)}!`, a === this.player || b === this.player);
+    this.addLog(`🤝 ${this.nationName(a)} · ${this.nationName(b)}`, a === this.player || b === this.player);
     this.frontsDirty = true;
   }
 
@@ -382,7 +387,7 @@ class Game {
     this.nations[b].allies.delete(a);
     // Wer aktiv auflöst und den Ex-Verbündeten bald angreift, wird Verräter
     if (initiator) this._exAllies[initiator + '>' + (initiator === a ? b : a)] = this.day;
-    this.addLog(`💔 Die Allianz zwischen ${this.nationName(a)} und ${this.nationName(b)} ist zerbrochen.`, a === this.player || b === this.player);
+    this.addLog(`💔 ${this.nationName(a)} · ${this.nationName(b)}`, a === this.player || b === this.player);
     this.frontsDirty = true;
   }
 
@@ -397,7 +402,7 @@ class Game {
     if (this.isTraitor(attacker)) return;
     this.nations[attacker].traitorUntil = this.day + BAL.traitor.duration;
     delete this._exAllies[attacker + '>' + victim];
-    this.addLog(`🐍 ${this.nationName(attacker)} bricht den Bund und fällt ${this.nationName(victim)} in den Rücken — VERRÄTER! ${BAL.traitor.duration} Tage geächtet: kein Handel, keine Bündnisse, Freiwild für alle.`, true);
+    this.addLog(`🐍 ${this.nationName(attacker)} ⚔ ${this.nationName(victim)}`, true);
   }
 
   resolveOffer(actor, from, accept) {
@@ -407,7 +412,7 @@ class Game {
       && this.nations[actor].allies.size < BAL.maxAllies) {
       this.formAlliance(from, actor);
     } else if (!accept && actor === this.player) {
-      this.addLog(`Du hast das Bündnisangebot von ${this.nationName(from)} abgelehnt.`);
+      this.addLog(`🤝✖ ${this.nationName(from)}`);
     }
   }
 
@@ -597,7 +602,7 @@ class Game {
     this.recalcEconomy();
     this.recalcAllSupply();
     this.vpRecount();
-    this.addLog('🏁 Das Match beginnt!');
+    this.addLog('🏁');
   }
 
   setResist(h) {
@@ -688,7 +693,7 @@ class Game {
       c: spawn.c, r: spawn.r,
       x: 0, y: 0,
       str: free ? 100 : 60,
-      org: free ? t.maxOrg : t.maxOrg * 0.5,
+      org: 0,   // frisch ausgehoben: Organisation baut sich erst auf
       moral: 1.0,
       army: army ? army.id : null,
       front: null,
@@ -774,7 +779,7 @@ class Game {
       name: `${nat.divNameSeq++}. ${t.name}division`,
       nation, type,
       c: h.c, r: h.r, x: p.x, y: p.y,
-      str: 85, org: t.maxOrg * 0.6, moral: 1.0,
+      str: 85, org: 0, moral: 1.0,   // frisch ausgebildet: Org wächst im Feld
       army: nat.armies[0] ? nat.armies[0].id : null,
       front: null, station: null,
       path: null, pathI: 0, moveProgress: 0,
@@ -792,7 +797,7 @@ class Game {
     this._frontsDirtyIds.add(nation);
     this.economyDirty = true;
     if (nation === this.player)
-      this.addLog(`🎖️ ${div.name} einsatzbereit${h.cityName ? ' — ' + h.cityName : ''}!`);
+      this.addLog(`🎖️ ${div.name}`);
     return div;
   }
 
@@ -926,7 +931,7 @@ class Game {
   buildCost(nation, h, what) {
     if (what === 'strasse') return BAL.cost.strasse;   // Infrastruktur: keine Staffel
     const up = h && h.building === what;
-    if (up) return BAL.cost[what] * ((h.level || 1) + 1);
+    if (up) return BAL.cost[what] * 3 * (h.level || 1);   // Ausbau: x3, dann x6
     // Preis-Staffel: jedes weitere selbst gebaute Gebäude dieses Typs
     // VERDOPPELT den Preis — nach 4 Stufen bleibt er konstant.
     return BAL.cost[what] * Math.pow(2, Math.min(this.builtCount(nation, what), 4));
@@ -980,7 +985,7 @@ class Game {
       this.setResist(h);
       const roads = this.connectCities(h);
       if (nation === this.player && roads)
-        this.addLog(`🏙️ Neue Stadt — Straßen zu ${roads} Nachbarstadt/-städten wachsen von selbst!`);
+        this.addLog(`🏙️🛣️ ×${roads}`);
     } else if (h.building === what) {
       h.level = (h.level || 1) + 1;   // Ausbau
     } else {
@@ -1039,8 +1044,16 @@ class Game {
         if (p) { nat.incomePerDay += p.gold; nat.leutePerDay += p.leute; }
       }
     }
+    const armyIdx = {};
     for (const d of this.divisions) {
-      if (!d.dead) this.nations[d.nation].incomePerDay -= BAL.divTypes[d.type].upkeep;
+      if (d.dead) continue;
+      const i = armyIdx[d.nation] = (armyIdx[d.nation] || 0) + 1;
+      let up = BAL.divTypes[d.type].upkeep;
+      up *= BAL.upkeepStrFloor + (1 - BAL.upkeepStrFloor) * (d.str / BAL.maxStr);   // Verwundete kosten weniger
+      up *= 1 + BAL.upkeepRamp * (i - 1);                                           // jede weitere Division teurer
+      const dh = this.hexAt(d.c, d.r);
+      if (!dh || dh.owner !== d.nation) up *= BAL.upkeepAbroad;                      // Feldzug kostet extra
+      this.nations[d.nation].incomePerDay -= up;
     }
     this.economyDirty = false;
   }
@@ -1064,7 +1077,7 @@ class Game {
       // Pleite: Kasse leer UND laufendes Minus — der Sold bleibt aus
       const brokeNow = nat.gold <= 0.01 && nat.incomePerDay < 0;
       if (brokeNow && !nat._broke && nat.id === this.player)
-        this.addLog('💸 Staatskasse leer — der Sold bleibt aus, deine Truppen verlieren Moral! (Truppen auflösen oder Wirtschaft bauen)', true);
+        this.addLog('💸❗😡', true);
       nat._broke = brokeNow;
       // Bevölkerungslimit: Wachstum stoppt am Cap, Überschuss baut sich ab
       const cap = nat.popCap || 999;
@@ -1427,7 +1440,7 @@ class Game {
       div.moveProgress = (inflight && path[0]
         && path[0][0] === inflight[0] && path[0][1] === inflight[1]) ? prog : 0;
     } else if (div.nation === this.player) {
-      this.addLog(`⚠ ${div.name}: kein Weg dorthin (Invasionen brauchen ein Küstenfeld als Ziel).`);
+      this.addLog(`⚠🧭 ${div.name}`);
     }
   }
 
@@ -1552,7 +1565,7 @@ class Game {
         const ph = this.hexAt(f.push[0], f.push[1]);
         if (!ph || ph.terrain === 'water' || ph.owner === f.owner) {
           f.push = null;
-          if (f.owner === this.player) this.addLog('🎯 Vormarschziel erreicht — die Front hält die neue Linie.', true);
+          if (f.owner === this.player) this.addLog('🎯✔', true);
         }
       }
       if (divs.length) f._empty = undefined;
@@ -1621,7 +1634,7 @@ class Game {
         if (qc !== div.c || qr !== div.r) {
           const p = this.findPath(div.nation, div.c, div.r, qc, qr, false);
           if (p && p.length) { div.path = p; div.pathI = 0; div.moveProgress = 0; }
-          else if (div.nation === this.player) this.addLog(`⚠ ${div.name}: Wegpunkt nicht erreichbar — übersprungen.`);
+          else if (div.nation === this.player) this.addLog(`⚠🧭 ${div.name}`);
         }
       }
 
@@ -1802,7 +1815,7 @@ class Game {
       // AUFGERIEBEN — kein Rückzug, kein Auffrischen, kein Wiederkommen
       if (def.str <= 5 || def.org <= BAL.retreatOrg) {
         if (def.nation === this.player || atk.nation === this.player)
-          this.addLog(`⚔️ ${def.name} (${this.nationName(def.nation)}) wurde in der Schlacht vernichtet!`, def.nation === this.player);
+          this.addLog(`💀 ${def.name} · ${this.nationName(def.nation)}`, def.nation === this.player);
         this.destroyDivision(def, atk.nation);
       }
     } else {
@@ -1820,7 +1833,7 @@ class Game {
     // Auch der Angreifer: wer im Gefecht bricht, ist vernichtet
     if (atk.str <= 5 || (def && atk.org <= BAL.retreatOrg)) {
       if (atk.nation === this.player || (def && def.nation === this.player))
-        this.addLog(`⚔️ ${atk.name} (${this.nationName(atk.nation)}) wurde in der Schlacht vernichtet!`, atk.nation === this.player);
+        this.addLog(`💀 ${atk.name} · ${this.nationName(atk.nation)}`, atk.nation === this.player);
       this.destroyDivision(atk, def ? def.nation : targetHex.owner);
     } else if (atk.org <= BAL.retreatOrg) {
       atk.attackTarget = null;
@@ -1856,11 +1869,11 @@ class Game {
         div.attackTarget = null; div.path = null;
         div.manual = false;
         div.moral = Math.max(BAL.moralMin, div.moral - BAL.moralLoss * 1.5);
-        this.addLog(`⛵ ${div.name} (${this.nationName(div.nation)}) wurde über See evakuiert!`, div.nation === this.player);
+        this.addLog(`⛵ ${div.name} ✔`, div.nation === this.player);
         return;
       }
     }
-    this.addLog(`💀 ${div.name} (${this.nationName(div.nation)}) wurde eingekesselt und vernichtet!`, div.nation === this.player);
+    this.addLog(`💀🔒 ${div.name} · ${this.nationName(div.nation)}`, div.nation === this.player);
     this.destroyDivision(div, attacker ? attacker.nation : null);
   }
 
@@ -1913,7 +1926,7 @@ class Game {
       // Spieler benachrichtigen, wenn er angegriffen wird
       if (loser === this.player && this.day - ln._atkToastDay > 12) {
         ln._atkToastDay = this.day;
-        this.addLog(`⚔️ ${this.nationName(div.nation)} greift dein Reich an!`, true);
+        this.addLog(`⚔️❗ ${this.nationName(div.nation)}`, true);
       }
       const enemyDiv = this.divisions.find(d => !d.dead && d.c === h.c && d.r === h.r && d.nation === loser);
       if (enemyDiv) this.retreatDivision(enemyDiv, div);
@@ -1923,7 +1936,7 @@ class Game {
   }
 
   onCapitalFall(loser, winner) {
-    this.addLog(`🏰 Die Hauptstadt von ${this.nationName(loser)} ist an ${this.nationName(winner)} gefallen!`, true);
+    this.addLog(`🏰💥 ${this.nationName(loser)} → ${this.nationName(winner)}`, true);
     for (const d of this.divisionsOf(loser)) d.moral = Math.max(BAL.moralMin, d.moral - 0.25);
     const nat = this.nations[loser];
     const own = this.ownedHexes(loser);
@@ -1943,7 +1956,7 @@ class Game {
       nat.capital = [best.c, best.r];
       this._supplyDirtyIds.add(loser);
       this.markDirty(best.c, best.r);
-      this.addLog(`${this.nationName(loser)} verlegt die Hauptstadt und kämpft weiter!`);
+      this.addLog(`🏰➡ ${this.nationName(loser)}`);
     }
   }
 
@@ -1967,7 +1980,7 @@ class Game {
     for (const d of this.divisionsOf(loser)) d.dead = true;
     this._hasDead = true;
     this._borderCache = null;
-    this.addLog(`🏳️ ${this.nationName(loser)} ist untergegangen${n > 0 && winner ? ` — ${this.nationName(winner)} übernimmt ${n} Provinzen` : ''}.`, true);
+    this.addLog(`🏳️ ${this.nationName(loser)}`, true);
     this._supplyDirtyIds.add(winner);
     this.frontsDirty = true;
     this.economyDirty = true;
@@ -2082,9 +2095,9 @@ class Game {
     for (const p of pockets) {
       if (this._pocketKeys.has(p.key)) continue;
       if (p.owner === this.player && p.divCount > 0)
-        this.addLog(`⚠️ KESSEL! ${p.divCount} deiner Divisionen sind eingeschlossen — ausbrechen oder Verbindung freikämpfen!`, true);
+        this.addLog(`❗🔒 ${p.divCount}🪖`, true);
       else if (p.divCount >= 2)
-        this.addLog(`⚔️ Kessel! ${p.divCount} Divisionen von ${this.nationName(p.owner)} sind eingeschlossen.`);
+        this.addLog(`🔒 ${p.divCount}🪖 ${this.nationName(p.owner)}`);
     }
     this._pocketKeys = new Set(pockets.map(p => p.key));
     this._pockets = pockets;
@@ -2157,7 +2170,7 @@ class Game {
         this.addLog(`🔒 Umzingelt! ${comp.length} Provinz(en) von ${this.nationName(owner)} fallen kampflos an ${this.nationName(N)}.`, owner === this.player || N === this.player);
         this.checkElimination(owner, N);
       } else if (N === this.player) {
-        this.addLog(`🔒 Eingekreist — ${comp.length} neutrale Provinz(en) schließen sich dir an!`);
+        this.addLog(`🔒 +${comp.length}⬡`);
       }
     }
   }
@@ -2188,9 +2201,7 @@ class Game {
       const w = alive[0];
       this.over = {
         win: w === this.player,
-        text: w === this.player
-          ? 'Alle Rivalen sind gefallen — ganz Europa gehört dir!'
-          : `${this.nationName(w)} steht allein — Europa ist verloren.`,
+        text: `👑 ${this.nationName(w)}`,
       };
       return;
     }
@@ -2201,9 +2212,7 @@ class Game {
         const pct = Math.round(this.nations[id].hexCount / this.totalLand * 100);
         this.over = {
           win: id === this.player,
-          text: id === this.player
-            ? `Du kontrollierst ${pct} % Europas — totaler Sieg!`
-            : `${this.nationName(id)} kontrolliert ${pct} % Europas — die Runde ist entschieden.`,
+          text: `👑 ${this.nationName(id)} · 🗺️${pct}%`,
         };
         return;
       }
@@ -2213,15 +2222,13 @@ class Game {
     if (this.vpLeader) {
       const ln = this.nations[this.vpLeader];
       if (!ln.alive || ln.vp < need) {
-        this.addLog(`🕊 ${this.nationName(this.vpLeader)} hält keine ${need} Hauptstädte mehr — der Sieg-Countdown ist gestoppt!`, true);
+        this.addLog(`👑✖ ${this.nationName(this.vpLeader)}`, true);
         this.vpLeader = null;
         this.vpDeadline = 0;
       } else if (this.day >= this.vpDeadline) {
         this.over = {
           win: this.vpLeader === this.player,
-          text: this.vpLeader === this.player
-            ? `Du hältst ${ln.vp} Hauptstädte — Europa liegt dir zu Füßen!`
-            : `${this.nationName(this.vpLeader)} beherrscht Europa mit ${ln.vp} Hauptstädten.`,
+          text: `👑 ${this.nationName(this.vpLeader)} · 🏛${ln.vp}`,
         };
         return;
       }
@@ -2235,7 +2242,7 @@ class Game {
       if (cand) {
         this.vpLeader = cand;
         this.vpDeadline = this.day + BAL.round.countdownDays;
-        this.addLog(`👑 ${this.nationName(cand)} hält ${this.nations[cand].vp} Hauptstädte — Sieg in ${BAL.round.countdownDays} Tagen! ${cand === this.player ? 'Halte durch!' : 'Haltet ihn auf!'}`, true);
+        this.addLog(`👑⏳ ${this.nationName(cand)} · 🏛${this.nations[cand].vp} · ${BAL.round.countdownDays}📅`, true);
       }
     }
 
@@ -2247,9 +2254,7 @@ class Game {
       const place = ranked.indexOf(this.player) + 1;
       this.over = {
         win: winner === this.player,
-        text: winner === this.player
-          ? `Zeit abgelaufen — du bist die stärkste Macht Europas (${this.nations[winner].vp} Hauptstädte, ${this.nations[winner].hexCount} Provinzen)!`
-          : `Zeit abgelaufen — ${this.nationName(winner)} gewinnt mit ${this.nations[winner].vp} Hauptstädten.${place > 0 ? ` Du wirst ${place}.` : ''}`,
+        text: `⏰👑 ${this.nationName(winner)} · 🏛${this.nations[winner].vp}${place > 0 ? ` · #${place}` : ''}`,
       };
     }
   }
@@ -2277,7 +2282,7 @@ class Game {
         div.str -= BAL.attritionStr * dt;
         div.moral = Math.max(BAL.moralMin, div.moral - BAL.attritionMoral * dt);
         if (div.str <= 3) {
-          this.addLog(`💀 ${div.name} (${this.nationName(div.nation)}) ist ohne Nachschub zerfallen.`, div.nation === this.player);
+          this.addLog(`💀🚚 ${div.name}`, div.nation === this.player);
           this.destroyDivision(div, null);
         }
       }
@@ -2423,8 +2428,10 @@ class Game {
     const underAttack = this.day - nat._lastAttackedDay < 12;
     const pending = this.training.reduce((n, q) => n + (q.nation === id ? 1 : 0), 0);
     if (pending >= 2) return;   // nicht überbuchen — Nachschub kommt schon
-    // Erstellung kostet kein Gold — aber der SOLD muss tragbar sein
-    const incomeAfter = nat.incomePerDay - tt.upkeep;
+    // Erstellung kostet kein Gold — aber der SOLD der NÄCHSTEN Division
+    // (inkl. Armeegrößen-Staffel) muss tragbar sein
+    const marginal = tt.upkeep * (1 + BAL.upkeepRamp * divs.length);
+    const incomeAfter = nat.incomePerDay - marginal;
     const okIncome = underAttack ? (incomeAfter > -3 || nat.gold > 400) : incomeAfter > 1.2;
     if (okIncome && nat.leute >= tt.mp
       && (!tt.eisen || nat.eisen >= tt.eisen) && (!tt.pferde || nat.pferde >= tt.pferde)) {
@@ -2564,10 +2571,10 @@ class Game {
         this._hasDead = false;
       }
       if (prevDay < BAL.graceDays && this.day >= BAL.graceDays)
-        this.addLog('⚔️ Schonfrist vorbei — jeder ist angreifbar!', true);
+        this.addLog('🕊️✖ ⚔️', true);
       const lateDay = Math.floor(BAL.round.days * BAL.round.lateStart);
       if (prevDay < lateDay && this.day >= lateDay)
-        this.addLog('🔥 Endphase!');
+        this.addLog('🔥');
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
       this.frontsDaily();

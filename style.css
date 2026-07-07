@@ -556,3 +556,7 @@ button.peace:hover { background: #26512e; }
 .icon-btn .ib-icon { font-size: 22px; line-height: 1; }
 .icon-btn .ib-cost { font-weight: 700; }
 .icon-btn .ib-yield { font-size: 11px; opacity: 0.85; }
+
+/* Ausgegraute Optionen (zu teuer / Rohstoff fehlt) */
+.icon-btn.locked { opacity: 0.45; filter: grayscale(0.7); cursor: not-allowed; }
+.icon-btn .missing { color: #ff7a64; font-weight: 800; }

@@ -412,6 +412,69 @@ const out = vm.runInContext(`
     ok('Truppen spawnen am Standort', gT.divisionsOf('A').length === before + 3);
   }
 
+  /* ===== Org-0-Start + Aufbau ===== */
+  {
+    const gO = new Game('A', 611); gO.endSpawnPhase();
+    const nO = gO.nations['A'];
+    nO.gold = 5000; nO.leute = 100;
+    const cO = gO.hexAt(...nO.capital);
+    gO.issue('trainAt', cO.c, cO.r, 'inf');
+    for (let i = 0; i < BAL.trainTime.inf * 4 + 8 && gO.training.some(q => q.nation === 'A'); i++) gO.runTick();
+    const neu = gO.divisionsOf('A').find(d => d.str === 85 || d.org < 5);
+    ok('Neue Truppe startet mit Org ~0', !!neu && neu.org < BAL.divTypes.inf.maxOrg * 0.2, neu ? neu.org.toFixed(1) : '?');
+    const orgVor = neu.org;
+    for (let i = 0; i < 40; i++) gO.runTick();   // 10 Tage Aufbau
+    ok('Organisation baut sich langsam auf', neu.dead || neu.org > orgVor + 3,
+       orgVor.toFixed(1) + ' -> ' + (neu.dead ? 'tot' : neu.org.toFixed(1)));
+  }
+
+  /* ===== Upgrades teurer: x3 / x6 ===== */
+  {
+    const gU2 = new Game('A', 622); gU2.endSpawnPhase();
+    gU2.nations['A'].gold = 99999;
+    const s2 = gU2.ownedHexes('A').find(h => TERRAIN[h.terrain].buildable && !h.building && !h.capital);
+    gU2.issue('build', s2.c, s2.r, 'dorf');
+    ok('Ausbau auf Level 2 = x3', gU2.buildCost('A', s2, 'dorf') === BAL.cost.dorf * 3);
+    gU2.issue('build', s2.c, s2.r, 'dorf');
+    ok('Ausbau auf Level 3 = x6', gU2.buildCost('A', s2, 'dorf') === BAL.cost.dorf * 6);
+  }
+
+  /* ===== Unterhalt: Stärke + Staffel + Ausland ===== */
+  {
+    const gK = new Game('A', 633); gK.endSpawnPhase();
+    const nK = gK.nations['A'];
+    const d1 = gK.divisionsOf('A')[0];
+    // Basis: 1 volle Division daheim
+    d1.str = 100;
+    gK.recalcEconomy();
+    const inc1 = nK.incomePerDay;
+    // Verwundet: halber Sold-Anteil
+    d1.str = 0.01;
+    gK.recalcEconomy();
+    const incVerwundet = nK.incomePerDay;
+    ok('Verwundete kosten weniger Unterhalt', incVerwundet > inc1 + BAL.divTypes.inf.upkeep * 0.3,
+       (incVerwundet - inc1).toFixed(2));
+    d1.str = 100;
+    // Staffel: zweite Division kostet +6 %
+    const p2 = hexToPixel(d1.c, d1.r);
+    gK.divisions.push({ id: 999, name: 'x', nation: 'A', type: 'inf', c: d1.c, r: d1.r, x: p2.x, y: p2.y,
+      str: 100, org: 0, moral: 1, army: null, front: null, station: null, path: null, pathI: 0,
+      moveProgress: 0, queue: [], attackTarget: null, inCombat: false, manual: true, dead: false });
+    gK.recalcEconomy();
+    const inc2 = nK.incomePerDay;
+    const kosten2 = inc1 - inc2;   // Kosten der ZWEITEN Division
+    ok('Armeegrößen-Staffel: nächste Division teurer', Math.abs(kosten2 - BAL.divTypes.inf.upkeep * (1 + BAL.upkeepRamp)) < 0.01,
+       kosten2.toFixed(2));
+    // Ausland: Division auf fremdem Feld kostet x1.4
+    let fremd = null;
+    for (const row of gK.hexes) for (const h of row)
+      if (h.terrain !== 'water' && h.owner !== 'A' && !fremd) fremd = h;
+    gK._placeDiv(gK.divisions[gK.divisions.length - 1], fremd.c, fremd.r);
+    gK.recalcEconomy();
+    const inc3 = nK.incomePerDay;
+    ok('Auslandszuschlag x1.4', inc3 < inc2 - 0.01, (inc2 - inc3).toFixed(2));
+  }
+
   /* ===== Verräter ===== */
   g = new Game('A', 31); g.endSpawnPhase();
   g.formAlliance('A', 'B');
