@@ -1103,8 +1103,11 @@ function render() {
       ty = base.y + (nx.y - base.y) * f;
     }
     const ddx = tx - d.x, ddy = ty - d.y;
+    // Marschierende Truppen: bewusst träges Easing — die Anzeige hinkt dem
+    // Tick-Ziel leicht hinterher und gleitet dadurch OHNE Ruckeln (Fließband)
+    const mEase = d.path ? (1 - Math.exp(-rdt * 4.5)) : ease;
     if (ddx * ddx + ddy * ddy > (HEX_SIZE * 5) ** 2) { d.x = tx; d.y = ty; }   // Teleport (Rückzug/Spawn): schnappen
-    else { d.x += ddx * ease; d.y += ddy * ease; }
+    else { d.x += ddx * mEase; d.y += ddy * mEase; }
     if (d.x < UI.cam.x - 40 || d.x > UI.cam.x + UI.canvas.width / zoom + 40
       || d.y < UI.cam.y - 40 || d.y > UI.cam.y + UI.canvas.height / zoom + 40) continue;
     const k = d.c + d.r * MAP_W;
@@ -1600,14 +1603,12 @@ function bindInput() {
         UI.buildMode = null;
         UI.frontDraw = { path: [], active: false };
         UI.canvas.style.cursor = 'crosshair';
-        pushToast('📏 Frontlinie: mit gedrückter Maustaste eine Linie über die Karte ziehen (Esc bricht ab).');
       }
     }
     if (e.code === 'Escape') {
       // Kaskade: erst Vormarsch-/Zeichen-/Baumodus, dann Auswahl, dann Panel
       if (UI.pushMode) {
         UI.pushMode = null;
-        pushToast('Vormarsch-Auswahl abgebrochen.');
       } else if (UI.frontDraw) {
         UI.frontDraw = null;
         UI.canvas.style.cursor = '';
@@ -1676,10 +1677,10 @@ function splitSelection() {
   if (game._replayCmds) { replayBlockedToast(); return; }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('split', ids);
-  if (res === 'sent') { pushToast('✂️ Teilen …'); setTimeout(updateUnitbar, 450); return; }
+  if (res === 'sent') { setTimeout(updateUnitbar, 450); return; }
   const twins = Array.isArray(res) ? res : [];
   twins.forEach(id => UI.selectedDivs.add(id));
-  pushToast(twins.length ? `✂️ ${twins.length} Division(en) geteilt — beide stehen auf dem Feld (📚 Stapel).` : '⚠ Teilen braucht ≥ 40 Stärke.');
+  if (!twins.length) pushToast('⚠ Teilen braucht ≥ 40 Stärke.');
   updateUnitbar();
 }
 
@@ -1688,13 +1689,13 @@ function mergeSelection() {
   if (game._replayCmds) { replayBlockedToast(); return; }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('merge', ids);
-  if (res === 'sent') { pushToast('🔗 Vereinen …'); setTimeout(updateUnitbar, 450); return; }
+  if (res === 'sent') { setTimeout(updateUnitbar, 450); return; }
   const merged = res || 0;
   for (const id of [...UI.selectedDivs]) {
     const d = game.divisions.find(x => x.id === id);
     if (!d || d.dead) UI.selectedDivs.delete(id);
   }
-  pushToast(merged ? `🔗 ${merged}× vereint.` : '⚠ Zum Vereinen mind. 2 Divisionen gleichen Typs auswählen.');
+  if (!merged) pushToast('⚠ Zum Vereinen mind. 2 Divisionen gleichen Typs auswählen.');
   updateUnitbar();
 }
 
@@ -1749,13 +1750,7 @@ function frontlineClick(hx) {
   }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('frontBorder', other, ids);
-  if (res === 'sent') { pushToast(`⚔️ Frontlinie gegen ${game.nationName(other)} …`); refreshPanel(); return true; }
-  if (res) {
-    pushToast(res.n
-      ? `⚔️ Frontlinie gegen ${game.nationName(other)} — ${res.n} Truppen verteilen sich!`
-      : `⚔️ Frontlinie gegen ${game.nationName(other)} erstellt — Truppen wählen und erneut Strg+Klicken.`);
-    refreshPanel();
-  }
+  if (res) refreshPanel();
   return true;
 }
 
@@ -1771,14 +1766,7 @@ function finishFrontDraw() {
   }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('frontLine', draw.path, ids);
-  if (res === 'sent') { pushToast('📏 Linie wird gezogen …'); refreshPanel(); return; }
-  if (res) {
-    pushToast(res.n
-      ? `📏 Linie steht — ${res.n} Truppen verteilen sich darauf.`
-      : '📏 Linie steht — Truppen auswählen und im Truppen-Menü zuweisen (👥 → Strg+Klick).');
-  } else {
-    pushToast('⚠ Die Linie muss über Land verlaufen.');
-  }
+  if (!res && res !== 'sent') pushToast('⚠ Die Linie muss über Land verlaufen.');
   refreshPanel();
 }
 
@@ -1790,8 +1778,7 @@ function handleClick(sx, sy, additive) {
     const hx = pixelToHex(w.x, w.y);
     if (hx) {
       const ok = game.issue('spawn', hx.c, hx.r);
-      if (ok) pushToast('📍 Startplatz verlegt — du kannst weiter umziehen, bis die Zeit abläuft.');
-      else pushToast('⚠ Hier geht es nicht: Land wählen, nicht zu nah an anderen Spielern.');
+      if (!ok && ok !== 'sent') pushToast('⚠ Hier geht kein Startplatz.');
     }
     return;
   }
@@ -1806,7 +1793,6 @@ function handleClick(sx, sy, additive) {
           UI.selectedDivs.clear();
           game.frontDivisions(f).forEach(d => UI.selectedDivs.add(d.id));
           updateUnitbar();
-          pushToast('🎯 Front gewählt — klicke jetzt ein ZIEL auf der Karte: die Front rückt dorthin vor (Esc bricht ab).');
         }
         return;
       }
@@ -1820,10 +1806,7 @@ function handleClick(sx, sy, additive) {
     const h = hx && game.hexAt(hx.c, hx.r);
     if (h && h.terrain !== 'water' && game.frontById(fid)) {
       game.issue('frontPush', fid, hx.c, hx.r);
-      pushToast('🎯 Vormarsch! Die Fronttruppen kämpfen sich Richtung Ziel vor.');
       refreshPanel();
-    } else {
-      pushToast('⚠ Kein gültiges Ziel — Vormarsch abgebrochen.');
     }
     return;
   }
@@ -1863,7 +1846,6 @@ function handleClick(sx, sy, additive) {
         ? game.divisionsAt(clickedDiv.c, clickedDiv.r).filter(x => x.nation === game.player)
         : [clickedDiv];
       stack.forEach(x => UI.selectedDivs.add(x.id));
-      if (stack.length > 1) pushToast(`📚 ${stack.length} Armeen auf diesem Feld — unten einzeln anwählbar.`);
     }
     UI.selectedHex = null;
     updateUnitbar();
@@ -1894,9 +1876,6 @@ function finishBoxSelect(b, shift) {
     const sx = (d.x - UI.cam.x) * UI.cam.zoom;
     const sy = (d.y - UI.cam.y) * UI.cam.zoom;
     if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) UI.selectedDivs.add(d.id);
-  }
-  if (UI.selectedDivs.size) {
-    pushToast(`🪖 ${UI.selectedDivs.size} ausgewählt — Rechtsklick = Marsch · Strg+Klick auf Grenze = Front · S/M = teilen/vereinen`);
   }
   updateUnitbar();
 }
@@ -2261,7 +2240,7 @@ function panelBauen() {
     const up = h.building === key;
     any = true;
     html += `<div class="build-row">
-      <button data-buildat="${key}">${buildingName(key)}${up ? ` → Level ${(h.level || 1) + 1}` : ''} — ${game.buildCost(h, key)} G</button>
+      <button data-buildat="${key}">${buildingName(key)}${up ? ` → Level ${(h.level || 1) + 1}` : ''} — ${game.buildCost(game.player, h, key)} G</button>
       <div class="small">${DESCS[key] || ''}</div>
     </div>`;
   }
@@ -2390,8 +2369,7 @@ function bindPanelActions(el) {
   el.querySelectorAll('[data-buildat]').forEach(b => b.addEventListener('click', () => {
     if (!UI.selectedHex) return;
     const res = game.issue('build', UI.selectedHex.c, UI.selectedHex.r, b.dataset.buildat);
-    if (res === true || res === 'sent') pushToast(`🏗️ ${buildingName(b.dataset.buildat)} gebaut.`);
-    else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
+    if (res !== true && res !== 'sent') pushToast('⚠ ' + (game._replayCmds ? 'Replay läuft.' : res));
     refreshPanel(); updateTopbar();
     if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
   }));
@@ -2399,8 +2377,7 @@ function bindPanelActions(el) {
     if (!UI.selectedHex) return;
     const ty = b.dataset.trainat;
     const res = game.issue('trainAt', UI.selectedHex.c, UI.selectedHex.r, ty);
-    if (res === true || res === 'sent') pushToast(`🪖 ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
-    else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
+    if (res !== true && res !== 'sent') pushToast('⚠ ' + (game._replayCmds ? 'Replay läuft.' : res));
     refreshPanel(); updateTopbar();
     if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
   }));
@@ -2428,16 +2405,13 @@ function bindPanelActions(el) {
   }));
   el.querySelectorAll('[data-delfront]').forEach(b => b.addEventListener('click', () => {
     game.issue('frontRemove', +b.dataset.delfront);
-    pushToast('Front aufgelöst — die Truppen sind wieder frei.');
     refreshPanel();
   }));
   el.querySelectorAll('[data-pushfront]').forEach(b => b.addEventListener('click', () => {
     UI.pushMode = +b.dataset.pushfront;
-    pushToast('🎯 Jetzt ein Ziel auf der Karte anklicken — die Front rückt dorthin vor (Esc bricht ab).');
   }));
   el.querySelectorAll('[data-stoppush]').forEach(b => b.addEventListener('click', () => {
     game.issue('frontPush', +b.dataset.stoppush, null, null);
-    pushToast('⏹ Vormarsch gestoppt — die Front hält die Linie.');
     refreshPanel();
   }));
 }
@@ -2526,14 +2500,13 @@ function updateUnitbar() {
   const rel = document.getElementById('ub-release');
   if (rel) rel.onclick = () => {
     game.issue('release', playerSelection().map(d => d.id));
-    pushToast('↩ Truppen aus der Front gelöst — sie warten auf Befehle.');
     updateUnitbar();
     refreshPanel();
   };
   document.getElementById('ub-disband').onclick = () => {
     const n = game.issue('disband', playerSelection().map(d => d.id)) || 0;
     UI.selectedDivs.clear();
-    pushToast(n === 'sent' ? '🗑 Auflösen …' : `🗑 ${n} Division(en) aufgelöst.`);
+
     updateUnitbar();
     updateTopbar();
   };
@@ -2636,6 +2609,8 @@ const ADVISOR_CHECKS = [
 ];
 
 function advisorTick() {
+  return;   // Berater deaktiviert — keine Text-Belehrungen mehr
+  // eslint-disable-next-line no-unreachable
   if (!game || game.over || game.paused || game.day < 10) return;
   const now = performance.now();
   UI._advisor = UI._advisor || {};
@@ -2747,7 +2722,7 @@ function startGame(nationId) {
   game.updateFronts();
   fitView();                           // kleine Karte: alles im Blick für die Spawn-Wahl
   UI.spawnDeadline = performance.now() + BAL.spawn.seconds * 1000;
-  UI.tutorialStep = tutorialDone() ? -1 : 0;
+  UI.tutorialStep = -1;   // Einführung deaktiviert — keine Text-Aufgaben
   UI._tutRendered = -1;
   UI._advisor = {};
   UI._ghost = null;

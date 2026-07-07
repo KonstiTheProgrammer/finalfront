@@ -122,7 +122,9 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
   wirkt er für den Eroberer. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
   Divisionen und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
 - **Bauen per Feld-Klick:** Eigenes Feld anklicken → Liste, was genau dort gebaut werden
-  kann (inkl. Ausbau). **🎖️ Ausbildung:** Städte, Hauptstadt und Kasernen bilden Truppen
+  kann (inkl. Ausbau). **Preis-Staffel:** jedes weitere selbst gebaute Gebäude eines Typs
+  verdoppelt den Preis (max. ×16); eroberte Gebäude zählen nicht und Verluste senken den
+  Preis wieder. **🎖️ Ausbildung:** Städte, Hauptstadt und Kasernen bilden Truppen
   aus (Warteschlange, goldener Fortschrittsring) — **Kasernen doppelt so schnell**, die
   fertige Division erscheint am Ausbildungsort.
 - **Direkte Kontrolle:** Deine Truppen gehorchen dir — Rechtsklick schickt sie exakt dorthin,

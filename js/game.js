@@ -51,7 +51,7 @@ const BAL = {
     mountain: { gold: 0.45, leute: 0 },
   },
   // Baukosten (Ausbau auf Level N kostet das N-fache)
-  cost: { strasse: 25, dorf: 60, fischerei: 90, farm: 100, mine: 110, forsterei: 130, turm: 140, kaserne: 150, stadt: 250 },
+  cost: { strasse: 25, dorf: 60, fischerei: 80, farm: 90, mine: 90, forsterei: 110, turm: 120, kaserne: 120, stadt: 180 },
   // Wehrturm: verstärkt die Miliz umliegender eigener Felder.
   // Level 2 verdoppelt die Reichweite (1 → 2 Felder).
   turm: { boost: 1.5, range: 1, range2: 2, maxLevel: 2 },
@@ -235,9 +235,9 @@ class Game {
     this.recalcEconomy();
     this.recalcAllSupply();
     this.updateFronts();
-    this.addLog(`🌍 Europa liegt brach, ${dateStr(0)}. Du führst ${this.nationName(playerNationId)} — breite dich aus!`, true);
+    this.addLog(`🌍 Europa liegt brach, ${dateStr(0)}. Du führst ${this.nationName(playerNationId)}.`);
     if (BAL.graceDays > 0)
-      this.addLog(`⏳ Schonfrist: ${BAL.graceDays} Tage lang nur Expansion ins Neutralland — danach ist jeder angreifbar!`, true);
+      this.addLog(`⏳ Schonfrist: ${BAL.graceDays} Tage nur Expansion.`);
   }
 
   /* ---------- Hilfen ---------- */
@@ -487,6 +487,7 @@ class Game {
     spawn.owner = id;
     spawn.capital = true;
     spawn.building = 'stadt';          // Start: eine Stadt …
+    spawn.builtBy = id;
     spawn.cityName = cityName;
     this.setResist(spawn);
     spawn.resist = spawn.resistMax;    // volle Garnison ab Tag 1
@@ -594,7 +595,7 @@ class Game {
     this.recalcEconomy();
     this.recalcAllSupply();
     this.vpRecount();
-    this.addLog('🏁 Alle Startplätze stehen — das Match beginnt!', true);
+    this.addLog('🏁 Das Match beginnt!');
   }
 
   setResist(h) {
@@ -934,9 +935,23 @@ class Game {
   /* ---------- Bauen ----------
      Vier Wirtschaftsgebäude + Kaserne + Straße. Gleiches Gebäude nochmal
      bauen = Ausbau auf Level 2/3 (Kosten & Ertrag skalieren mit dem Level). */
-  buildCost(h, what) {
-    const up = h && h.building === what && what !== 'strasse';
-    return BAL.cost[what] * (up ? (h.level || 1) + 1 : 1);
+  /* Anzahl SELBST GEBAUTER Gebäude eines Typs, die man noch besitzt —
+     eroberte Gebäude zählen nicht (und entlasten den Verlierer wieder) */
+  builtCount(nation, what) {
+    let n = 0;
+    for (const row of this.hexes) for (const h of row) {
+      if (h.owner === nation && h.building === what && h.builtBy === nation && !h.capital) n++;
+    }
+    return n;
+  }
+
+  buildCost(nation, h, what) {
+    if (what === 'strasse') return BAL.cost.strasse;   // Infrastruktur: keine Staffel
+    const up = h && h.building === what;
+    if (up) return BAL.cost[what] * ((h.level || 1) + 1);
+    // Preis-Staffel: jedes weitere selbst gebaute Gebäude dieses Typs
+    // VERDOPPELT den Preis — nach 4 Stufen bleibt er konstant.
+    return BAL.cost[what] * Math.pow(2, Math.min(this.builtCount(nation, what), 4));
   }
 
   canBuild(nation, h, what) {
@@ -970,7 +985,7 @@ class Game {
         if ((h.level || 1) >= cap) return `Schon Level ${cap} (max.)`;
       } else if (h.building) return 'Feld belegt';
     }
-    const cost = this.buildCost(h, what);
+    const cost = this.buildCost(nation, h, what);
     if (this.nations[nation].gold < cost) return `Zu wenig Gold (${cost})`;
     return true;
   }
@@ -978,11 +993,12 @@ class Game {
   build(nation, h, what) {
     const ok = this.canBuild(nation, h, what);
     if (ok !== true) return ok;
-    this.nations[nation].gold -= this.buildCost(h, what);
+    this.nations[nation].gold -= this.buildCost(nation, h, what);
     if (what === 'strasse') h.road = true;
     else if (what === 'stadt') {
       h.building = 'stadt';
       h.level = 1;
+      h.builtBy = nation;
       this.setResist(h);
       const roads = this.connectCities(h);
       if (nation === this.player && roads)
@@ -993,6 +1009,7 @@ class Game {
     } else {
       h.building = what;
       h.level = 1;
+      h.builtBy = nation;
       if (what === 'fischerei') h.owner = nation;   // Küstenwasser gehört jetzt dir
       this.setResist(h);
       if (what === 'kaserne') this._kasernen.push(h);
@@ -1411,9 +1428,18 @@ class Game {
       div.queue = [];              // neuer Befehl ersetzt die Warteschlange
       div.attackTarget = null;
     }
+    // Läuft gerade ein Schritt? Merken — führt der neue Weg über denselben
+    // nächsten Hex, bleibt der Fortschritt erhalten (kein Rücksprung beim
+    // erneuten Klicken auf dasselbe Ziel)
+    const inflight = (div.path && div.pathI < div.path.length) ? div.path[div.pathI] : null;
+    const prog = div.moveProgress;
     const path = this.findPath(div.nation, div.c, div.r, c, r, false);
-    if (path) { div.path = path; div.pathI = 0; div.moveProgress = 0; }
-    else if (div.nation === this.player) {
+    if (path) {
+      div.path = path;
+      div.pathI = 0;
+      div.moveProgress = (inflight && path[0]
+        && path[0][0] === inflight[0] && path[0][1] === inflight[1]) ? prog : 0;
+    } else if (div.nation === this.player) {
       this.addLog(`⚠ ${div.name}: kein Weg dorthin (Invasionen brauchen ein Küstenfeld als Ziel).`);
     }
   }
@@ -2368,7 +2394,7 @@ class Game {
     for (const [what, findSpot] of plan) {
       const spot = findSpot();
       if (!spot) continue;                             // kein Platz → nächstes Ziel
-      if (nat.gold < this.buildCost(spot, what)) return;  // sparen aufs wichtigste erreichbare Ziel
+      if (nat.gold < this.buildCost(id, spot, what)) return;  // sparen aufs wichtigste erreichbare Ziel
       return this.build(id, spot, what);
     }
     // 8) Straße Richtung Front — nur vom Überschuss, Divisionen gehen vor
@@ -2532,10 +2558,10 @@ class Game {
         this._hasDead = false;
       }
       if (prevDay < BAL.graceDays && this.day >= BAL.graceDays)
-        this.addLog('⚔️ Die Schonfrist ist vorbei — ganz Europa ist jetzt angreifbar!', true);
+        this.addLog('⚔️ Schonfrist vorbei — jeder ist angreifbar!', true);
       const lateDay = Math.floor(BAL.round.days * BAL.round.lateStart);
       if (prevDay < lateDay && this.day >= lateDay)
-        this.addLog('🔥 Endphase! Die Milizen ermüden, der Aufholbonus schwindet — jetzt entscheidet Eroberung.', true);
+        this.addLog('🔥 Endphase!');
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
       this.frontsDaily();
@@ -2576,7 +2602,7 @@ class Game {
       exAllies: this._exAllies,
       frontSeq: this._frontSeq,
       fronts: this.fronts.map(f => ({ id: f.id, owner: f.owner, kind: f.kind, target: f.target, path: f.path, push: f.push || null })),
-      hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist), h.building ? (h.level || 1) : 0]),
+      hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist), h.building ? (h.level || 1) : 0, h.builtBy || 0]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
         alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), eisen: +n.eisen.toFixed(1), pferde: +n.pferde.toFixed(1),
         traitorUntil: n.traitorUntil,
@@ -2610,13 +2636,14 @@ class Game {
     const flat = g.hexes.flat();
     // Erst alles zurück auf neutral
     for (const h of flat) {
-      h.owner = null; h.building = null; h.level = 0; h.road = false; h.capital = false;
+      h.owner = null; h.building = null; h.level = 0; h.builtBy = null; h.road = false; h.capital = false;
     }
     s.hexes.forEach((hs, i) => {
       const h = flat[i];
       h.owner = hs[0];
       h.building = hs[1] === 'hafen' ? null : hs[1];   // Häfen gibt es nicht mehr
       h.level = h.building ? (hs[5] || 1) : 0;
+      h.builtBy = hs[6] || (h.building ? hs[0] : null);   // Alt-Stände: Besitzer = Erbauer
       h.road = !!hs[2]; h.capital = !!hs[3];
       g.setResist(h); h.resist = hs[4];
     });
