@@ -109,9 +109,11 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
   begrenzt viele Leute (Basis 20 · +0,2 je Landfeld · Stadt +25 · Dorf +10, Fischerei +8,
   Farm +6, Forsterei +4, Kaserne +5, je × Level) — am Limit stoppt das Wachstum. **ALLE
   Truppen rekrutieren 👥 Leute** — Kavallerie kostet zusätzlich 🐎 Pferde (Farmen),
-  Kanonen 🔩 Eisen (Minen). Kasernen bilden doppelt so schnell aus. **💰 Unterhalt:**
-  jede Division kostet Gold/Tag (Krieger 0,4 · Kavallerie 1,0 · Kanonen 1,5) — ist die
-  Kasse leer bei negativem Einkommen, verlieren alle Truppen Moral (Pleite!).
+  Kanonen 🔩 Eisen (Minen) — die **Erstellung kostet kein Gold**. Kasernen bilden doppelt
+  so schnell aus. **💰 Unterhalt:** jede Division kostet Gold/Tag nach Qualität (Krieger
+  0,6 · Kavallerie 1,4 · Kanonen 2,0) — ist die Kasse leer bei negativem Einkommen,
+  verlieren alle Truppen Moral (Pleite!). **Besiegte Divisionen (Org bricht) werden
+  VERNICHTET** — kein Rückzug, kein Wiederkommen: Schlachten sind endgültig.
 - **Weniger HUD:** 📜 Ereignis-Log (standardmäßig aus), 🏆 Rangliste und 🗺️ Minimap sind
   über die Topbar einzeln ausblendbar (gemerkt im Browser). Truppen können **über See**
   ziehen (langsamer, Angriff von See geschwächt); Wasser ist nicht eroberbar. 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +

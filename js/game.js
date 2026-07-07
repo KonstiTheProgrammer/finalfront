@@ -62,12 +62,13 @@ const BAL = {
   //   Krieger normal schnell unterwegs, aber SCHWACH im Erobern
   //   Kavallerie flott unterwegs, mittelmäßig im Erobern
   //   Kanonen STARK im Erobern, aber langsam unterwegs
-  // ALLE Truppen rekrutieren 👥 Leute (mp). Dazu Rohstoff-Kosten:
-  //   Kavallerie braucht 🐎 Pferde (Farmen) · Kanonen brauchen 🔩 Eisen (Minen)
+  // ALLE Truppen rekrutieren 👥 Leute (mp) + Rohstoffe — die ERSTELLUNG
+  // kostet KEIN Gold. Dafür kostet der laufende UNTERHALT Gold, gestaffelt
+  // nach Qualität der Truppe (Pleite → Moralverfall).
   divTypes: {
-    inf: { name: 'Krieger',    gold: 90,  mp: 12,                upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', gold: 140, mp: 9,  pferde: 10,    upkeep: 1.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    gold: 180, mp: 7,  eisen: 12,     upkeep: 1.5, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    mp: 12,                upkeep: 0.6, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 1.4, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 2.0, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -658,8 +659,8 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return null;
     if (!free) {
-      if (nat.gold < t.gold || nat.leute < t.mp) return null;
-      nat.gold -= t.gold; nat.leute -= t.mp;
+      if (nat.leute < t.mp) return null;
+      nat.leute -= t.mp;
     }
     let spawn = null;
     const [cc, cr] = nat.capital || [0, 0];
@@ -725,11 +726,9 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return 'Unbekannter Typ';
     const nat = this.nations[nation];
-    if (nat.gold < t.gold) return `Zu wenig Gold (${t.gold})`;
     if (nat.leute < t.mp) return `Zu wenig 👥 Leute (${t.mp}k) — Dörfer/Städte/Fischereien!`;
     if (t.eisen && nat.eisen < t.eisen) return `Zu wenig 🔩 Eisen (${t.eisen}) — Minen fördern es`;
     if (t.pferde && nat.pferde < t.pferde) return `Zu wenig 🐎 Pferde (${t.pferde}) — Farmen züchten sie`;
-    nat.gold -= t.gold;
     nat.leute -= t.mp;
     if (t.eisen) nat.eisen -= t.eisen;
     if (t.pferde) nat.pferde -= t.pferde;
@@ -1774,8 +1773,13 @@ class Game {
       def.str -= power * BAL.atkBase * BAL.strDmg * lateAtk * pocketDmg * dt;
       atk.org -= defPower * BAL.atkBase * BAL.orgDmg * 0.75 * dt;
       atk.str -= defPower * BAL.atkBase * BAL.strDmg * 0.6 * dt;
-      if (def.str <= 5) this.destroyDivision(def, atk.nation);
-      else if (def.org <= BAL.retreatOrg) this.retreatDivision(def, atk);
+      // Besiegt = vernichtet: bricht die Organisation, wird die Division
+      // AUFGERIEBEN — kein Rückzug, kein Auffrischen, kein Wiederkommen
+      if (def.str <= 5 || def.org <= BAL.retreatOrg) {
+        if (def.nation === this.player || atk.nation === this.player)
+          this.addLog(`⚔️ ${def.name} (${this.nationName(def.nation)}) wurde in der Schlacht vernichtet!`, def.nation === this.player);
+        this.destroyDivision(def, atk.nation);
+      }
     } else {
       const t = BAL.divTypes[atk.type];
       // Endphase: Milizen ermüden — die Karte konsolidiert sich, Runden enden
@@ -1788,12 +1792,15 @@ class Game {
       if (targetHex.resist <= 0) this.captureHex(targetHex, atk);
     }
 
-    if (atk.org <= BAL.retreatOrg) {
+    // Auch der Angreifer: wer im Gefecht bricht, ist vernichtet
+    if (atk.str <= 5 || (def && atk.org <= BAL.retreatOrg)) {
+      if (atk.nation === this.player || (def && def.nation === this.player))
+        this.addLog(`⚔️ ${atk.name} (${this.nationName(atk.nation)}) wurde in der Schlacht vernichtet!`, atk.nation === this.player);
+      this.destroyDivision(atk, def ? def.nation : targetHex.owner);
+    } else if (atk.org <= BAL.retreatOrg) {
       atk.attackTarget = null;
       atk.moral = Math.max(BAL.moralMin, atk.moral - BAL.moralRetreat);
-      if (seaAssault) this.retreatDivision(atk, null);
     }
-    if (atk.str <= 5) this.destroyDivision(atk, targetHex.owner);
   }
 
   retreatDivision(div, attacker) {
@@ -2386,17 +2393,16 @@ class Game {
     let type = 'inf';
     const roll = this.rand();
     // Elite-Einheiten nur, wenn die Rohstoffe im Lager liegen
-    if (nat.eisen >= BAL.divTypes.kan.eisen && nat.gold > 350 && roll < 0.3) type = 'kan';
-    else if (nat.pferde >= BAL.divTypes.kav.pferde && nat.gold > 250 && roll < 0.6) type = 'kav';
+    if (nat.eisen >= BAL.divTypes.kan.eisen && roll < 0.3) type = 'kan';
+    else if (nat.pferde >= BAL.divTypes.kav.pferde && roll < 0.6) type = 'kav';
     const tt = BAL.divTypes[type];
     const underAttack = this.day - nat._lastAttackedDay < 12;
-    // In Friedenszeiten Wirtschaft vor Masse: erst bauen (Stadt = 270 G),
-    // Divisionen nur vom Überschuss. Ausnahme: Armee stark dezimiert
-    // (Nachkriegs-Wiederaufbau) — dann zügig nachrüsten.
-    const buffer = underAttack ? 10 : (divs.length < cap * 0.5 ? 60 : 220);
     const pending = this.training.reduce((n, q) => n + (q.nation === id ? 1 : 0), 0);
     if (pending >= 2) return;   // nicht überbuchen — Nachschub kommt schon
-    if (nat.gold >= tt.gold + buffer && nat.leute >= tt.mp
+    // Erstellung kostet kein Gold — aber der SOLD muss tragbar sein
+    const incomeAfter = nat.incomePerDay - tt.upkeep;
+    const okIncome = underAttack ? (incomeAfter > -3 || nat.gold > 400) : incomeAfter > 1.2;
+    if (okIncome && nat.leute >= tt.mp
       && (!tt.eisen || nat.eisen >= tt.eisen) && (!tt.pferde || nat.pferde >= tt.pferde)) {
       // Kaserne bevorzugt (doppelt so schnell), sonst Hauptstadt
       const site = this._kasernen.find(k => k.owner === id && k.building === 'kaserne')

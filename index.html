@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=33">
+  <link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -182,14 +182,14 @@
         <li><b>Passives Land:</b> Unbebautes eigenes Land arbeitet mit — Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute. Gebäude sind um ein Vielfaches stärker.</li>
         <li><b>📚 Armee-Stapel:</b> Mehrere Armeen können auf einem Feld stehen (z. B. nach dem Teilen) — der Stapel zeigt oben rechts seine Anzahl. Klick aufs Feld wählt alle; in der Einheiten-Leiste unten wählst du sie einzeln an.</li>
         <li><b>Gefechtsprognose:</b> Über laufenden Kämpfen und beim Zeigen auf eine feindliche Armee (mit eigener Auswahl) erscheint die <b>HOI-Bubble</b>: Grün = du gewinnst, Gelb = knapp, Rot = Finger weg. RPS-Dreieck, Gelände, Fluss, Organisation und Kessel sind eingerechnet.</li>
-        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b>. <b>ALLE Truppen rekrutieren 👥 Leute</b> — Kavallerie braucht zusätzlich 🐎 Pferde (Farmen), Kanonen 🔩 Eisen (Minen).</li>
+        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b>. <b>Truppen kosten bei der Erstellung KEIN Gold</b> — nur 👥 Leute plus Rohstoffe (Kavallerie 🐎 Pferde, Kanonen 🔩 Eisen). Dafür kostet der <b>laufende Unterhalt Gold, gestaffelt nach Qualität</b> (Krieger 0,6 · Kavallerie 1,4 · Kanonen 2,0 pro Tag).</li>
         <li><b>👥 Bevölkerungslimit:</b> Dein Reich versorgt nur begrenzt viele Leute (oben: <b>x/Limit</b>). Kapazität geben: Basis 20 · jedes Landfeld +0,2 · 🏙️ Stadt +25 · 🏠 Dorf +10, 🎣 Fischerei +8, 🪓 Forsterei +4, 🎪 Kaserne +5 (je × Level). Am Limit stoppt das Wachstum!</li>
         <li><b>Truppendreieck (EU4-Stil):</b> 🛡 <b>Krieger</b> halten die Linie und schlagen Kavallerie · 🐎 <b>Kavallerie</b> ist schnell und schlägt Kanonen · 💥 <b>Kanonen</b> belagern (2,5× gegen Miliz) und schlagen Krieger — aber langsam und fragil.</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
-        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation <b>eingezäunt</b> sind, fallen ihr kampflos zu — aber nur ohne Meerzugang: ein abgeschnittener Küstenzipfel zählt NICHT als umzingelt.</li>
+        <li><b>Organisation (gelb):</b> sinkt im Kampf — <b>bricht sie, ist die Division VERNICHTET</b> (kein Rückzug, kein Wiederkommen): Schlachten sind endgültig, die Prognose-Bubble lohnt sich. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation <b>eingezäunt</b> sind, fallen ihr kampflos zu — aber nur ohne Meerzugang: ein abgeschnittener Küstenzipfel zählt NICHT als umzingelt.</li>
         <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
         <li><b>Weniger HUD:</b> Oben rechts lassen sich 📜 Ereignis-Log (standardmäßig aus), 🏆 Rangliste und 🗺️ Minimap einzeln ein-/ausblenden — Wichtiges kommt weiterhin als kurze Einblendung.</li>
-        <li><b>💰 Unterhalt:</b> Jede Division kostet Gold pro Tag (Krieger 0,4 · Kavallerie 1,0 · Kanonen 1,5). Ist die <b>Kasse leer und das Einkommen negativ, verlieren alle Truppen Moral</b> — Truppen auflösen oder Wirtschaft bauen!</li>
+        <li><b>💰 Unterhalt:</b> Jede Division kostet Gold pro Tag (Krieger 0,6 · Kavallerie 1,4 · Kanonen 2,0). Ist die <b>Kasse leer und das Einkommen negativ, verlieren alle Truppen Moral</b> — Truppen auflösen oder Wirtschaft bauen!</li>
         <li><b>🌊 Über See:</b> Truppen können Wasser überqueren (deutlich langsamer, Angriff von See um 50 % geschwächt) — Wasserfelder selbst lassen sich nicht erobern, Truppen auf See nicht angreifen.</li>
         <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · <b>B</b> Frontlinie ziehen · S/M teilen/vereinen · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
       </ul>
@@ -197,11 +197,11 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=33"></script>
-  <script src="js/map.js?v=33"></script>
-  <script src="js/game.js?v=33"></script>
-  <script src="js/ui.js?v=33"></script>
-  <script src="js/net.js?v=33"></script>
-  <script src="js/main.js?v=33"></script>
+  <script src="js/mapdata.js?v=34"></script>
+  <script src="js/map.js?v=34"></script>
+  <script src="js/game.js?v=34"></script>
+  <script src="js/ui.js?v=34"></script>
+  <script src="js/net.js?v=34"></script>
+  <script src="js/main.js?v=34"></script>
 </body>
 </html>

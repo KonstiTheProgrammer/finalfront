@@ -2277,8 +2277,8 @@ function panelBauen() {
       const tage = BAL.trainTime[ty] * (fast ? BAL.kaserneTrainFactor : 1);
       const extra = (t.pferde ? ` · ${t.pferde} 🐎` : '') + (t.eisen ? ` · ${t.eisen} 🔩` : '');
       html += `<div class="build-row">
-        <button data-trainat="${ty}">${t.name} — ${t.gold} G · ${t.mp}k 👥${extra} · ${tage} Tage</button>
-        <div class="small">${TYPE_HINT[ty]}</div>
+        <button data-trainat="${ty}">${t.name} — ${t.mp}k 👥${extra} · ${tage} Tage</button>
+        <div class="small">${TYPE_HINT[ty]} · Unterhalt ${t.upkeep} G/Tag</div>
       </div>`;
     }
     const queue = game.training.filter(q => q.c === h.c && q.r === h.r);
