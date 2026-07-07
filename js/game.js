@@ -13,9 +13,9 @@ const BAL = {
   // Wirtschaftskette (pro Tag):
   //   Alle Truppen rekrutieren 👥 LEUTE. Dazu Rohstoffe:
   //   ⛏️ Mine → 🔩 Eisen (für Kanonen) · 🚜 Farm → 🐎 Pferde (für Kavallerie)
-  baseIncome: 2.5,                    // Staatskasse (Grundeinkommen)
-  incomeStadt: 4.0,                   // Start-Stadt (Hauptstadt): Gold + Leute
-  leuteStadt: 0.20,
+  baseIncome: 1.5,                    // Staatskasse (Grundeinkommen)
+  incomeStadt: 2.8,                   // Start-Stadt (Hauptstadt): Gold + Leute
+  leuteStadt: 0.16,
   // Truppen werden AUSGEBILDET (Warteschlange pro Standort) und spawnen dort:
   // Städte/Hauptstadt bilden aus, Kasernen doppelt so schnell.
   trainTime: { inf: 9, kav: 12, kan: 15 },  // Tage an einer Stadt (Kaserne: halb)
@@ -39,19 +39,19 @@ const BAL = {
   storePerMine: 15,   // Eisen-Lager je Minen-Level
   storePerFarm: 12,   // Pferde-Lager je Farm-Level
   yields: {
-    mine:      { gold: 0,   leute: 0,    eisen: 0.6, hillsEisen: 0.85 },
-    farm:      { gold: 0,   leute: 0,    pferde: 0.5 },
-    forsterei: { gold: 6.0, leute: 0.06 },
-    fischerei: { gold: 2.5, leute: 0.16 },
-    dorf:      { gold: 0,   leute: 0.22 },
+    mine:      { gold: 0,   leute: 0,    eisen: 0.4, hillsEisen: 0.6 },
+    farm:      { gold: 0,   leute: 0,    pferde: 0.35 },
+    forsterei: { gold: 3.5, leute: 0.05 },
+    fischerei: { gold: 1.6, leute: 0.12 },
+    dorf:      { gold: 0,   leute: 0.16 },
   },
   maxLevel: 3,
   // Unbebautes eigenes Land arbeitet auch — nur viel schwächer als ein Gebäude
   passive: {
-    plains:   { gold: 0.05, leute: 0.010 },
-    forest:   { gold: 0.30, leute: 0.004 },
-    hills:    { gold: 0.35, leute: 0.002 },
-    mountain: { gold: 0.45, leute: 0 },
+    plains:   { gold: 0.02, leute: 0.006 },
+    forest:   { gold: 0.12, leute: 0.003 },
+    hills:    { gold: 0.14, leute: 0.002 },
+    mountain: { gold: 0.15, leute: 0 },
   },
   // Baukosten (Ausbau auf Level N kostet das N-fache)
   cost: { strasse: 25, dorf: 60, fischerei: 80, farm: 90, mine: 90, forsterei: 110, turm: 120, kaserne: 120, stadt: 180 },
@@ -69,9 +69,9 @@ const BAL = {
   // kostet KEIN Gold. Dafür kostet der laufende UNTERHALT Gold, gestaffelt
   // nach Qualität der Truppe (Pleite → Moralverfall).
   divTypes: {
-    inf: { name: 'Krieger',    mp: 12,                upkeep: 1.2, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 2.4, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 3.6, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    mp: 12,                upkeep: 1.0, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 2.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 3.0, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -828,6 +828,7 @@ class Game {
      Stapel zeigen ihre Anzahl, Klick aufs Feld listet die Armeen. */
   splitDivision(div) {
     if (div.dead || div.str < 40) return null;
+    if (div.inCombat && !div.attackTarget) return null;   // im Gefecht gebunden
     const nat = this.nations[div.nation];
     const t = BAL.divTypes[div.type];
     const half = div.str / 2;
@@ -1416,6 +1417,9 @@ class Game {
   moveOrder(div, c, r, queue) {
     const h = this.hexAt(c, r);
     if (!h) return;
+    // Wer angegriffen wird, ist im Gefecht gebunden — kein Rückzug,
+    // bis die Schlacht entschieden ist (Angreifer dürfen abbrechen)
+    if (div.inCombat && !div.attackTarget) return;
     div.manual = true;
     div.front = null;              // Marschbefehl löst von der Frontlinie
     if (queue) {
@@ -2432,7 +2436,7 @@ class Game {
     // (inkl. Armeegrößen-Staffel) muss tragbar sein
     const marginal = tt.upkeep * (1 + BAL.upkeepRamp * divs.length);
     const incomeAfter = nat.incomePerDay - marginal;
-    const okIncome = underAttack ? (incomeAfter > -3 || nat.gold > 400) : incomeAfter > 1.2;
+    const okIncome = underAttack ? (incomeAfter > -3 || nat.gold > 300) : incomeAfter > 0.8;
     if (okIncome && nat.leute >= tt.mp
       && (!tt.eisen || nat.eisen >= tt.eisen) && (!tt.pferde || nat.pferde >= tt.pferde)) {
       // Kaserne bevorzugt (doppelt so schnell), sonst Hauptstadt
@@ -2784,7 +2788,7 @@ Game.prototype._commands = {
     if (!nat || nat.ai) return;
     nat.ai = true;
     for (const d of this.divisionsOf(id)) d.manual = false;
-    this.addLog(`🔌 ${this.nationName(id)} hat die Verbindung verloren — die KI übernimmt.`, true);
+    this.addLog(`🔌🤖 ${this.nationName(id)}`, true);
   },
   move(divId, c, r, queue) {
     const me = this._actor || this.player;

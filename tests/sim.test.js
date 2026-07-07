@@ -106,6 +106,38 @@ const out = vm.runInContext(`
     ok('Besiegte Division wird VERNICHTET', dV.dead === true);
   }
 
+  /* ===== Kampfsperre: Angegriffene sind gebunden ===== */
+  {
+    const gF = new Game('B', 742); gF.endSpawnPhase();
+    gF.day = BAL.graceDays + 1; gF.dayFloat = gF.day;
+    const aF = gF.divisionsOf('B')[0];
+    let hF = null;
+    for (const [nc, nr] of neighborsOf(aF.c, aF.r)) {
+      const h = gF.hexAt(nc, nr);
+      if (h && h.terrain !== 'water') { hF = h; break; }
+    }
+    hF.owner = 'C';
+    const dF = gF.divisionsOf('C')[0];
+    gF._placeDiv(dF, hF.c, hF.r);
+    dF.path = null; dF.attackTarget = null;
+    aF.str = 100; aF.org = 60; dF.str = 90; dF.org = 50;
+    aF.attackTarget = [hF.c, hF.r];
+    gF.resolveCombat(aF, hF, 0.02);
+    ok('Kampf bindet den Verteidiger', dF.inCombat === true && !dF.attackTarget);
+    let ziel = null;
+    for (const [nc, nr] of neighborsOf(dF.c, dF.r)) {
+      const h2 = gF.hexAt(nc, nr);
+      if (h2 && h2.terrain !== 'water' && !(nc === aF.c && nr === aF.r)) { ziel = [nc, nr]; break; }
+    }
+    gF.moveOrder(dF, ziel[0], ziel[1], false);
+    ok('Angegriffene Truppe kann nicht fliehen', dF.path === null);
+    ok('Angegriffene Truppe kann nicht splitten', gF.splitDivision(dF) === null);
+    // Der Angreifer dagegen darf die Schlacht abbrechen
+    const heim = gF.nations['B'].capital;
+    gF.moveOrder(aF, heim[0], heim[1], false);
+    ok('Angreifer darf abbrechen', !!aF.path && aF.attackTarget === null);
+  }
+
   /* ===== Stadt-Einfluss (Radius 2, näher = schneller) ===== */
   g = new Game('A', 99); g.endSpawnPhase();
   const startHex = g.nations['A'].hexCount;
@@ -226,7 +258,7 @@ const out = vm.runInContext(`
   {
     const gB = new Game('A', 660); gB.endSpawnPhase();
     const nB = gB.nations['A'];
-    ok('Unterhalt teuer + gestaffelt', BAL.divTypes.inf.upkeep >= 1.2
+    ok('Unterhalt teuer + gestaffelt', BAL.divTypes.inf.upkeep >= 1.0
       && BAL.divTypes.kan.upkeep > BAL.divTypes.kav.upkeep && BAL.divTypes.kav.upkeep > BAL.divTypes.inf.upkeep);
     nB.gold = 0; nB.incomePerDay = -5;
     gB.economyTick(0.25);

@@ -1868,8 +1868,15 @@ function finishBoxSelect(b, shift) {
 }
 
 function groupMoveOrder(c, r, queue) {
-  const divs = playerSelection();
+  let divs = playerSelection();
   if (!divs.length) return;
+  // Angegriffene Truppen sind im Gefecht gebunden — sie bleiben stehen
+  const locked = divs.filter(d => d.inCombat && !d.attackTarget);
+  if (locked.length) {
+    pushToast('⚠⚔');
+    divs = divs.filter(d => !locked.includes(d));
+    if (!divs.length) return;
+  }
   const targets = [[c, r]];
   const seen = new Set([c + r * MAP_W]);
   let frontier = [[c, r]];
