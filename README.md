@@ -51,12 +51,12 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
 - **Truppendreieck (EU4-Vorbild):** 🛡 Krieger halten die Linie und schlagen Kavallerie ·
   🐎 Kavallerie ist schnell/hart und schlägt Kanonen · 💥 Kanonen belagern (2,5× gegen
   Miliz) und schlagen Krieger — langsam und fragil.
-- **Erobern ohne Reinlaufen (War-of-Dots):** Truppen marschieren nicht ins Neutralland —
-  sie stehen daneben und nehmen es ein: das Feld **füllt sich langsam mit der Farbe des
-  Eroberers**. Das Tempo hängt von der **Stärke der Armee** ab und vom Typ: 💥 Kanonen
-  erobern stark, sind aber langsam unterwegs · 🐎 Kavallerie ist flott und mittelmäßig ·
-  🛡 Krieger sind normal schnell, aber schwach im Erobern. ⛰️ Berge leisten doppelten
-  Widerstand, 🌊 Flussfelder sind zäher. Idle-Truppen nibbeln Nachbarland von selbst.
+- **Eroberung durch Städte:** Städte und Hauptstädte **strahlen aus** — freies Umland im
+  Radius 4 schließt sich langsam von selbst an (näher = schneller); Feindland bleibt
+  unberührt. **Truppen laufen überall hin** (auch durch fremdes Land — ohne Verbindung
+  aber ohne Nachschub) und übernehmen im **Stehen genau ihr Standfeld**: langsam,
+  stärkeabhängig, 💥 Kanonen stark · 🐎 Kavallerie mittel · 🛡 Krieger schwach; ⛰️ Berge
+  und 🌊 Flussfelder sind zäher. Kämpfe gibt es nur gegen feindliche Truppen.
 - **⚔ Frontlinien statt Automatik:** **Strg+Klick auf die Grenze** zu einem Nachbarn erzeugt
   eine Front entlang des Grenzverlaufs (wächst mit) · **B** zieht eine eigene Linie über die
   Karte. Zugewiesene Truppen verteilen sich selbst und kämpfen dort; **S** teilt und

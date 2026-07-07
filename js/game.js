@@ -81,6 +81,11 @@ const BAL = {
   atkBase: 8.0,
   orgDmg: 0.9,
   strDmg: 0.22,
+  // NEUES EROBERN: Städte strahlen aus (freies Umland schließt sich an,
+  // näher = schneller) — Truppen übernehmen nur noch das Feld, auf dem
+  // sie STEHEN (langsam). Kein automatisches Nachbar-Erobern mehr.
+  influence: { radius: 4, perDay: 3 },
+  standingCapture: 0.8,   // Koeffizient der Steh-Eroberung (× Typ-Profil)
   militiaResist: 35,
   militiaResistStadt: 60,
   militiaResistHauptstadt: 78,
@@ -1013,10 +1018,12 @@ class Game {
     }
     this._kasernen = [];
     this._tuerme = [];
+    this._staedte = [];
     for (const row of this.hexes) for (const h of row) {
       if (!h.owner) continue;
       const nat = this.nations[h.owner];
       if (!nat) continue;
+      if (h.capital || h.building === 'stadt') this._staedte.push(h);
       if (h.terrain !== 'water') { nat.hexCount++; nat.popCap += BAL.pop.perHex; }
       const lvl = h.level || 1;
       if (BAL.pop[h.building]) nat.popCap += BAL.pop[h.building] * (h.building === 'stadt' ? 1 : lvl);
@@ -1207,7 +1214,6 @@ class Game {
       for (const [nc, nr] of neighborsOf(c, r)) {
         const nh = this.hexAt(nc, nr);
         if (!nh) continue;
-        const isTarget = nc === c2 && nr === r2;
         let step;
         if (nh.terrain === 'water') {
           if (ownOnly) continue;
@@ -1215,11 +1221,10 @@ class Game {
         } else if (nh.owner === nation) {
           // Straße überbrückt den Fluss (Brücke), sonst bremst er
           step = TERRAIN[nh.terrain].move * (nh.road ? BAL.roadCostFactor : (nh.river ? BAL.river.moveFactor : 1));
-        } else if (!ownOnly && nh.owner && this.allied(nation, nh.owner)) {
-          step = TERRAIN[nh.terrain].move * (nh.river ? BAL.river.moveFactor : 1);   // Durchmarsch bei Verbündeten
-        } else if (!ownOnly && (isTarget || this.attackable(nation, nh))) {
-          step = TERRAIN[nh.terrain].move * (isTarget ? 1 : 1.6)
-            * (nh.river ? BAL.river.moveFactor : 1);               // Feind-/Neutralland: kämpfend passierbar
+        } else if (!ownOnly) {
+          // Fremdes und freies Land ist frei begehbar — aber ohne eigene
+          // Straßenboni und ohne Nachschub-Anschluss
+          step = TERRAIN[nh.terrain].move * (nh.river ? BAL.river.moveFactor : 1);
         } else continue;
         const ng = g + step;
         const nKey = nc + nr * MAP_W;
@@ -1561,18 +1566,6 @@ class Game {
     });
   }
 
-  /* Passives Nibbeln: freies Nachbarfeld zufällig erobern (Warteschlangen-Gefühl) */
-  pickNeutralNibble(div) {
-    if (this.day < 1) return null;
-    const cands = [];
-    for (const [nc, nr] of neighborsOf(div.c, div.r)) {
-      const nh = this.hexAt(nc, nr);
-      if (nh && nh.terrain !== 'water' && nh.owner === null) cands.push(nh);
-    }
-    if (!cands.length) return null;
-    return cands[Math.floor(this.rand() * cands.length)];
-  }
-
   divisionsTick(dt) {
     this._rebuildDivIndex();
     this._atkCount = new Map();
@@ -1589,8 +1582,12 @@ class Game {
       if (div.attackTarget) {
         const [tc, tr] = div.attackTarget;
         const th = this.hexAt(tc, tr);
-        if (!th || th.owner === div.nation || !this.attackable(div.nation, th)
-          || hexDist(div.c, div.r, tc, tr) > 1) {
+        const defDiv = th ? this.divisionAt(tc, tr) : null;
+        // Gefechte gibt es nur noch GEGEN TRUPPEN — ist das Feld frei,
+        // marschiert man einfach weiter (und erobert im Stehen)
+        if (!th || hexDist(div.c, div.r, tc, tr) > 1
+          || !defDiv || defDiv.dead || defDiv.nation === div.nation
+          || !this.hostile(div.nation, defDiv.nation) || this.day < BAL.graceDays) {
           div.attackTarget = null;
         } else {
           this.resolveCombat(div, th, dt);
@@ -1620,9 +1617,16 @@ class Game {
         const [nc, nr] = div.path[div.pathI];
         const nh = this.hexAt(nc, nr);
         if (!nh) { div.path = null; continue; }
-        if (nh.owner !== div.nation && nh.terrain !== 'water' && !this.allied(div.nation, nh.owner)) {
-          if (this.attackable(div.nation, nh)) div.attackTarget = [nc, nr];
-          else div.path = null;
+        // Nur feindliche DIVISIONEN versperren den Weg — Gelände ist frei begehbar
+        const blocker = this.divisionAt(nc, nr);
+        if (blocker && !blocker.dead && blocker.nation !== div.nation
+          && !this.allied(div.nation, blocker.nation)) {
+          if (this.day >= BAL.graceDays && this.hostile(div.nation, blocker.nation)) {
+            div.attackTarget = [nc, nr];   // Feindkontakt: Gefecht
+          } else {
+            div.path = null;               // Schonfrist: anhalten
+            if (div.manual) div.station = [div.c, div.r];
+          }
           continue;
         }
         const step = nh.terrain === 'water' ? TERRAIN.water.move
@@ -1648,22 +1652,37 @@ class Game {
 
       if (!div.path && !div.attackTarget) {
         const t = BAL.divTypes[div.type];
-        if (div.org > t.maxOrg * 0.35) {
+        const here = this.hexAt(div.c, div.r);
+        // STEHEN = genau dieses Feld langsam übernehmen (Nachbarn nicht mehr!)
+        if (here && here.terrain !== 'water' && here.owner !== div.nation
+          && this.attackable(div.nation, here)) {
+          this.standingCapture(div, here, dt);
+        }
+        // Front-/Bot-Truppen rücken vor, sobald ihr Standfeld gesichert ist:
+        // freie/feindliche Felder werden BETRETEN, Verteidiger bekämpft
+        else if (div.org > t.maxOrg * 0.35) {
           const sup = this.supplyModOf(div);
           if (sup.level > 0.12) {
             let target = null;
-            // 1) Frontlinien-Dienst: dort kämpfen, wo die Linie es verlangt
             if (div.front != null) {
               target = this.pickFrontTarget(div);
             } else if (div.army != null && !div.manual) {
-              // Bots: klassische Armee-Logik
               const army = this.armyById(div.nation, div.army);
               if (army && army.mode === 'attack' && div.org > t.maxOrg * 0.45)
                 target = this.pickAttackTarget(div, army);
             }
-            // 2) Passives Nibbeln: jede Truppe erobert freies Nachbarland von selbst
-            if (!target) target = this.pickNeutralNibble(div);
-            if (target) div.attackTarget = [target.c, target.r];
+            if (target) {
+              const defDiv = this.divisionAt(target.c, target.r);
+              if (defDiv && !defDiv.dead && this.hostile(div.nation, defDiv.nation)
+                && this.day >= BAL.graceDays) {
+                div.attackTarget = [target.c, target.r];
+              } else if (!defDiv) {
+                div.path = [[target.c, target.r]];
+                div.pathI = 0;
+                div.moveProgress = 0;
+                div.station = [target.c, target.r];   // Station wandert mit nach vorn
+              }
+            }
           }
         }
       }
@@ -1930,6 +1949,58 @@ class Game {
     if (!loser || !this.nations[loser] || !this.nations[loser].alive) return;
     // Nur Landbesitz zählt — eine einsame Fischerei hält kein Reich am Leben
     if (!this.ownedHexes(loser).some(h => h.terrain !== 'water')) this.surrender(loser, winner);
+  }
+
+  /* ---------- Stadt-Einfluss: freies Umland schließt sich langsam an ----------
+     Je näher an der Stadt, desto schneller — nur NEUTRALE Felder. */
+  influenceDaily() {
+    const R = BAL.influence.radius;
+    for (const city of this._staedte || []) {
+      const owner = city.owner;
+      if (!owner || !this.nations[owner] || !this.nations[owner].alive) continue;
+      if (!city.capital && city.building !== 'stadt') continue;   // Cache-Frische
+      for (let dr = -R; dr <= R; dr++) {
+        for (let dc = -R - 1; dc <= R + 1; dc++) {
+          const h = this.hexAt(city.c + dc, city.r + dr);
+          if (!h || h.owner !== null || h.terrain === 'water') continue;
+          const dist = hexDist(city.c, city.r, h.c, h.r);
+          if (dist < 1 || dist > R) continue;
+          h.resist -= BAL.influence.perDay / dist;
+          h._atkT = this.dayFloat;
+          h._atkBy = owner;
+          this._damagedHexes.add(h);
+          if (h.resist <= 0) this.claimByInfluence(h, owner);
+        }
+      }
+    }
+  }
+
+  claimByInfluence(h, owner) {
+    h.owner = owner;
+    this.setResist(h);
+    h.resist = h.resistMax * 0.35;
+    this._damagedHexes.add(h);
+    this._supplyDirtyIds.add(owner);
+    this._frontsDirtyIds.add(owner);
+    this._borderCache = null;
+    this.economyDirty = true;
+    this.labelsDirty = true;
+    this.markDirty(h.c, h.r);
+  }
+
+  /* Steh-Eroberung: eine Truppe übernimmt langsam GENAU ihr Standfeld */
+  standingCapture(div, h, dt) {
+    const t = BAL.divTypes[div.type];
+    if (div.org < t.maxOrg * 0.2) return;   // geschlagene Truppen halten nichts
+    const neutral = h.owner === null;
+    const late = 1 + 0.8 * this.lateFactor();
+    const dmg = this.attackPower(div) * BAL.atkBase * BAL.standingCapture
+      * t.militia * (neutral ? BAL.neutralDmgBonus : 1) * late * dt;
+    h.resist -= dmg;
+    h._atkT = this.dayFloat;
+    h._atkBy = div.nation;
+    this._damagedHexes.add(h);
+    if (h.resist <= 0) this.captureHex(h, div);
   }
 
   /* ---------- Kessel: eingeschlossene Gebietsteile sichtbar machen ---------- */
@@ -2257,10 +2328,26 @@ class Game {
     if (minen < 1 + Math.floor(landN / 45)) plan.push(['mine', spotNear(18)]);
     if (farmen < 1 + Math.floor(landN / 55))
       plan.push(['farm', () => this.findBuildSpot(id, cc, cr, x => x.terrain === 'plains' && !x.building, 20, own)]);
-    // Stadt-Ausbau: ab ~40 Provinzen ein Dorf zur Stadt machen (Hub + Auto-Straßen)
+    // Stadt-Ausbau: Städte SIND jetzt die Eroberungsmaschine — früh und
+    // GRENZNAH upgraden (Dorf mit dem meisten freien Umland im Einflussradius)
     const staedte = count('stadt');
-    if (staedte < 1 + Math.floor(landN / 40) && nat.leute > 5)
-      plan.push(['stadt', () => own.find(x => x.building === 'dorf') || null]);
+    if (staedte < 1 + Math.floor(landN / 26) && nat.leute > 5) {
+      plan.push(['stadt', () => {
+        let best = null, bestFree = -1;
+        for (const x of own) {
+          if (x.building !== 'dorf') continue;
+          let free = 0;
+          const R = BAL.influence.radius;
+          for (let dr = -R; dr <= R; dr++) for (let dc = -R - 1; dc <= R + 1; dc++) {
+            const nh = this.hexAt(x.c + dc, x.r + dr);
+            if (nh && nh.owner === null && nh.terrain !== 'water'
+              && hexDist(x.c, x.r, nh.c, nh.r) <= R) free++;
+          }
+          if (free > bestFree) { bestFree = free; best = x; }
+        }
+        return best;
+      }]);
+    }
     // Wehrturm: wer angegriffen wird, befestigt das Hinterland
     if (this.day - nat._lastAttackedDay < 30 && count('turm') < 1 + Math.floor(landN / 70))
       plan.push(['turm', spotNear(10)]);
@@ -2448,6 +2535,7 @@ class Game {
       this.frontsDaily();
       this.supplyDaily();
       this.militiaDaily();
+      this.influenceDaily();
       this.aiDaily();
       this.vpDaily();
       this.pocketsDaily();

@@ -2299,9 +2299,9 @@ const TYPE_HINT = {
 function panelTruppen() {
   const myDivs = game.divisionsOf(game.player);
   const frei = myDivs.filter(d => d.front == null).length;
-  let html = `<p class="hint small"><b>Rechtsklick</b> = Marsch · Truppen erobern freies Nachbarland von selbst ·
-    <b>Strg+Klick auf eine Grenze</b> = Frontlinie gegen den Nachbarn · <b>B</b> = eigene Linie ziehen ·
-    <b>S/M</b> = teilen/vereinen.</p>
+  let html = `<p class="hint small"><b>Rechtsklick</b> = Marsch (überallhin!) · <b>Stehen</b> = Standfeld übernehmen ·
+    Städte übernehmen ihr Umland von selbst · <b>Strg+Klick auf eine Grenze</b> = Frontlinie ·
+    <b>B</b> = Linie ziehen · <b>S/M</b> = teilen/vereinen.</p>
     <h3>Ausbilden</h3>
     <p class="hint small">Klicke eine <b>🏙️ Stadt, deine Hauptstadt oder eine 🎪 Kaserne</b> an —
     dort bildest du Truppen aus. <b>Kasernen sind doppelt so schnell.</b>
@@ -2543,8 +2543,8 @@ function updateUnitbar() {
    GEFÜHRTES ERSTES MATCH & BERATER (Easy Entry)
    ========================================================= */
 const TUTORIAL_STEPS = [
-  { text: 'Deine Armee erobert <b>freies Nachbarland von selbst</b>. Wähle sie (Klick) und schick sie per <b>Rechtsklick</b> an gute Stellen — hol dir 6 Provinzen!',
-    done: g => g.nations[g.player].hexCount >= 6 },
+  { text: 'Deine <b>Stadt übernimmt freies Umland von selbst</b> (näher = schneller). Schick deine Armee per <b>Rechtsklick</b> auf ein fremdes Feld und lass sie <b>stehen</b> — sie übernimmt genau dieses Feld!',
+    done: g => g.nations[g.player].hexCount >= 9 },
   { text: 'Klicke ein <b>freies Feld in deinem Gebiet</b> an und bau eine <b>🎪 Kaserne</b> — sie bildet Truppen doppelt so schnell aus.',
     ghost: 'kaserne', done: g => g.ownedHexes(g.player).some(h => h.building === 'kaserne') },
   { text: 'Bau ein <b>🏠 Dorf</b> (oder eine 🎣 Fischerei am Ufer) — mehr 👥 Leute als Nachschub für deine Kaserne.',
