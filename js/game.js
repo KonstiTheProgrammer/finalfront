@@ -10,12 +10,11 @@ const BAL = {
   // Spielgeschwindigkeit: deutlich entschleunigt, damit man reagieren kann
   daysPerSec: [0, 0.5, 1, 2.5, 6],
   // Wirtschaftskette (pro Tag):
-  //   Dorf → Leute · Stadt → Leute + Gold · Mine/Hafen → Gold
-  //   Kaserne bildet Leute zu Soldaten aus · Divisionen kosten Gold + Soldaten
+  //   Alle Truppen rekrutieren 👥 LEUTE. Dazu Rohstoffe:
+  //   ⛏️ Mine → 🔩 Eisen (für Kanonen) · 🚜 Farm → 🐎 Pferde (für Kavallerie)
   baseIncome: 2.5,                    // Staatskasse (Grundeinkommen)
   incomeStadt: 4.0,                   // Start-Stadt (Hauptstadt): Gold + Leute
   leuteStadt: 0.20,
-  trainPerKaserne: 0.25,              // Ausbildung: Leute → Soldaten pro Kaserne (× Level)
   // Truppen werden AUSGEBILDET (Warteschlange pro Standort) und spawnen dort:
   // Städte/Hauptstadt bilden aus, Kasernen doppelt so schnell.
   trainTime: { inf: 6, kav: 8, kan: 10 },   // Tage an einer Stadt
@@ -25,7 +24,7 @@ const BAL = {
   pop: {
     base: 20,
     perHex: 0.2,
-    stadt: 25, dorf: 10, fischerei: 8, forsterei: 4, kaserne: 5,
+    stadt: 25, dorf: 10, fischerei: 8, farm: 6, forsterei: 4, kaserne: 5,
   },
   // Vier Wirtschaftsgebäude — jedes hat eine klare Rolle, Level 1–3
   // (gleiches Gebäude nochmal bauen = Ausbau, Ertrag skaliert mit dem Level):
@@ -33,8 +32,11 @@ const BAL = {
   //   Forsterei (nur Wald):  viel Gold + etwas Leute
   //   Fischerei (Küstenmeer): etwas Gold + viele Leute
   //   Dorf (überall):        nur Leute
+  //   Mine (überall):        🔩 Eisen  · Hügel-Bonus (für Kanonen)
+  //   Farm (nur Ebene):      🐎 Pferde (für Kavallerie)
   yields: {
-    mine:      { gold: 5.0, leute: 0,    hillsGold: 6.5 },
+    mine:      { gold: 0,   leute: 0,    eisen: 0.6, hillsEisen: 0.85 },
+    farm:      { gold: 0,   leute: 0,    pferde: 0.5 },
     forsterei: { gold: 6.0, leute: 0.06 },
     fischerei: { gold: 2.5, leute: 0.16 },
     dorf:      { gold: 0,   leute: 0.22 },
@@ -48,7 +50,7 @@ const BAL = {
     mountain: { gold: 0.45, leute: 0 },
   },
   // Baukosten (Ausbau auf Level N kostet das N-fache)
-  cost: { strasse: 25, dorf: 60, fischerei: 90, mine: 110, forsterei: 130, turm: 140, kaserne: 150, stadt: 250 },
+  cost: { strasse: 25, dorf: 60, fischerei: 90, farm: 100, mine: 110, forsterei: 130, turm: 140, kaserne: 150, stadt: 250 },
   // Wehrturm: verstärkt die Miliz umliegender eigener Felder.
   // Level 2 verdoppelt die Reichweite (1 → 2 Felder).
   turm: { boost: 1.5, range: 1, range2: 2, maxLevel: 2 },
@@ -59,12 +61,12 @@ const BAL = {
   //   Krieger normal schnell unterwegs, aber SCHWACH im Erobern
   //   Kavallerie flott unterwegs, mittelmäßig im Erobern
   //   Kanonen STARK im Erobern, aber langsam unterwegs
-  // pool: Krieger rekrutieren normale 👥 Leute — nur Kavallerie und
-  // Kanonen brauchen ausgebildete 🎖️ Soldaten (aus Kasernen)
+  // ALLE Truppen rekrutieren 👥 Leute (mp). Dazu Rohstoff-Kosten:
+  //   Kavallerie braucht 🐎 Pferde (Farmen) · Kanonen brauchen 🔩 Eisen (Minen)
   divTypes: {
-    inf: { name: 'Krieger',    gold: 60,  mp: 10, pool: 'leute',    upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', gold: 120, mp: 8,  pool: 'soldaten', upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    gold: 170, mp: 6,  pool: 'soldaten', upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    gold: 60,  mp: 10,                upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', gold: 100, mp: 8,  pferde: 8,     upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    gold: 130, mp: 6,  eisen: 10,     upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -444,8 +446,9 @@ class Game {
       id,
       alive: true,
       gold: 200,
-      leute: 20,        // Bevölkerungs-Pool (aus Dörfern/Städten)
-      soldaten: 12,     // ausgebildete Soldaten (aus Kasernen) — Divisionen kosten Soldaten
+      leute: 20,        // Bevölkerungs-Pool — ALLE Truppen rekrutieren hieraus
+      eisen: 10,        // 🔩 aus Minen — Kanonen
+      pferde: 8,        // 🐎 aus Farmen — Kavallerie
       allies: new Set(),
       armies: [],
       ai: this._humans ? !this._humans.includes(id) : id !== this.player,
@@ -454,7 +457,7 @@ class Game {
       divNameSeq: 1,
       hexCount: 1,
       traitorUntil: -999,
-      incomePerDay: 0, leutePerDay: 0, trainCap: 0,
+      incomePerDay: 0, leutePerDay: 0, eisenPerDay: 0, pferdePerDay: 0,
       _lastAttacker: null, _lastAttackedDay: -99, _atkToastDay: -99,
     };
     this.nations[id] = nat;
@@ -648,8 +651,8 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return null;
     if (!free) {
-      if (nat.gold < t.gold || nat.soldaten < t.mp) return null;
-      nat.gold -= t.gold; nat.soldaten -= t.mp;
+      if (nat.gold < t.gold || nat.leute < t.mp) return null;
+      nat.gold -= t.gold; nat.leute -= t.mp;
     }
     let spawn = null;
     const [cc, cr] = nat.capital || [0, 0];
@@ -715,13 +718,14 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return 'Unbekannter Typ';
     const nat = this.nations[nation];
-    const pool = t.pool || 'soldaten';
     if (nat.gold < t.gold) return `Zu wenig Gold (${t.gold})`;
-    if (nat[pool] < t.mp) return pool === 'leute'
-      ? `Zu wenig 👥 Leute (${t.mp}k) — Dörfer/Städte/Fischereien!`
-      : `Zu wenig 🎖️ Soldaten (${t.mp}k) — Kasernen bilden aus`;
+    if (nat.leute < t.mp) return `Zu wenig 👥 Leute (${t.mp}k) — Dörfer/Städte/Fischereien!`;
+    if (t.eisen && nat.eisen < t.eisen) return `Zu wenig 🔩 Eisen (${t.eisen}) — Minen fördern es`;
+    if (t.pferde && nat.pferde < t.pferde) return `Zu wenig 🐎 Pferde (${t.pferde}) — Farmen züchten sie`;
     nat.gold -= t.gold;
-    nat[pool] -= t.mp;
+    nat.leute -= t.mp;
+    if (t.eisen) nat.eisen -= t.eisen;
+    if (t.pferde) nat.pferde -= t.pferde;
     const dauer = BAL.trainTime[type] * (h.building === 'kaserne' ? BAL.kaserneTrainFactor : 1);
     // hinter dem letzten Auftrag DIESES Standorts anstellen
     let start = this.dayFloat;
@@ -804,7 +808,7 @@ class Game {
     div.dead = true;
     this._hasDead = true;
     const t = BAL.divTypes[div.type];
-    this.nations[div.nation][t.pool || 'soldaten'] += (div.str / 100) * t.mp * 0.5;
+    this.nations[div.nation].leute += (div.str / 100) * t.mp * 0.5;
     this.economyDirty = true;
   }
 
@@ -860,7 +864,7 @@ class Game {
         a.str = Math.min(BAL.maxStr, sum);
         a.org = Math.min(BAL.divTypes[a.type].maxOrg, (a.org * a.str + b.org * b.str) / Math.max(1, a.str + b.str) + 4);
         a.moral = Math.max(a.moral, b.moral);
-        if (overflow > 0 && nat) nat.soldaten += overflow * BAL.reinforceMpCost;
+        if (overflow > 0 && nat) nat.leute += overflow * BAL.reinforceMpCost;
         b.dead = true;
         merged++;
       }
@@ -954,6 +958,7 @@ class Game {
     } else {
       if (!TERRAIN[h.terrain].buildable) return TERRAIN[h.terrain].name + ' — nicht bebaubar';
       if (what === 'forsterei' && h.terrain !== 'forest') return 'Nur im Wald';
+      if (what === 'farm' && h.terrain !== 'plains') return 'Nur auf Ebenen';
       if (h.building === what) {
         const cap = what === 'turm' ? BAL.turm.maxLevel : BAL.maxLevel;
         if ((h.level || 1) >= cap) return `Schon Level ${cap} (max.)`;
@@ -998,7 +1003,8 @@ class Game {
     for (const nat of Object.values(this.nations)) {
       nat.incomePerDay = BAL.baseIncome;
       nat.leutePerDay = 0;
-      nat.trainCap = 0;      // Ausbildungskapazität der Kasernen (Leute → Soldaten)
+      nat.eisenPerDay = 0;
+      nat.pferdePerDay = 0;
       nat.hexCount = 0;
       nat.staedte = 0;
       nat.popCap = BAL.pop.base;   // Bevölkerungslimit: Basis + Gebäude + Land
@@ -1014,14 +1020,15 @@ class Game {
       if (BAL.pop[h.building]) nat.popCap += BAL.pop[h.building] * (h.building === 'stadt' ? 1 : lvl);
       const y = BAL.yields[h.building];
       if (y) {
-        // Gebäude-Ertrag × Level (Mine: Hügel-Bonus)
-        const gold = (h.building === 'mine' && h.terrain === 'hills') ? y.hillsGold : y.gold;
-        nat.incomePerDay += gold * lvl;
+        // Gebäude-Ertrag × Level (Mine: Hügel-Bonus aufs Eisen)
+        nat.incomePerDay += y.gold * lvl;
         nat.leutePerDay += y.leute * lvl;
+        if (y.eisen) nat.eisenPerDay += ((h.terrain === 'hills' && y.hillsEisen) ? y.hillsEisen : y.eisen) * lvl;
+        if (y.pferde) nat.pferdePerDay += y.pferde * lvl;
       } else if (h.building === 'stadt') {
         nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; nat.staedte++;
       } else if (h.building === 'kaserne') {
-        this._kasernen.push(h); nat.trainCap += BAL.trainPerKaserne * lvl;
+        this._kasernen.push(h);
       } else if (h.building === 'turm') {
         this._tuerme.push(h);
       } else {
@@ -1056,9 +1063,9 @@ class Game {
       const cap = nat.popCap || 999;
       if (nat.leute < cap) nat.leute = Math.min(cap, nat.leute + nat.leutePerDay * dt);
       else nat.leute = Math.max(cap, nat.leute - 0.4 * dt);
-      // Kasernen bilden aus: Leute → Soldaten (begrenzt durch Kapazität & Bevölkerung)
-      const conv = Math.min(nat.trainCap * dt, nat.leute);
-      if (conv > 0) { nat.leute -= conv; nat.soldaten += conv; }
+      // Rohstoffe: Minen fördern Eisen, Farmen züchten Pferde (Lager 999)
+      nat.eisen = Math.min(999, nat.eisen + nat.eisenPerDay * dt);
+      nat.pferde = Math.min(999, nat.pferde + nat.pferdePerDay * dt);
     }
   }
 
@@ -2148,11 +2155,11 @@ class Game {
 
       if (!div.inCombat) {
         div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * sup.mod * div.moral * dt);
-        const pool = t.pool || 'soldaten';   // Verstärkung aus dem passenden Pool
-        if (div.str < BAL.maxStr && sup.level > 0.4 && nat[pool] > 0.5) {
-          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat[pool] / BAL.reinforceMpCost);
+        // Verstärkung rekrutiert immer normale Leute
+        if (div.str < BAL.maxStr && sup.level > 0.4 && nat.leute > 0.5) {
+          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat.leute / BAL.reinforceMpCost);
           div.str += pts;
-          nat[pool] -= pts * BAL.reinforceMpCost;
+          nat.leute -= pts * BAL.reinforceMpCost;
         }
       }
       div.moral += (1.0 - div.moral) * BAL.moralBaselinePull * dt;
@@ -2203,9 +2210,10 @@ class Game {
     // anderen — sonst verzettelt sie sich in billigen Bauten (Oszillation).
     const doerfer = count('dorf'), fischereien = count('fischerei');
     const minen = count('mine'), forstereien = count('forsterei');
+    const farmen = count('farm');
     const kasernen = count('kaserne');
     const leuteGeb = doerfer + fischereien;
-    const goldGeb = minen + forstereien;
+    const goldGeb = forstereien;
     const landN = nat.hexCount || own.length;
     const wantKas = 1 + Math.floor(landN / 45);
     const wantLeute = Math.max(2, kasernen * 2, Math.floor(landN * 0.08));
@@ -2229,14 +2237,18 @@ class Game {
     if (kasernen < wantKas) plan.push(['kaserne', spotNear(14)]);
     // Leute-Mangel (< 20 Tage Ausbildungs-Reserve): Leute-Gebäude zuerst —
     // Fischerei bevorzugt (mehr Leute), sonst Dorf
-    if ((nat.leute < nat.trainCap * 20 || nat.leute > (nat.popCap || 99) * 0.85) && leuteGeb < wantLeute) {
+    if ((nat.leute < 15 || nat.leute > (nat.popCap || 99) * 0.85) && leuteGeb < wantLeute) {
       plan.push(['fischerei', fischSpot]);
       plan.push(['dorf', spotNear(16)]);
     }
     if (goldGeb < wantGold) {
-      plan.push(['forsterei', forestSpot]);   // Wald zuerst: bester Ertrag
-      plan.push(['mine', spotNear(18)]);
+      plan.push(['forsterei', forestSpot]);   // Gold kommt aus dem Wald
+      plan.push(['dorf', spotNear(16)]);
     }
+    // Rüstungsgüter: Minen (🔩 Kanonen) und Farmen (🐎 Kavallerie)
+    if (minen < 1 + Math.floor(landN / 45)) plan.push(['mine', spotNear(18)]);
+    if (farmen < 1 + Math.floor(landN / 55))
+      plan.push(['farm', () => this.findBuildSpot(id, cc, cr, x => x.terrain === 'plains' && !x.building, 20, own)]);
     // Stadt-Ausbau: ab ~40 Provinzen ein Dorf zur Stadt machen (Hub + Auto-Straßen)
     const staedte = count('stadt');
     if (staedte < 1 + Math.floor(landN / 40) && nat.leute > 5)
@@ -2278,8 +2290,9 @@ class Game {
     if (divs.length >= cap) return;
     let type = 'inf';
     const roll = this.rand();
-    if (nat.gold > 500 && roll < 0.25) type = 'kan';
-    else if (nat.gold > 350 && roll < 0.55) type = 'kav';
+    // Elite-Einheiten nur, wenn die Rohstoffe im Lager liegen
+    if (nat.eisen >= BAL.divTypes.kan.eisen && nat.gold > 350 && roll < 0.3) type = 'kan';
+    else if (nat.pferde >= BAL.divTypes.kav.pferde && nat.gold > 250 && roll < 0.6) type = 'kav';
     const tt = BAL.divTypes[type];
     const underAttack = this.day - nat._lastAttackedDay < 12;
     // In Friedenszeiten Wirtschaft vor Masse: erst bauen (Stadt = 270 G),
@@ -2288,7 +2301,8 @@ class Game {
     const buffer = underAttack ? 10 : (divs.length < cap * 0.5 ? 60 : 220);
     const pending = this.training.reduce((n, q) => n + (q.nation === id ? 1 : 0), 0);
     if (pending >= 2) return;   // nicht überbuchen — Nachschub kommt schon
-    if (nat.gold >= tt.gold + buffer && nat[tt.pool || 'soldaten'] >= tt.mp) {
+    if (nat.gold >= tt.gold + buffer && nat.leute >= tt.mp
+      && (!tt.eisen || nat.eisen >= tt.eisen) && (!tt.pferde || nat.pferde >= tt.pferde)) {
       // Kaserne bevorzugt (doppelt so schnell), sonst Hauptstadt
       const site = this._kasernen.find(k => k.owner === id && k.building === 'kaserne')
         || (nat.capital ? this.hexAt(...nat.capital) : null);
@@ -2462,7 +2476,7 @@ class Game {
       fronts: this.fronts.map(f => ({ id: f.id, owner: f.owner, kind: f.kind, target: f.target, path: f.path, push: f.push || null })),
       hexes: this.hexes.flat().map(h => [h.owner, h.building, h.road ? 1 : 0, h.capital ? 1 : 0, Math.round(h.resist), h.building ? (h.level || 1) : 0]),
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
-        alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), soldaten: +n.soldaten.toFixed(2),
+        alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), eisen: +n.eisen.toFixed(1), pferde: +n.pferde.toFixed(1),
         traitorUntil: n.traitorUntil,
         allies: [...n.allies], capital: n.capital, divNameSeq: n.divNameSeq,
         armies: n.armies.map(a => ({ id: a.id, name: a.name, target: a.target, mode: a.mode })),
@@ -2508,9 +2522,11 @@ class Game {
       const n = g.nations[id];
       if (!n) continue;
       n.alive = ns.alive; n.gold = ns.gold;
-      // v3-Spielstände: alter Rekruten-Pool wird auf Leute/Soldaten aufgeteilt
-      n.leute = ns.leute !== undefined ? ns.leute : (ns.manpower !== undefined ? ns.manpower * 0.6 : 20);
-      n.soldaten = ns.soldaten !== undefined ? ns.soldaten : (ns.manpower !== undefined ? ns.manpower * 0.4 : 10);
+      // Alt-Spielstände: Soldaten-Pool wird zu Leuten, Rohstoffe starten mit Grundstock
+      n.leute = ns.leute !== undefined ? ns.leute : 20;
+      if (ns.soldaten) n.leute += ns.soldaten * 0.5;
+      n.eisen = ns.eisen !== undefined ? ns.eisen : 10;
+      n.pferde = ns.pferde !== undefined ? ns.pferde : 8;
       n.traitorUntil = ns.traitorUntil !== undefined ? ns.traitorUntil : -999;
       n.allies = new Set(ns.allies); n.capital = ns.capital; n.divNameSeq = ns.divNameSeq;
       n.armies = ns.armies.map(a => ({ ...a, nation: id, frontHexes: [] }));

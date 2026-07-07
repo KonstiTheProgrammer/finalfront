@@ -346,6 +346,33 @@ function drawBuilding(ctx, h, x, y, detailed) {
       ctx.moveTo(-4.9, -4.2); ctx.lineTo(-3.4, -3.4); ctx.lineTo(-4.6, -2.6);
       ctx.closePath(); ctx.fill();
     }
+  } else if (h.building === 'farm') {
+    // Scheune mit Koppel
+    ctx.fillStyle = '#a3502e'; ctx.strokeStyle = '#3a2118';
+    ctx.fillRect(-5.6, -1.2, 6.4, 4.6); ctx.strokeRect(-5.6, -1.2, 6.4, 4.6);
+    ctx.fillStyle = '#7d3c22';
+    ctx.beginPath();
+    ctx.moveTo(-6.3, -1.2); ctx.lineTo(-2.4, -4.4); ctx.lineTo(1.5, -1.2);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (detailed) {
+      ctx.fillStyle = '#e8dcc0';
+      ctx.fillRect(-3.4, 0.2, 2, 3.2);   // Tor
+      ctx.strokeStyle = '#3a2118'; ctx.lineWidth = 0.6;
+      ctx.strokeRect(-3.4, 0.2, 2, 3.2);
+    }
+    // Koppel-Zaun
+    ctx.strokeStyle = '#8a6f4a'; ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(2.2, 0.6); ctx.lineTo(7.6, 0.6);
+    ctx.moveTo(2.2, 3.4); ctx.lineTo(7.6, 3.4);
+    ctx.moveTo(2.6, 0); ctx.lineTo(2.6, 3.8);
+    ctx.moveTo(4.9, 0); ctx.lineTo(4.9, 3.8);
+    ctx.moveTo(7.2, 0); ctx.lineTo(7.2, 3.8);
+    ctx.stroke();
+    // Pferdekopf-Tupfer
+    ctx.fillStyle = '#5a4632';
+    ctx.beginPath(); ctx.arc(3.8, 1.9, 1.1, 0, 7); ctx.fill();
+    ctx.fillRect(4.4, 0.9, 1.4, 0.8);
   } else if (h.building === 'turm') {
     // Wehrturm: Steinturm mit Zinnen
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
@@ -1899,11 +1926,13 @@ function updateTooltip(sx, sy) {
       html += `<br>${buildingName(h.building)}${lvl > 1 ? ` <b>· Level ${lvl}</b>` : ''}`;
       const y = BAL.yields[h.building];
       const eff = y ? [
-        y.gold ? `+${(((h.building === 'mine' && h.terrain === 'hills') ? y.hillsGold : y.gold) * lvl).toFixed(1)} Gold/Tag` : '',
+        y.gold ? `+${(y.gold * lvl).toFixed(1)} Gold/Tag` : '',
         y.leute ? `+${(y.leute * lvl).toFixed(2)}k Leute/Tag` : '',
+        y.eisen ? `+${(((h.terrain === 'hills' && y.hillsEisen) ? y.hillsEisen : y.eisen) * lvl).toFixed(2)} 🔩 Eisen/Tag` : '',
+        y.pferde ? `+${(y.pferde * lvl).toFixed(2)} 🐎 Pferde/Tag` : '',
       ].filter(Boolean).join(' · ')
         : h.building === 'stadt' ? `+${BAL.incomeStadt} Gold · +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub`
-          : h.building === 'kaserne' ? `bildet ${(BAL.trainPerKaserne * lvl).toFixed(2)}k Leute/Tag zu Soldaten aus`
+          : h.building === 'kaserne' ? 'bildet Truppen doppelt so schnell aus'
             : h.building === 'turm' ? `Miliz umliegender Felder ×${BAL.turm.boost} (Reichweite ${lvl >= 2 ? BAL.turm.range2 : BAL.turm.range})`
               : '';
       if (eff) html += ` <span class="tt-dim">(${eff})</span>`;
@@ -1932,7 +1961,7 @@ function updateTooltip(sx, sy) {
 }
 
 function buildingName(b) {
-  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', forsterei: '🪓 Forsterei', fischerei: '🎣 Fischerei', kaserne: '🎪 Kaserne', turm: '🗼 Wehrturm' }[b] || b;
+  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', farm: '🚜 Farm', forsterei: '🪓 Forsterei', fischerei: '🎣 Fischerei', kaserne: '🎪 Kaserne', turm: '🗼 Wehrturm' }[b] || b;
 }
 
 /* =========================================================
@@ -2061,8 +2090,10 @@ function updateTopbar() {
   const atCap = nat.popCap && nat.leute >= nat.popCap - 0.05;
   document.getElementById('tb-mp').textContent =
     `${nat.leute.toFixed(1)}k/${Math.round(nat.popCap || 0)}k${atCap ? ' ⚠' : ` (+${nat.leutePerDay.toFixed(2)})`}`;
-  document.getElementById('tb-sold').textContent =
-    `${nat.soldaten.toFixed(1)}k (+${Math.min(nat.trainCap, nat.leute > 0.1 ? nat.trainCap : 0).toFixed(2)})`;
+  document.getElementById('tb-eisen').textContent =
+    `${Math.floor(nat.eisen)} (+${nat.eisenPerDay.toFixed(1)})`;
+  document.getElementById('tb-pferde').textContent =
+    `${Math.floor(nat.pferde)} (+${nat.pferdePerDay.toFixed(1)})`;
   document.getElementById('tb-div').textContent = `${game.divisionsOf(game.player).length}`;
   const share = Math.round(nat.hexCount / game.totalLand * 100);
   document.getElementById('tb-prov').textContent = `${nat.hexCount} (${share} %)`;
@@ -2187,17 +2218,18 @@ function panelBauen() {
   // Bauliste: alles, was auf DIESEM Feld geht (Ausbau eingeschlossen)
   const y = BAL.yields;
   const DESCS = {
-    mine: `+${y.mine.gold} G/Tag${h.terrain === 'hills' ? ` (Hügel: +${y.mine.hillsGold})` : ''}`,
+    mine: `+${y.mine.eisen} 🔩 Eisen/Tag${h.terrain === 'hills' ? ` (Hügel: +${y.mine.hillsEisen})` : ''} — für Kanonen`,
+    farm: `+${y.farm.pferde} 🐎 Pferde/Tag — für Kavallerie · +${BAL.pop.farm} Kapazität · nur Ebene`,
     forsterei: `+${y.forsterei.gold} G und +${y.forsterei.leute}k 👥/Tag · +${BAL.pop.forsterei} Kapazität`,
     fischerei: `+${y.fischerei.gold} G und +${y.fischerei.leute}k 👥/Tag · +${BAL.pop.fischerei} Kapazität`,
     dorf: `+${y.dorf.leute}k 👥/Tag · +${BAL.pop.dorf} Kapazität`,
     stadt: `+${BAL.incomeStadt} G · +${BAL.leuteStadt}k 👥/Tag · +${BAL.pop.stadt} Kapazität · Hub · Auto-Straßen`,
     turm: `Miliz umliegender Felder ×${BAL.turm.boost} · Level 2 = doppelte Reichweite`,
-    kaserne: `${BAL.trainPerKaserne}k 👥→🎖️/Tag (× Level) · +${BAL.pop.kaserne} Kapazität · bildet doppelt so schnell aus`,
+    kaserne: `bildet doppelt so schnell aus · +${BAL.pop.kaserne} Kapazität`,
   };
   html += '<h3>Bauen</h3>';
   let any = false;
-  for (const key of ['mine', 'forsterei', 'fischerei', 'dorf', 'stadt', 'turm', 'kaserne']) {
+  for (const key of ['mine', 'farm', 'forsterei', 'fischerei', 'dorf', 'stadt', 'turm', 'kaserne']) {
     const res = game.canBuild(game.player, h, key);
     if (res !== true) continue;
     const up = h.building === key;
@@ -2217,9 +2249,9 @@ function panelBauen() {
     for (const ty of ['inf', 'kav', 'kan']) {
       const t = BAL.divTypes[ty];
       const tage = BAL.trainTime[ty] * (fast ? BAL.kaserneTrainFactor : 1);
-      const poolIcon = t.pool === 'leute' ? '👥' : '🎖️';
+      const extra = (t.pferde ? ` · ${t.pferde} 🐎` : '') + (t.eisen ? ` · ${t.eisen} 🔩` : '');
       html += `<div class="build-row">
-        <button data-trainat="${ty}">${t.name} — ${t.gold} G · ${t.mp}k ${poolIcon} · ${tage} Tage</button>
+        <button data-trainat="${ty}">${t.name} — ${t.gold} G · ${t.mp}k 👥${extra} · ${tage} Tage</button>
         <div class="small">${TYPE_HINT[ty]}</div>
       </div>`;
     }
@@ -2233,9 +2265,9 @@ function panelBauen() {
 }
 
 const TYPE_HINT = {
-  inf: '🛡 hält die Linie · schlägt Kavallerie · erobert schwach · rekrutiert 👥 Leute',
-  kav: '🐎 schnell unterwegs · schlägt Kanonen · erobert ordentlich · braucht 🎖️ Soldaten',
-  kan: '💥 Erobert STARK (2,5×) · schlägt Krieger · langsam · braucht 🎖️ Soldaten',
+  inf: '🛡 hält die Linie · schlägt Kavallerie · erobert schwach',
+  kav: '🐎 schnell unterwegs · schlägt Kanonen · erobert ordentlich · braucht Pferde (Farm)',
+  kan: '💥 Erobert STARK (2,5×) · schlägt Krieger · langsam · braucht Eisen (Mine)',
 };
 
 function panelTruppen() {
@@ -2447,7 +2479,7 @@ function updateUnitbar() {
     <button id="ub-split" title="Teilen — braucht ≥ 40 Stärke (S). Front-Truppen verteilen sich neu auf der Linie">✂ Teilen</button>
     <button id="ub-merge" title="Gleiche Typen vereinen (M)">🔗 Vereinen</button>
     ${anyFront ? '<button id="ub-release" title="Aus der Frontlinie lösen — Truppen werden frei">↩ Front lösen</button>' : ''}
-    <button id="ub-disband" class="danger" title="Ausgewählte Truppen auflösen (50 % der Soldaten zurück)">🗑</button>`;
+    <button id="ub-disband" class="danger" title="Ausgewählte Truppen auflösen (50 % der Leute zurück)">🗑</button>`;
 
   document.getElementById('ub-close').onclick = () => { UI.selectedDivs.clear(); updateUnitbar(); };
   cards.querySelectorAll('.ucard').forEach(el => el.addEventListener('click', e => {
@@ -2487,8 +2519,8 @@ function updateUnitbar() {
 const TUTORIAL_STEPS = [
   { text: 'Deine Armee erobert <b>freies Nachbarland von selbst</b>. Wähle sie (Klick) und schick sie per <b>Rechtsklick</b> an gute Stellen — hol dir 6 Provinzen!',
     done: g => g.nations[g.player].hexCount >= 6 },
-  { text: 'Klicke ein <b>freies Feld in deinem Gebiet</b> an und bau eine <b>🎪 Kaserne</b>. Sie bildet 👥 Leute zu 🎖️ Soldaten aus — und Truppen doppelt so schnell.',
-    ghost: 'kaserne', done: g => g.nations[g.player].trainCap > 0 },
+  { text: 'Klicke ein <b>freies Feld in deinem Gebiet</b> an und bau eine <b>🎪 Kaserne</b> — sie bildet Truppen doppelt so schnell aus.',
+    ghost: 'kaserne', done: g => g.ownedHexes(g.player).some(h => h.building === 'kaserne') },
   { text: 'Bau ein <b>🏠 Dorf</b> (oder eine 🎣 Fischerei am Ufer) — mehr 👥 Leute als Nachschub für deine Kaserne.',
     ghost: 'dorf', done: g => g.nations[g.player].leutePerDay >= 0.42 },
   { text: 'Klicke deine <b>Hauptstadt oder Kaserne</b> an und bilde <b>Krieger</b> aus — sie erscheinen dort nach der Ausbildung. Merke das Dreieck: Krieger &gt; Kavallerie &gt; Kanonen &gt; Krieger!',
@@ -2555,14 +2587,17 @@ function updateTutorial() {
 /* Berater: erklärt Engpässe in dem Moment, in dem sie auftreten */
 const ADVISOR_CHECKS = [
   { key: 'leute', cd: 60000,
-    when: g => { const n = g.nations[g.player]; return n.trainCap > 0 && n.leute < 0.5 && n.soldaten < 15; },
-    msg: '⚠️ Deine Kasernen haben keine 👥 Leute mehr — bau Dörfer oder Städte!' },
-  { key: 'kaserne', cd: 90000,
-    when: g => { const n = g.nations[g.player]; return n.trainCap === 0 && g.day > 40 && n.gold >= BAL.cost.kaserne; },
-    msg: '💡 Ohne 🎪 Kaserne bekommst du keine Soldaten — bau eine (Menü links → 🏗️).' },
+    when: g => { const n = g.nations[g.player]; return n.leute < 5 && n.leutePerDay < 0.3; },
+    msg: '⚠️ Kaum noch 👥 Leute — bau Dörfer, Fischereien oder Städte!' },
+  { key: 'ruestung', cd: 90000,
+    when: g => {
+      const n = g.nations[g.player];
+      return g.day > 50 && n.eisenPerDay === 0 && n.pferdePerDay === 0 && n.gold > 250;
+    },
+    msg: '💡 Ohne ⛏️ Minen (🔩 Kanonen) und 🚜 Farmen (🐎 Kavallerie) bleibt dir nur Infanterie!' },
   { key: 'stau', cd: 90000,
-    when: g => { const n = g.nations[g.player]; return n.soldaten > 30 && n.gold > 300; },
-    msg: '💡 Viele 🎖️ Soldaten warten — klick eine Stadt oder Kaserne an und bilde Truppen aus!' },
+    when: g => { const n = g.nations[g.player]; return n.leute > (n.popCap || 99) * 0.9 && n.gold > 300 && g.divisionsOf(g.player).length < 6; },
+    msg: '💡 Volle Kassen und volles Volk — klick eine Stadt oder Kaserne an und bilde Truppen aus!' },
   { key: 'popcap', cd: 90000,
     when: g => { const n = g.nations[g.player]; return n.popCap > 0 && n.leute >= n.popCap * 0.97 && n.leutePerDay > 0.05; },
     msg: '⚠️ Bevölkerungslimit erreicht — Dörfer, Städte und Fischereien erhöhen die Kapazität (👥 oben zeigt x/Limit)!' },

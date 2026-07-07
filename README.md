@@ -100,14 +100,16 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
 - **Allianzen:** Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Angebot; die Gegenseite
   muss annehmen. Angebote an dich erscheinen als Banner. Max. 2 Allianzen.
 - Verliert eine Nation ihre Hauptstadt, verlegt sie sie — ist das Reich zu klein, geht es unter.
-- **Wirtschaft — 4 Gebäude mit klaren Rollen und Ausbau-Leveln:** ⛏️ **Mine** = Gold (überall,
-  Hügel-Bonus) · 🪓 **Forsterei** = viel Gold + etwas Leute (nur Wald) · 🎣 **Fischerei** =
-  etwas Gold + viele Leute (Küstenwasser neben eigenem Land) · 🏠 **Dorf** = nur Leute.
+- **Wirtschaft — Gebäude mit klaren Rollen und Ausbau-Leveln:** ⛏️ **Mine** = 🔩 Eisen für
+  Kanonen (überall, Hügel-Bonus) · 🚜 **Farm** = 🐎 Pferde für Kavallerie (nur Ebene) ·
+  🪓 **Forsterei** = Gold + etwas Leute (nur Wald) · 🎣 **Fischerei** = Gold + viele Leute
+  (Küstenwasser neben eigenem Land) · 🏠 **Dorf** = nur Leute.
   Gleiches Gebäude nochmal bauen = **Level 2/3** (Kosten & Ertrag skalieren). Unbebautes Land
   arbeitet passiv mit (viel schwächer). **👥 Bevölkerungslimit:** das Reich versorgt nur
   begrenzt viele Leute (Basis 20 · +0,2 je Landfeld · Stadt +25 · Dorf +10, Fischerei +8,
-  Forsterei +4, Kaserne +5, je × Level) — am Limit stoppt das Wachstum. **🛡 Krieger
-  rekrutieren normale Leute**; nur Kavallerie/Kanonen brauchen Kasernen-Soldaten. 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +
+  Farm +6, Forsterei +4, Kaserne +5, je × Level) — am Limit stoppt das Wachstum. **ALLE
+  Truppen rekrutieren 👥 Leute** — Kavallerie kostet zusätzlich 🐎 Pferde (Farmen),
+  Kanonen 🔩 Eisen (Minen). Kasernen bilden doppelt so schnell aus. 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +
   Versorgungs-Hub, und **Straßen zu nahen Städten wachsen automatisch** (schnellere Truppen).
   🗼 **Wehrturm**: Miliz umliegender Felder ×1,5, Ausbau = doppelte Reichweite — fällt er,
   wirkt er für den Eroberer. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue

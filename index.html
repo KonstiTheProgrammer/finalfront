@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=28">
+  <link rel="stylesheet" href="style.css?v=29">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -14,7 +14,8 @@
     <div class="tb-group" id="tb-nation"></div>
     <div class="tb-group" title="Gold (Einkommen/Tag)">🪙 <span id="tb-gold">0</span></div>
     <div class="tb-group" title="Leute / Bevölkerungslimit — Dörfer, Städte, Fischereien u. a. erhöhen die Kapazität; Krieger rekrutieren Leute">👥 <span id="tb-mp">0</span></div>
-    <div class="tb-group" title="Soldaten (Zuwachs/Tag) — Kasernen wandeln Leute in Soldaten um; Truppen bildest du in Städten/Kasernen aus">🎖️ <span id="tb-sold">0</span></div>
+    <div class="tb-group" title="Eisen (Förderung/Tag) — aus ⛏️ Minen; Kanonen kosten Eisen">🔩 <span id="tb-eisen">0</span></div>
+    <div class="tb-group" title="Pferde (Zucht/Tag) — aus 🚜 Farmen; Kavallerie kostet Pferde">🐎 <span id="tb-pferde">0</span></div>
     <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
     <div class="tb-group" title="Gehaltene Hauptstädte — 3 starten den Sieg-Countdown!">🏛️ <span id="tb-vp">1/3</span></div>
     <div class="tb-group" title="Provinzen (Anteil Europas)">🗺️ <span id="tb-prov">0</span></div>
@@ -170,14 +171,14 @@
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
         <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab. <b>Verrat:</b> Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen angreift, ist 60 Tage <b>🐍 Verräter</b> — kein Handel, keine neuen Bündnisse, bevorzugtes Ziel aller.</li>
         <li><b>Bauen:</b> Klicke ein <b>eigenes Feld</b> an — links erscheint die Liste, was genau dort gebaut werden kann (inkl. Ausbau-Level). 🎣 Fischerei: freies Küstenwasser neben deinem Land anklicken. Straßen lassen sich über den Modus-Button weiterhin <b>ziehen</b>.</li>
-        <li><b>Wirtschaft — 4 Gebäude mit klaren Rollen:</b> ⛏️ <b>Mine</b> = Gold (überall, Hügel-Bonus) · 🪓 <b>Forsterei</b> = viel Gold + etwas Leute (nur Wald) · 🎣 <b>Fischerei</b> = etwas Gold + viele Leute (Küstenwasser neben deinem Land) · 🏠 <b>Dorf</b> = nur Leute. Dazu: 🎪 <b>Kasernen bilden Leute zu 🎖️ Soldaten aus</b> (Divisionen kosten Gold + Soldaten) · 🛣️ Straßen = Bewegung + Versorgung.</li>
+        <li><b>Wirtschaft — klare Rollen:</b> ⛏️ <b>Mine</b> = 🔩 Eisen für Kanonen (überall, Hügel-Bonus) · 🚜 <b>Farm</b> = 🐎 Pferde für Kavallerie (nur Ebene) · 🪓 <b>Forsterei</b> = Gold + etwas Leute (Wald) · 🎣 <b>Fischerei</b> = Gold + viele Leute (Küstenwasser) · 🏠 <b>Dorf</b> = Leute · 🏙️ Stadt = Gold + Leute + Hub. 🎪 <b>Kaserne bildet doppelt so schnell aus</b> · 🛣️ Straßen = Bewegung + Versorgung.</li>
         <li><b>Ausbau-Level:</b> Gleiches Gebäude nochmal aufs Feld bauen = <b>Level 2/3</b> (goldene Punkte am Gebäude) — kostet das 2-/3-fache, bringt das Doppelte/Dreifache. Auch Kasernen sind ausbaubar.</li>
         <li><b>🏙️ Stadt (Dorf-Ausbau):</b> Ein Dorf lässt sich zur Stadt ausbauen — Gold + Leute + Versorgungs-Hub, und <b>Straßen zu nahen Städten wachsen automatisch</b> (schnellere Truppen, Brücken über Flüsse).</li>
         <li><b>🗼 Wehrturm:</b> Verstärkt die <b>Miliz aller umliegenden eigenen Felder ×1,5</b> — dein Land fällt langsamer. Ausbau (Level 2) = <b>doppelte Reichweite</b>. Fällt der Turm, wirkt er für den Eroberer!</li>
         <li><b>Passives Land:</b> Unbebautes eigenes Land arbeitet mit — Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute. Gebäude sind um ein Vielfaches stärker.</li>
         <li><b>📚 Armee-Stapel:</b> Mehrere Armeen können auf einem Feld stehen (z. B. nach dem Teilen) — der Stapel zeigt oben rechts seine Anzahl. Klick aufs Feld wählt alle; in der Einheiten-Leiste unten wählst du sie einzeln an.</li>
         <li><b>Gefechtsprognose:</b> Über laufenden Kämpfen und beim Zeigen auf eine feindliche Armee (mit eigener Auswahl) erscheint die <b>HOI-Bubble</b>: Grün = du gewinnst, Gelb = knapp, Rot = Finger weg. RPS-Dreieck, Gelände, Fluss, Organisation und Kessel sind eingerechnet.</li>
-        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b>. <b>🛡 Krieger rekrutieren normale 👥 Leute</b> — nur 🐎 Kavallerie und 💥 Kanonen brauchen ausgebildete 🎖️ Soldaten aus Kasernen.</li>
+        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b>. <b>ALLE Truppen rekrutieren 👥 Leute</b> — Kavallerie braucht zusätzlich 🐎 Pferde (Farmen), Kanonen 🔩 Eisen (Minen).</li>
         <li><b>👥 Bevölkerungslimit:</b> Dein Reich versorgt nur begrenzt viele Leute (oben: <b>x/Limit</b>). Kapazität geben: Basis 20 · jedes Landfeld +0,2 · 🏙️ Stadt +25 · 🏠 Dorf +10, 🎣 Fischerei +8, 🪓 Forsterei +4, 🎪 Kaserne +5 (je × Level). Am Limit stoppt das Wachstum!</li>
         <li><b>Truppendreieck (EU4-Stil):</b> 🛡 <b>Krieger</b> halten die Linie und schlagen Kavallerie · 🐎 <b>Kavallerie</b> ist schnell und schlägt Kanonen · 💥 <b>Kanonen</b> belagern (2,5× gegen Miliz) und schlagen Krieger — aber langsam und fragil.</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
@@ -189,11 +190,11 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=28"></script>
-  <script src="js/map.js?v=28"></script>
-  <script src="js/game.js?v=28"></script>
-  <script src="js/ui.js?v=28"></script>
-  <script src="js/net.js?v=28"></script>
-  <script src="js/main.js?v=28"></script>
+  <script src="js/mapdata.js?v=29"></script>
+  <script src="js/map.js?v=29"></script>
+  <script src="js/game.js?v=29"></script>
+  <script src="js/ui.js?v=29"></script>
+  <script src="js/net.js?v=29"></script>
+  <script src="js/main.js?v=29"></script>
 </body>
 </html>
