@@ -123,6 +123,8 @@ function fitZoom() {
 }
 
 function fitView() {
+  // Versteckter/eingeklappter Tab meldet 0×0 — damit nicht rechnen
+  if (window.innerWidth < 100 || window.innerHeight < 100) return;
   UI.zoomAnim = null;
   UI.cam.zoom = fitZoom();
   UI.cam.x = WORLD_W / 2 - (window.innerWidth + leftUIW()) / 2 / UI.cam.zoom;
@@ -766,6 +768,11 @@ function render() {
     UI.cam.y = w.y - za.ay / UI.cam.zoom;
     if (UI.cam.zoom === za.target) UI.zoomAnim = null;
   }
+
+  // Selbstheilung: hat ein versteckter Tab die Kamera verstellt (Zoom unter
+  // dem erlaubten Minimum), bei sichtbarem Viewport neu einpassen
+  if (window.innerWidth > 100 && window.innerHeight > 100
+    && UI.cam.zoom < Math.min(0.3, fitZoom() * 0.9) - 0.005) fitView();
 
   const { zoom } = UI.cam;
   camClamp();
@@ -2051,14 +2058,15 @@ function updateTopbar() {
   const inc = nat.incomePerDay * (nat.econMult || 1);
   document.getElementById('tb-gold').textContent =
     `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
+  const atCap = nat.popCap && nat.leute >= nat.popCap - 0.05;
   document.getElementById('tb-mp').textContent =
-    `${nat.leute.toFixed(1)}k (+${nat.leutePerDay.toFixed(2)})`;
+    `${nat.leute.toFixed(1)}k/${Math.round(nat.popCap || 0)}k${atCap ? ' ⚠' : ` (+${nat.leutePerDay.toFixed(2)})`}`;
   document.getElementById('tb-sold').textContent =
     `${nat.soldaten.toFixed(1)}k (+${Math.min(nat.trainCap, nat.leute > 0.1 ? nat.trainCap : 0).toFixed(2)})`;
   document.getElementById('tb-div').textContent = `${game.divisionsOf(game.player).length}`;
   const share = Math.round(nat.hexCount / game.totalLand * 100);
   document.getElementById('tb-prov').textContent = `${nat.hexCount} (${share} %)`;
-  document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${BAL.round.vpToWin}`;
+  document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${game.vpNeed || BAL.round.vpToWin}`;
   document.getElementById('tb-day').textContent = dateStr(game.day);
   document.getElementById('tb-round').textContent = `noch ${Math.max(0, BAL.round.days - game.day)} T.`;
 
@@ -2180,12 +2188,12 @@ function panelBauen() {
   const y = BAL.yields;
   const DESCS = {
     mine: `+${y.mine.gold} G/Tag${h.terrain === 'hills' ? ` (Hügel: +${y.mine.hillsGold})` : ''}`,
-    forsterei: `+${y.forsterei.gold} G und +${y.forsterei.leute}k 👥/Tag`,
-    fischerei: `+${y.fischerei.gold} G und +${y.fischerei.leute}k 👥/Tag`,
-    dorf: `+${y.dorf.leute}k 👥/Tag`,
-    stadt: `+${BAL.incomeStadt} G · +${BAL.leuteStadt}k 👥/Tag · Hub · Auto-Straßen zu Nachbarstädten`,
+    forsterei: `+${y.forsterei.gold} G und +${y.forsterei.leute}k 👥/Tag · +${BAL.pop.forsterei} Kapazität`,
+    fischerei: `+${y.fischerei.gold} G und +${y.fischerei.leute}k 👥/Tag · +${BAL.pop.fischerei} Kapazität`,
+    dorf: `+${y.dorf.leute}k 👥/Tag · +${BAL.pop.dorf} Kapazität`,
+    stadt: `+${BAL.incomeStadt} G · +${BAL.leuteStadt}k 👥/Tag · +${BAL.pop.stadt} Kapazität · Hub · Auto-Straßen`,
     turm: `Miliz umliegender Felder ×${BAL.turm.boost} · Level 2 = doppelte Reichweite`,
-    kaserne: `${BAL.trainPerKaserne}k 👥→🎖️/Tag (× Level) · bildet doppelt so schnell aus`,
+    kaserne: `${BAL.trainPerKaserne}k 👥→🎖️/Tag (× Level) · +${BAL.pop.kaserne} Kapazität · bildet doppelt so schnell aus`,
   };
   html += '<h3>Bauen</h3>';
   let any = false;
@@ -2209,8 +2217,9 @@ function panelBauen() {
     for (const ty of ['inf', 'kav', 'kan']) {
       const t = BAL.divTypes[ty];
       const tage = BAL.trainTime[ty] * (fast ? BAL.kaserneTrainFactor : 1);
+      const poolIcon = t.pool === 'leute' ? '👥' : '🎖️';
       html += `<div class="build-row">
-        <button data-trainat="${ty}">${t.name} — ${t.gold} G · ${t.mp}k 🎖️ · ${tage} Tage</button>
+        <button data-trainat="${ty}">${t.name} — ${t.gold} G · ${t.mp}k ${poolIcon} · ${tage} Tage</button>
         <div class="small">${TYPE_HINT[ty]}</div>
       </div>`;
     }
@@ -2224,9 +2233,9 @@ function panelBauen() {
 }
 
 const TYPE_HINT = {
-  inf: '🛡 hält die Linie · schlägt Kavallerie · erobert schwach',
-  kav: '🐎 schnell unterwegs · schlägt Kanonen · erobert ordentlich',
-  kan: '💥 Erobert STARK (2,5×) · schlägt Krieger · langsam unterwegs',
+  inf: '🛡 hält die Linie · schlägt Kavallerie · erobert schwach · rekrutiert 👥 Leute',
+  kav: '🐎 schnell unterwegs · schlägt Kanonen · erobert ordentlich · braucht 🎖️ Soldaten',
+  kan: '💥 Erobert STARK (2,5×) · schlägt Krieger · langsam · braucht 🎖️ Soldaten',
 };
 
 function panelTruppen() {
@@ -2554,6 +2563,9 @@ const ADVISOR_CHECKS = [
   { key: 'stau', cd: 90000,
     when: g => { const n = g.nations[g.player]; return n.soldaten > 30 && n.gold > 300; },
     msg: '💡 Viele 🎖️ Soldaten warten — klick eine Stadt oder Kaserne an und bilde Truppen aus!' },
+  { key: 'popcap', cd: 90000,
+    when: g => { const n = g.nations[g.player]; return n.popCap > 0 && n.leute >= n.popCap * 0.97 && n.leutePerDay > 0.05; },
+    msg: '⚠️ Bevölkerungslimit erreicht — Dörfer, Städte und Fischereien erhöhen die Kapazität (👥 oben zeigt x/Limit)!' },
   { key: 'supply', cd: 90000,
     when: g => g.divisionsOf(g.player).some(d => g.supplyModOf(d).level < 0.2),
     msg: '⚠️ Divisionen ohne Nachschub verlieren Stärke — Straßen, Städte und Kasernen versorgen.' },
@@ -2629,8 +2641,8 @@ function showStartScreen() {
       let land = 0;
       for (const row of m.rows) for (const ch of row) if (ch !== '.') land++;
       return `<button class="nation-card map-card ${UI.selectedMap === id ? 'sel' : ''}" data-map="${id}">
-        <b>🗺️ ${m.name}</b>
-        <span class="small">${m.w}×${m.h} · ${land} Provinzen</span>
+        <b>${id === 'duell' ? '⚔️' : '🗺️'} ${m.name}</b>
+        <span class="small">${m.w}×${m.h} · ${land} Provinzen${id === 'duell' ? ' · nur 2 Spieler, gespiegelt fair' : ''}</span>
       </button>`;
     }).join('');
     mapGrid.querySelectorAll('.map-card').forEach(b =>
@@ -2655,7 +2667,9 @@ function showStartScreen() {
 }
 
 function startGame(nationId) {
-  window.game = new Game(nationId, undefined, UI.selectedMap);
+  const slots = UI.selectedMap === 'duell' ? 2 : 5;
+  if (slots === 2 && nationId !== 'A' && nationId !== 'B') nationId = 'A';
+  window.game = new Game(nationId, undefined, UI.selectedMap, undefined, slots);
   rebuildLayers();
   lastLogLen = 0;
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;

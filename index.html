@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=27">
+  <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -13,7 +13,7 @@
   <div id="topbar">
     <div class="tb-group" id="tb-nation"></div>
     <div class="tb-group" title="Gold (Einkommen/Tag)">🪙 <span id="tb-gold">0</span></div>
-    <div class="tb-group" title="Leute (Zuwachs/Tag) — kommen aus Dörfern, Fischereien und Forstereien">👥 <span id="tb-mp">0</span></div>
+    <div class="tb-group" title="Leute / Bevölkerungslimit — Dörfer, Städte, Fischereien u. a. erhöhen die Kapazität; Krieger rekrutieren Leute">👥 <span id="tb-mp">0</span></div>
     <div class="tb-group" title="Soldaten (Zuwachs/Tag) — Kasernen wandeln Leute in Soldaten um; Truppen bildest du in Städten/Kasernen aus">🎖️ <span id="tb-sold">0</span></div>
     <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
     <div class="tb-group" title="Gehaltene Hauptstädte — 3 starten den Sieg-Countdown!">🏛️ <span id="tb-vp">1/3</span></div>
@@ -106,7 +106,8 @@
       <h1>FINAL FRONT</h1>
       <p class="subtitle">Europa in Flammen — Echtzeit-Strategie</p>
       <div id="mp-block">
-        <button id="btn-mp" class="wide continue">🌐 MULTIPLAYER — gegen echte Spieler</button>
+        <button id="btn-mp" class="wide continue">🌐 MULTIPLAYER — 5-Spieler-Runde</button>
+        <button id="btn-mp-duel" class="wide continue">⚔️ MULTIPLAYER — 1v1-Duell (faire Mini-Karte)</button>
         <div id="mp-status" class="small">🌐 Multiplayer: suche Server …</div>
         <div class="small" style="margin-top:6px"><label>Dein Name: <input id="mp-name" maxlength="20"></label></div>
       </div>
@@ -163,7 +164,7 @@
         <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
         <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt samt Umland (7 Felder) und einer Armee Krieger</b> — für alle exakt gleich.</li>
         <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien: Wer AUF einem Flussfeld steht, ist deutlich schwerer anzugreifen, und Flussfelder leisten der Eroberung länger Widerstand. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
-        <li><b>🌐 Multiplayer:</b> Auf dem Startbildschirm <b>MULTIPLAYER</b> wählen — du landest in der Lobby. Bei <b>5 Spielern</b> (oder wenn alle bereit sind; Rest wird KI) startet die Runde, die <b>Karte rotiert</b> von Runde zu Runde. Feste Geschwindigkeit, kein Pause/Speichern — alle spielen dieselbe Simulation. <b>Enter = Chat.</b> Nach der Runde: „Zurück zur Lobby" — die nächste Karte wartet.</li>
+        <li><b>🌐 Multiplayer:</b> Zwei Warteschlangen — die <b>5-Spieler-Runde</b> (Karte rotiert: Europa → Mitteleuropa → Westeuropa) und das <b>⚔️ 1v1-Duell</b> auf der spiegelsymmetrisch fairen Duell-Insel (startet bei 2 Spielern; Sieg schon mit 2 Hauptstädten oder 80 %). Bei voller Lobby (oder wenn alle bereit sind; Rest wird KI) startet die Runde. Feste Geschwindigkeit, kein Pause/Speichern — alle spielen dieselbe Simulation. <b>Enter = Chat.</b> Nach der Runde: „Zurück zur Lobby" — die nächste Karte wartet.</li>
         <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Wer <b>80 % der Karte</b> kontrolliert, gewinnt sofort (Dominanz). Nach <b>600 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 360: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
         <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>40 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
@@ -176,10 +177,11 @@
         <li><b>Passives Land:</b> Unbebautes eigenes Land arbeitet mit — Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute. Gebäude sind um ein Vielfaches stärker.</li>
         <li><b>📚 Armee-Stapel:</b> Mehrere Armeen können auf einem Feld stehen (z. B. nach dem Teilen) — der Stapel zeigt oben rechts seine Anzahl. Klick aufs Feld wählt alle; in der Einheiten-Leiste unten wählst du sie einzeln an.</li>
         <li><b>Gefechtsprognose:</b> Über laufenden Kämpfen und beim Zeigen auf eine feindliche Armee (mit eigener Auswahl) erscheint die <b>HOI-Bubble</b>: Grün = du gewinnst, Gelb = knapp, Rot = Finger weg. RPS-Dreieck, Gelände, Fluss, Organisation und Kessel sind eingerechnet.</li>
-        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b> (goldener Fortschrittsring auf der Karte).</li>
+        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b>. <b>🛡 Krieger rekrutieren normale 👥 Leute</b> — nur 🐎 Kavallerie und 💥 Kanonen brauchen ausgebildete 🎖️ Soldaten aus Kasernen.</li>
+        <li><b>👥 Bevölkerungslimit:</b> Dein Reich versorgt nur begrenzt viele Leute (oben: <b>x/Limit</b>). Kapazität geben: Basis 20 · jedes Landfeld +0,2 · 🏙️ Stadt +25 · 🏠 Dorf +10, 🎣 Fischerei +8, 🪓 Forsterei +4, 🎪 Kaserne +5 (je × Level). Am Limit stoppt das Wachstum!</li>
         <li><b>Truppendreieck (EU4-Stil):</b> 🛡 <b>Krieger</b> halten die Linie und schlagen Kavallerie · 🐎 <b>Kavallerie</b> ist schnell und schlägt Kanonen · 💥 <b>Kanonen</b> belagern (2,5× gegen Miliz) und schlagen Krieger — aber langsam und fragil.</li>
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
-        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation umschlossen sind, fallen ihr kampflos zu.</li>
+        <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation <b>eingezäunt</b> sind, fallen ihr kampflos zu — aber nur ohne Meerzugang: ein abgeschnittener Küstenzipfel zählt NICHT als umzingelt.</li>
         <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
         <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · <b>B</b> Frontlinie ziehen · S/M teilen/vereinen · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
       </ul>
@@ -187,11 +189,11 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=27"></script>
-  <script src="js/map.js?v=27"></script>
-  <script src="js/game.js?v=27"></script>
-  <script src="js/ui.js?v=27"></script>
-  <script src="js/net.js?v=27"></script>
-  <script src="js/main.js?v=27"></script>
+  <script src="js/mapdata.js?v=28"></script>
+  <script src="js/map.js?v=28"></script>
+  <script src="js/game.js?v=28"></script>
+  <script src="js/ui.js?v=28"></script>
+  <script src="js/net.js?v=28"></script>
+  <script src="js/main.js?v=28"></script>
 </body>
 </html>

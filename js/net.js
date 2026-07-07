@@ -54,7 +54,8 @@ async function netFindServer() {
 
 function netStatusText(info) {
   if (!info) return '🌐 Multiplayer: Server offline';
-  return `🌐 Multiplayer: online — Lobby ${info.lobby.players}/${info.lobby.needed} · Karte: ${info.lobby.map}`;
+  const duel = info.duel ? ` · ⚔️ Duell ${info.duel.players}/${info.duel.needed}` : '';
+  return `🌐 online — FFA ${info.lobby.players}/${info.lobby.needed} (${info.lobby.map})${duel}`;
 }
 
 /* Startbildschirm: Status anzeigen (wird beim Öffnen geprüft) */
@@ -67,9 +68,13 @@ async function netProbeForStartScreen() {
   el.textContent = netStatusText(found && found.info);
   const btn = document.getElementById('btn-mp');
   if (btn) btn.disabled = !found;
+  const btn2 = document.getElementById('btn-mp-duel');
+  if (btn2) btn2.disabled = !found;
 }
 
-function netJoin() {
+function netJoin(mode) {
+  if (mode === 'ffa' || mode === 'duel') NET.mode = mode;
+  if (!NET.mode) NET.mode = 'ffa';
   if (NET.ws) { try { NET.ws.close(); } catch (e) {} NET.ws = null; }
   const found = NET._found;
   if (!found) { pushToast('🌐 Kein Multiplayer-Server erreichbar — spiel solange Solo!'); return; }
@@ -79,7 +84,7 @@ function netJoin() {
   NET.ws = ws;
   ws.onopen = () => {
     ws.send(JSON.stringify({ t: 'hello', name: netPlayerName() }));
-    ws.send(JSON.stringify({ t: 'join' }));
+    ws.send(JSON.stringify({ t: 'join', mode: NET.mode }));
     clearInterval(NET._pinger);
     NET._pinger = setInterval(() => {
       if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'ping', ts: performance.now() }));
@@ -246,8 +251,9 @@ function netRenderLobby() {
   if (!l) return;
   netShowLobby();
   netDrawMapPreview(l.mapId);
+  const title = l.mode === 'duel' ? '⚔️ 1v1-DUELL' : '🌍 5-SPIELER-RUNDE';
   document.getElementById('mp-lobby-map').innerHTML =
-    `🗺️ Karte dieser Runde: <b>${l.mapName || l.mapId}</b> · Runde startet bei <b>${l.needed} Spielern</b> oder wenn alle bereit sind`
+    `<b>${title}</b> — Karte: <b>${l.mapName || l.mapId}</b> · startet bei <b>${l.needed} Spielern</b> oder wenn alle bereit sind`
     + (l.rounds ? `<br><span class="small">${l.rounds} Runde(n) laufen gerade</span>` : '');
   const me = l.players.find(p => p.nation === NET.you);
   document.getElementById('mp-lobby-list').innerHTML = l.players.map(p => `
@@ -270,7 +276,7 @@ function netStartGame(msg) {
   NET.nextTick = 0;
   document.getElementById('mp-lobby').classList.add('hidden');
 
-  window.game = new Game(msg.you, msg.seed, msg.mapId, msg.humans);
+  window.game = new Game(msg.you, msg.seed, msg.mapId, msg.humans, msg.slots || 5);
   game._net = NET;
   NET.names = msg.names || null;
   game._names = NET.names;
@@ -320,7 +326,7 @@ function netBackToLobby() {
   if (NET.ws && NET.ws.readyState === 1) {
     NET.state = 'lobby';
     netShowLobby('Betrete die nächste Lobby …');
-    NET.ws.send(JSON.stringify({ t: 'join' }));
+    NET.ws.send(JSON.stringify({ t: 'join', mode: NET.mode || 'ffa' }));
   } else {
     netProbeThenJoin();
   }
@@ -343,7 +349,9 @@ NET.sendCmd = function (cmd, args) {
 /* ---------- Verkabelung (Startbildschirm & Lobby-Buttons) ---------- */
 window.addEventListener('DOMContentLoaded', () => {
   const btnMp = document.getElementById('btn-mp');
-  if (btnMp) btnMp.addEventListener('click', () => netJoin());
+  if (btnMp) btnMp.addEventListener('click', () => netJoin('ffa'));
+  const btnDuel = document.getElementById('btn-mp-duel');
+  if (btnDuel) btnDuel.addEventListener('click', () => netJoin('duel'));
   const btnReady = document.getElementById('mp-ready');
   if (btnReady) btnReady.addEventListener('click', () => {
     if (NET.ws && NET.state === 'lobby')

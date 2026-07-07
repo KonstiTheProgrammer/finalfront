@@ -17,33 +17,42 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 8571;
 const STEP_MS = +process.env.STEP_MS || 125;   // 8 Ticks/s = 2 Spieltage/s — feste MP-Geschwindigkeit
 const SLOTS = ['A', 'B', 'C', 'D', 'E'];
-const PLAYERS_TO_START = 5;          // volle Lobby startet sofort …
-const MAPS = ['europa', 'mitteleuropa', 'westeuropa'];   // Map-Rotation
-const MAP_NAMES = { europa: 'Europa', mitteleuropa: 'Mitteleuropa', westeuropa: 'Westeuropa' };
+const MAPS = ['europa', 'mitteleuropa', 'westeuropa'];   // Map-Rotation (5-Spieler-Runden)
+const MAP_NAMES = { europa: 'Europa', mitteleuropa: 'Mitteleuropa', westeuropa: 'Westeuropa', duell: 'Duell-Insel' };
 const SPAWN_SECONDS = +process.env.SPAWN_SECONDS || 20;   // Startplatz-Wahl
 const MAX_TICKS = 4000;              // Sicherheitsnetz: ~16 min, Runde ist längst vorbei
+
+// Zwei Warteschlangen: klassisches 5-Spieler-FFA und 1v1-Duell auf der fairen Mini-Karte
+const QUEUES = {
+  ffa:  { needed: 5, slots: 5 },
+  duel: { needed: 2, slots: 2 },
+};
 
 let mapIdx = 0;
 let roundSeq = 1;
 
-/* ---------- Lobby ---------- */
-let lobby = null;
-function newLobby() {
-  lobby = {
-    mapId: MAPS[mapIdx % MAPS.length],
+/* ---------- Lobbys (eine je Modus) ---------- */
+const lobbies = {};
+function newLobby(mode) {
+  lobbies[mode] = {
+    mode,
+    mapId: mode === 'duel' ? 'duell' : MAPS[mapIdx % MAPS.length],
     players: new Map(),   // ws -> {nation, name, ready}
   };
 }
-newLobby();
+newLobby('ffa');
+newLobby('duel');
 
 const rounds = new Set();   // laufende Runden
 
-function lobbyState() {
+function lobbyState(mode) {
+  const lobby = lobbies[mode];
   return {
     t: 'lobby',
+    mode,
     mapId: lobby.mapId,
     mapName: MAP_NAMES[lobby.mapId] || lobby.mapId,
-    needed: PLAYERS_TO_START,
+    needed: QUEUES[mode].needed,
     players: [...lobby.players.values()].map(p => ({ nation: p.nation, name: p.name, ready: p.ready })),
     rounds: rounds.size,
   };
@@ -53,19 +62,21 @@ function send(ws, msg) {
   if (ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
-function broadcastLobby() {
-  for (const [ws, p] of lobby.players) send(ws, { ...lobbyState(), you: p.nation });
+function broadcastLobby(mode) {
+  for (const [ws, p] of lobbies[mode].players) send(ws, { ...lobbyState(mode), you: p.nation });
 }
 
-function freeSlot() {
-  const taken = new Set([...lobby.players.values()].map(p => p.nation));
-  return SLOTS.find(s => !taken.has(s)) || null;
+function freeSlot(mode) {
+  const taken = new Set([...lobbies[mode].players.values()].map(p => p.nation));
+  return SLOTS.slice(0, QUEUES[mode].slots).find(s => !taken.has(s)) || null;
 }
 
 /* ---------- Runde ---------- */
-function startRound() {
+function startRound(mode) {
+  const lobby = lobbies[mode];
   const round = {
     id: roundSeq++,
+    mode,
     mapId: lobby.mapId,
     seed: (Math.random() * 0x7fffffff) | 0,
     players: new Map(lobby.players),   // ws -> {nation, name}
@@ -79,15 +90,17 @@ function startRound() {
   const humans = [...round.players.values()].map(p => p.nation);
   const names = {};
   for (const p of round.players.values()) names[p.nation] = p.name;
-  console.log(`[Runde ${round.id}] Start: ${round.mapId}, Seed ${round.seed}, Spieler: ${humans.join(',')}`);
+  console.log(`[Runde ${round.id}] Start (${mode}): ${round.mapId}, Seed ${round.seed}, Spieler: ${humans.join(',')}`);
 
   for (const [ws, p] of round.players) {
     ws._round = round;
-    ws._lobby = false;
+    ws._lobby = null;
     send(ws, {
       t: 'start',
+      mode,
       seed: round.seed,
       mapId: round.mapId,
+      slots: QUEUES[mode].slots,
       humans,
       names,
       you: p.nation,
@@ -96,9 +109,9 @@ function startRound() {
     });
   }
 
-  // Map-Rotation: die NÄCHSTE Lobby bekommt die nächste Karte
-  mapIdx++;
-  newLobby();
+  // Map-Rotation (nur FFA): die NÄCHSTE Lobby bekommt die nächste Karte
+  if (mode === 'ffa') mapIdx++;
+  newLobby(mode);
 
   round.interval = setInterval(() => stepRound(round), STEP_MS);
 }
@@ -161,7 +174,8 @@ const server = http.createServer((req, res) => {
   });
   res.end(JSON.stringify({
     ok: true, game: 'finalfront',
-    lobby: { map: lobby.mapId, players: lobby.players.size, needed: PLAYERS_TO_START },
+    lobby: { map: lobbies.ffa.mapId, players: lobbies.ffa.players.size, needed: QUEUES.ffa.needed },
+    duel: { map: 'duell', players: lobbies.duel.players.size, needed: QUEUES.duel.needed },
     rounds: rounds.size,
   }));
 });
@@ -171,7 +185,7 @@ const wss = new WebSocketServer({ server });
 wss.on('connection', ws => {
   ws._name = 'Spieler';
   ws._round = null;
-  ws._lobby = false;
+  ws._lobby = null;   // Modus-String, wenn in einer Lobby
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
 
@@ -182,27 +196,29 @@ wss.on('connection', ws => {
 
     if (msg.t === 'hello') {
       ws._name = String(msg.name || 'Spieler').slice(0, 20) || 'Spieler';
-      send(ws, { t: 'hi', ...lobbyState() });
+      send(ws, { t: 'hi', ...lobbyState('ffa') });
 
     } else if (msg.t === 'join') {
       if (ws._round || ws._lobby) return;
-      const slot = freeSlot();
+      const mode = msg.mode === 'duel' ? 'duel' : 'ffa';
+      const slot = freeSlot(mode);
       if (!slot) { send(ws, { t: 'err', msg: 'Lobby voll — gleich startet die Runde, versuch es danach.' }); return; }
-      ws._lobby = true;
-      lobby.players.set(ws, { nation: slot, name: ws._name, ready: false });
-      broadcastLobby();
-      if (lobby.players.size >= PLAYERS_TO_START) startRound();
+      ws._lobby = mode;
+      lobbies[mode].players.set(ws, { nation: slot, name: ws._name, ready: false });
+      broadcastLobby(mode);
+      if (lobbies[mode].players.size >= QUEUES[mode].needed) startRound(mode);
 
     } else if (msg.t === 'ready') {
-      if (ws._lobby && lobby.players.has(ws)) {
-        lobby.players.get(ws).ready = !!msg.v;
-        const all = lobby.players.size >= 1 && [...lobby.players.values()].every(p => p.ready);
-        if (all) startRound();
-        else broadcastLobby();
+      const mode = ws._lobby;
+      if (mode && lobbies[mode].players.has(ws)) {
+        lobbies[mode].players.get(ws).ready = !!msg.v;
+        const all = lobbies[mode].players.size >= 1 && [...lobbies[mode].players.values()].every(p => p.ready);
+        if (all) startRound(mode);
+        else broadcastLobby(mode);
       }
 
     } else if (msg.t === 'leave') {
-      if (ws._lobby) { lobby.players.delete(ws); ws._lobby = false; broadcastLobby(); }
+      if (ws._lobby) { const m = ws._lobby; lobbies[m].players.delete(ws); ws._lobby = null; broadcastLobby(m); }
       leaveRound(ws);
 
     } else if (msg.t === 'ping') {
@@ -215,10 +231,10 @@ wss.on('connection', ws => {
       ws._lastChat = now;
       const text = String(msg.msg || '').slice(0, 160).trim();
       if (!text) return;
-      const sender = ws._round ? ws._round.players.get(ws) : lobby.players.get(ws);
+      const sender = ws._round ? ws._round.players.get(ws) : (ws._lobby ? lobbies[ws._lobby].players.get(ws) : null);
       const out = { t: 'chat', name: ws._name, n: sender ? sender.nation : null, msg: text };
       if (ws._round) broadcast(ws._round, out);
-      else if (ws._lobby) for (const w2 of lobby.players.keys()) send(w2, out);
+      else if (ws._lobby) for (const w2 of lobbies[ws._lobby].players.keys()) send(w2, out);
 
     } else if (msg.t === 'cmd') {
       const round = ws._round;
@@ -237,7 +253,7 @@ wss.on('connection', ws => {
   });
 
   ws.on('close', () => {
-    if (ws._lobby) { lobby.players.delete(ws); ws._lobby = false; broadcastLobby(); }
+    if (ws._lobby) { const m = ws._lobby; lobbies[m].players.delete(ws); ws._lobby = null; broadcastLobby(m); }
     leaveRound(ws);
   });
 });

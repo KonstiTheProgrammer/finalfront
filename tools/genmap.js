@@ -436,6 +436,9 @@ async function buildOneMap(cfg, landGeo, lakesGeo, riversGeo) {
   for (const cfg of MAPS) {
     maps[cfg.id] = await buildOneMap(cfg, land, lakes, rivers);
   }
+  // Synthetische 1v1-Karte (spiegelsymmetrisch, kein Netz nötig)
+  const duel = require('./genduel').buildDuel();
+  maps[duel.id] = { name: duel.map.name, w: duel.map.w, h: duel.map.h, rows: duel.map.rows, rivers: duel.map.rivers };
 
   const entries = Object.entries(maps).map(([id, m]) => `  ${id}: {
     name: ${JSON.stringify(m.name)},

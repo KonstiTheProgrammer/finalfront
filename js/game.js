@@ -20,6 +20,13 @@ const BAL = {
   // Städte/Hauptstadt bilden aus, Kasernen doppelt so schnell.
   trainTime: { inf: 6, kav: 8, kan: 10 },   // Tage an einer Stadt
   kaserneTrainFactor: 0.5,                  // Kaserne: halbe Zeit
+  // Bevölkerungs-Kapazität: das Reich versorgt nur begrenzt viele Leute.
+  // Gebäude (× Level) und Landfläche erhöhen das Limit.
+  pop: {
+    base: 20,
+    perHex: 0.2,
+    stadt: 25, dorf: 10, fischerei: 8, forsterei: 4, kaserne: 5,
+  },
   // Vier Wirtschaftsgebäude — jedes hat eine klare Rolle, Level 1–3
   // (gleiches Gebäude nochmal bauen = Ausbau, Ertrag skaliert mit dem Level):
   //   Mine (überall):        Gold             · Hügel-Bonus
@@ -52,10 +59,12 @@ const BAL = {
   //   Krieger normal schnell unterwegs, aber SCHWACH im Erobern
   //   Kavallerie flott unterwegs, mittelmäßig im Erobern
   //   Kanonen STARK im Erobern, aber langsam unterwegs
+  // pool: Krieger rekrutieren normale 👥 Leute — nur Kavallerie und
+  // Kanonen brauchen ausgebildete 🎖️ Soldaten (aus Kasernen)
   divTypes: {
-    inf: { name: 'Krieger',    gold: 60,  mp: 10, upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', gold: 120, mp: 8,  upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    gold: 170, mp: 6,  upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    gold: 60,  mp: 10, pool: 'leute',    upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', gold: 120, mp: 8,  pool: 'soldaten', upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    gold: 170, mp: 6,  pool: 'soldaten', upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -70,7 +79,7 @@ const BAL = {
   strDmg: 0.22,
   militiaResist: 35,
   militiaResistStadt: 60,
-  militiaResistHauptstadt: 90,
+  militiaResistHauptstadt: 78,
   militiaResistNeutral: 20,
   neutralDmgBonus: 1.35,
   neutralCounter: 0.5,
@@ -135,12 +144,13 @@ function dateStr(day) {
 
 /* ---------- Spielzustand ---------- */
 class Game {
-  constructor(playerNationId, seed, mapId, humans) {
+  constructor(playerNationId, seed, mapId, humans, slots) {
     // Karte festlegen (setzt MAP_W/H & Weltgröße), dann bauen
     this.mapId = selectMap(mapId !== undefined ? mapId : CURRENT_MAP_ID);
     // Multiplayer: Liste der menschlichen Nationen (alle Clients identisch!)
     this._humans = Array.isArray(humans) && humans.length ? humans : null;
     this._net = null;                  // gesetzt von der Netz-Schicht (js/net.js)
+    this._slots = Math.max(2, Math.min(5, slots || 5));   // 1v1-Duell: 2
     // Geseedeter Zufall (mulberry32) mit serialisierbarem Zustand:
     // gleiche Saat + gleiche Kommandos = identischer Spielverlauf.
     this.seed = (seed === undefined ? (Date.now() & 0x7fffffff) : seed) >>> 0;
@@ -195,7 +205,7 @@ class Game {
       }
     }
 
-    for (const [id, def] of Object.entries(NATION_DEFS)) this.initNation(id, def);
+    for (const [id, def] of Object.entries(NATION_DEFS).slice(0, this._slots)) this.initNation(id, def);
 
     // Siegpunkt-Hauptstädte: die 15 Original-Hauptstädte bleiben dauerhaft
     // markiert — wer BAL.round.vpToWin davon hält, startet den Sieg-Countdown.
@@ -209,6 +219,8 @@ class Game {
       this.vpHexes.push({ id, c: h.c, r: h.r, name: h.cityName });
     }
     this.vpRecount();
+    // Sieg-Bedarf skaliert mit der Spielerzahl (1v1: beide Hauptstädte)
+    this.vpNeed = Math.min(BAL.round.vpToWin, Math.max(2, this.vpHexes.length));
 
     this.recalcEconomy();
     this.recalcAllSupply();
@@ -490,14 +502,18 @@ class Game {
   /* Zufälliger Startplatz — Bots streuen sich, hart ist der Abstand aber nicht */
   pickSpawnSpot() {
     const taken = Object.values(this.nations).map(n => n.capital).filter(Boolean);
+    // 1v1: gespiegelte Startseiten — Spieler 1 West, Spieler 2 Ost (fair)
+    const duelSide = this._slots === 2 ? taken.length : -1;
     const base = Math.max(6, Math.floor(Math.min(MAP_W, MAP_H) / 5));
     for (let minDist = base; minDist >= 3; minDist -= 3) {
       for (let tries = 0; tries < 300; tries++) {
         const c = Math.floor(this.rand() * MAP_W), r = Math.floor(this.rand() * MAP_H);
         const h = this.hexAt(c, r);
         if (!h || h.terrain === 'water' || h.terrain === 'mountain' || h.owner) continue;
+        if (duelSide === 0 && c > MAP_W * 0.38) continue;
+        if (duelSide === 1 && c < MAP_W * 0.62) continue;
         if (taken.some(([tc, tr]) => hexDist(c, r, tc, tr) < minDist)) continue;
-        if (this.landNearby(c, r, 3) < 14) continue;   // keine Mini-Inseln/Zipfel
+        if (this.landNearby(c, r, 3) < Math.min(14, Math.floor(MAP_W * MAP_H * 0.012))) continue;
         return h;
       }
     }
@@ -699,10 +715,13 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return 'Unbekannter Typ';
     const nat = this.nations[nation];
+    const pool = t.pool || 'soldaten';
     if (nat.gold < t.gold) return `Zu wenig Gold (${t.gold})`;
-    if (nat.soldaten < t.mp) return `Zu wenig Soldaten (${t.mp}k)`;
+    if (nat[pool] < t.mp) return pool === 'leute'
+      ? `Zu wenig 👥 Leute (${t.mp}k) — Dörfer/Städte/Fischereien!`
+      : `Zu wenig 🎖️ Soldaten (${t.mp}k) — Kasernen bilden aus`;
     nat.gold -= t.gold;
-    nat.soldaten -= t.mp;
+    nat[pool] -= t.mp;
     const dauer = BAL.trainTime[type] * (h.building === 'kaserne' ? BAL.kaserneTrainFactor : 1);
     // hinter dem letzten Auftrag DIESES Standorts anstellen
     let start = this.dayFloat;
@@ -784,7 +803,8 @@ class Game {
   disbandDivision(div) {
     div.dead = true;
     this._hasDead = true;
-    this.nations[div.nation].soldaten += (div.str / 100) * BAL.divTypes[div.type].mp * 0.5;
+    const t = BAL.divTypes[div.type];
+    this.nations[div.nation][t.pool || 'soldaten'] += (div.str / 100) * t.mp * 0.5;
     this.economyDirty = true;
   }
 
@@ -981,6 +1001,7 @@ class Game {
       nat.trainCap = 0;      // Ausbildungskapazität der Kasernen (Leute → Soldaten)
       nat.hexCount = 0;
       nat.staedte = 0;
+      nat.popCap = BAL.pop.base;   // Bevölkerungslimit: Basis + Gebäude + Land
     }
     this._kasernen = [];
     this._tuerme = [];
@@ -988,8 +1009,9 @@ class Game {
       if (!h.owner) continue;
       const nat = this.nations[h.owner];
       if (!nat) continue;
-      if (h.terrain !== 'water') nat.hexCount++;   // Fischerei-Wasser zählt nicht als Provinz
+      if (h.terrain !== 'water') { nat.hexCount++; nat.popCap += BAL.pop.perHex; }
       const lvl = h.level || 1;
+      if (BAL.pop[h.building]) nat.popCap += BAL.pop[h.building] * (h.building === 'stadt' ? 1 : lvl);
       const y = BAL.yields[h.building];
       if (y) {
         // Gebäude-Ertrag × Level (Mine: Hügel-Bonus)
@@ -1030,7 +1052,10 @@ class Game {
       mult = 1 + (mult - 1) * (1 - lf);
       nat.econMult = nat.incomePerDay > 0 ? mult : 1;
       nat.gold = Math.max(0, nat.gold + nat.incomePerDay * nat.econMult * dt);
-      nat.leute += nat.leutePerDay * dt;
+      // Bevölkerungslimit: Wachstum stoppt am Cap, Überschuss baut sich ab
+      const cap = nat.popCap || 999;
+      if (nat.leute < cap) nat.leute = Math.min(cap, nat.leute + nat.leutePerDay * dt);
+      else nat.leute = Math.max(cap, nat.leute - 0.4 * dt);
       // Kasernen bilden aus: Leute → Soldaten (begrenzt durch Kapazität & Bevölkerung)
       const conv = Math.min(nat.trainCap * dt, nat.leute);
       if (conv > 0) { nat.leute -= conv; nat.soldaten += conv; }
@@ -1709,7 +1734,7 @@ class Game {
         * ((BAL.rps[def.type] && BAL.rps[def.type][atk.type]) || 1);
       // Endphase: Angreifer schlagen härter durch — Stellungskriege lösen sich,
       // Hauptstädte fallen, die Runde findet ihren Sieger
-      const lateAtk = 1 + 0.5 * this.lateFactor();
+      const lateAtk = 1 + 0.8 * this.lateFactor();
       const dh = this.hexAt(def.c, def.r);
       const pocketDmg = dh && dh._pocket ? 1.45 : 1;   // im Kessel: leicht zu vernichten
       def.org -= power * BAL.atkBase * BAL.orgDmg * lateAtk * pocketDmg * dt;
@@ -1974,6 +1999,7 @@ class Game {
       const bound = new Set();      // Land-Besitzer rund um das Gebiet
       const inside = new Set();     // Nationen mit Divisionen im Gebiet
       let blocked = false;
+      let seaAccess = false;        // Meerzugang = NICHT eingezäunt (nur echte Farb-Zäune zählen)
       for (let i = 0; i < comp.length; i++) {
         const h = comp[i];
         if (h.capital || h.vp) blocked = true;
@@ -1981,7 +2007,8 @@ class Game {
         if (dn) for (const n of dn) inside.add(n);
         for (const [nc, nr] of neighborsOf(h.c, h.r)) {
           const nh = this.hexAt(nc, nr);
-          if (!nh || nh.terrain === 'water') continue;
+          if (!nh) continue;
+          if (nh.terrain === 'water') { seaAccess = true; continue; }
           if (nh.owner === owner) {
             const nk = nc + nr * MAP_W;
             if (!seen.has(nk)) { seen.add(nk); comp.push(nh); }
@@ -1990,7 +2017,7 @@ class Game {
           }
         }
       }
-      if (blocked || comp.length > 12 || bound.size !== 1) continue;
+      if (blocked || seaAccess || comp.length > 12 || bound.size !== 1) continue;
       const N = [...bound][0];
       if (N === '~' || !this.nations[N] || !this.nations[N].alive) continue;
       if (owner && (this.day < BAL.graceDays || !this.hostile(N, owner))) continue;
@@ -2037,7 +2064,7 @@ class Game {
   vpDaily() {
     if (this.over) return;
     this.vpRecount();
-    const need = BAL.round.vpToWin;
+    const need = this.vpNeed || BAL.round.vpToWin;
     const alive = Object.keys(this.nations).filter(id => this.nations[id].alive);
 
     // Letzter Überlebender gewinnt sofort
@@ -2121,10 +2148,11 @@ class Game {
 
       if (!div.inCombat) {
         div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * sup.mod * div.moral * dt);
-        if (div.str < BAL.maxStr && sup.level > 0.4 && nat.soldaten > 0.5) {
-          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat.soldaten / BAL.reinforceMpCost);
+        const pool = t.pool || 'soldaten';   // Verstärkung aus dem passenden Pool
+        if (div.str < BAL.maxStr && sup.level > 0.4 && nat[pool] > 0.5) {
+          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat[pool] / BAL.reinforceMpCost);
           div.str += pts;
-          nat.soldaten -= pts * BAL.reinforceMpCost;
+          nat[pool] -= pts * BAL.reinforceMpCost;
         }
       }
       div.moral += (1.0 - div.moral) * BAL.moralBaselinePull * dt;
@@ -2201,7 +2229,7 @@ class Game {
     if (kasernen < wantKas) plan.push(['kaserne', spotNear(14)]);
     // Leute-Mangel (< 20 Tage Ausbildungs-Reserve): Leute-Gebäude zuerst —
     // Fischerei bevorzugt (mehr Leute), sonst Dorf
-    if (nat.leute < nat.trainCap * 20 && leuteGeb < wantLeute) {
+    if ((nat.leute < nat.trainCap * 20 || nat.leute > (nat.popCap || 99) * 0.85) && leuteGeb < wantLeute) {
       plan.push(['fischerei', fischSpot]);
       plan.push(['dorf', spotNear(16)]);
     }
@@ -2260,7 +2288,7 @@ class Game {
     const buffer = underAttack ? 10 : (divs.length < cap * 0.5 ? 60 : 220);
     const pending = this.training.reduce((n, q) => n + (q.nation === id ? 1 : 0), 0);
     if (pending >= 2) return;   // nicht überbuchen — Nachschub kommt schon
-    if (nat.gold >= tt.gold + buffer && nat.soldaten >= tt.mp) {
+    if (nat.gold >= tt.gold + buffer && nat[tt.pool || 'soldaten'] >= tt.mp) {
       // Kaserne bevorzugt (doppelt so schnell), sonst Hauptstadt
       const site = this._kasernen.find(k => k.owner === id && k.building === 'kaserne')
         || (nat.capital ? this.hexAt(...nat.capital) : null);
@@ -2422,7 +2450,7 @@ class Game {
   /* ---------- Speichern / Laden ---------- */
   serialize() {
     return JSON.stringify({
-      v: 5, mapId: this.mapId, day: this.day, dayFloat: this.dayFloat, player: this.player,
+      v: 5, mapId: this.mapId, slots: this._slots, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
@@ -2454,7 +2482,7 @@ class Game {
     const mapDef = GENMAPS[s.mapId || 'europa'];
     if (!mapDef || s.hexes.length !== mapDef.w * mapDef.h) return null;
     if (!NATION_DEFS[s.player]) return null;
-    const g = new Game(s.player, s.seed !== undefined ? s.seed : 1, s.mapId || 'europa');
+    const g = new Game(s.player, s.seed !== undefined ? s.seed : 1, s.mapId || 'europa', undefined, s.slots || 5);
     g.divisions = [];
     g.day = s.day; g.dayFloat = s.dayFloat;
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
@@ -2528,12 +2556,12 @@ class Game {
   /* ---------- Replay ---------- */
   getReplay() {
     if (!this._replayCapable) return null;
-    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, humans: this._humans || undefined, cmds: this.cmdLog };
+    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, humans: this._humans || undefined, slots: this._slots, cmds: this.cmdLog };
   }
 
   static fromReplay(rep) {
     if (!rep || rep.seed === undefined || !NATION_DEFS[rep.player]) return null;
-    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa', rep.humans);
+    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa', rep.humans, rep.slots || 5);
     g._replayCmds = (rep.cmds || []).slice();
     g._replayIdx = 0;
     g.cmdLog = g._replayCmds;

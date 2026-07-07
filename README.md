@@ -19,11 +19,12 @@ python -m http.server 4173
 
 ## 🌐 Multiplayer (echte Spieler)
 
-Auf dem Startbildschirm **MULTIPLAYER** wählen — du landest in der Lobby. Die Runde startet
-bei **5 Spielern** oder sobald **alle Anwesenden bereit** sind (freie Plätze übernehmen Bots).
-Nach jedem Rundenstart **rotiert die Karte** (Europa → Mitteleuropa → Westeuropa) für die
-nächste Lobby. Feste Geschwindigkeit (2 Tage/s), kein Pausieren/Speichern. Bei
-Verbindungsabbruch übernimmt die KI die Nation.
+Zwei Warteschlangen auf dem Startbildschirm: die **5-Spieler-Runde** (Karte rotiert:
+Europa → Mitteleuropa → Westeuropa) und das **⚔️ 1v1-Duell** auf der spiegelsymmetrisch
+fairen **Duell-Insel** (startet bei 2 Spielern, gespiegelte Startseiten, Sieg mit 2
+Hauptstädten oder 80 %). Runden starten bei voller Lobby oder sobald **alle Anwesenden
+bereit** sind (freie Plätze übernehmen Bots). Feste Geschwindigkeit (2 Tage/s), kein
+Pausieren/Speichern. Bei Verbindungsabbruch übernimmt die KI die Nation. **Enter = Chat.**
 
 **Technik (100 % gratis):** deterministischer **Lockstep** — der Server
 (`server/mpserver.js`, Node + ws) simuliert nichts, er stempelt Kommandos mit der Nation des
@@ -41,7 +42,8 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
 ## Spielprinzip (5-Spieler-Match, War-of-Dots-Stil)
 
 - **5 Spieler, wählbare Karten:** Vor dem Match wählst du die Karte — **Europa (48×54)**,
-  **Mitteleuropa (32×36)** oder **Westeuropa (34×40)**; weitere lassen sich in
+  **Mitteleuropa (32×36)**, **Westeuropa (34×40)** oder die **⚔️ Duell-Insel (20×22, nur
+  2 Spieler, spiegelsymmetrisch — `tools/genduel.js`)**; weitere lassen sich in
   `tools/genmap.js` mit einem Fenster + Größe definieren. In der **Startphase (15 s)**
   wählst du deinen Spawn frei per Klick — alle sehen einander, Umziehen ist erlaubt,
   **kein Mindestabstand**: direkt neben dem Gegner spawnen ist eine legitime Strategie.
@@ -76,7 +78,8 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
 - **⚔ Kessel (HOI-Stil):** Vom Nachschub abgeschnittene Gebietsteile werden rot markiert;
   eingeschlossene Divisionen kämpfen mit halber Kraft und nehmen +45 % Schaden. **🔒 Umzingelt
   = verloren:** kleine Gebiete (≤ 12 Felder, ohne Hauptstadt/Verteidiger), die komplett von
-  EINER Nation umschlossen sind, fallen ihr kampflos zu.
+  EINER Nation **eingezäunt** sind, fallen ihr kampflos zu — nur ohne Meerzugang: ein
+  abgeschnittener Küstenzipfel zählt nicht als umzingelt.
 - **🐍 Verräter-System:** Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen
   angreift, ist 60 Tage öffentlich geächtet — kein Handel, keine Bündnisse, Freiwild.
 - **Easy Entry:** Das erste Match führt mit 5 kontextuellen Aufgaben durch Eroberung und
@@ -101,7 +104,10 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
   Hügel-Bonus) · 🪓 **Forsterei** = viel Gold + etwas Leute (nur Wald) · 🎣 **Fischerei** =
   etwas Gold + viele Leute (Küstenwasser neben eigenem Land) · 🏠 **Dorf** = nur Leute.
   Gleiches Gebäude nochmal bauen = **Level 2/3** (Kosten & Ertrag skalieren). Unbebautes Land
-  arbeitet passiv mit (viel schwächer). 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +
+  arbeitet passiv mit (viel schwächer). **👥 Bevölkerungslimit:** das Reich versorgt nur
+  begrenzt viele Leute (Basis 20 · +0,2 je Landfeld · Stadt +25 · Dorf +10, Fischerei +8,
+  Forsterei +4, Kaserne +5, je × Level) — am Limit stoppt das Wachstum. **🛡 Krieger
+  rekrutieren normale Leute**; nur Kavallerie/Kanonen brauchen Kasernen-Soldaten. 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +
   Versorgungs-Hub, und **Straßen zu nahen Städten wachsen automatisch** (schnellere Truppen).
   🗼 **Wehrturm**: Miliz umliegender Felder ×1,5, Ausbau = doppelte Reichweite — fällt er,
   wirkt er für den Eroberer. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
