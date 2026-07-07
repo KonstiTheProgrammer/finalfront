@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=29">
+  <link rel="stylesheet" href="style.css?v=30">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -22,6 +22,9 @@
     <div class="tb-spacer"></div>
     <div class="tb-group">
       <button id="btn-supply" title="Versorgungs-Overlay (V)">🚚</button>
+      <button id="hud-log" title="Ereignis-Log ein/aus">📜</button>
+      <button id="hud-rank" title="Rangliste ein/aus">🏆</button>
+      <button id="hud-mini" title="Minimap ein/aus">🗺️</button>
       <button id="btn-save" title="Speichern">💾</button>
       <button id="btn-load" title="Laden">📂</button>
       <button id="btn-restart" title="Neues Spiel">🔄</button>
@@ -184,17 +187,20 @@
         <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
         <li><b>Organisation (gelb):</b> sinkt im Kampf, bei 0 Rückzug. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation <b>eingezäunt</b> sind, fallen ihr kampflos zu — aber nur ohne Meerzugang: ein abgeschnittener Küstenzipfel zählt NICHT als umzingelt.</li>
         <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
+        <li><b>Weniger HUD:</b> Oben rechts lassen sich 📜 Ereignis-Log (standardmäßig aus), 🏆 Rangliste und 🗺️ Minimap einzeln ein-/ausblenden — Wichtiges kommt weiterhin als kurze Einblendung.</li>
+        <li><b>💰 Unterhalt:</b> Jede Division kostet Gold pro Tag (Krieger 0,4 · Kavallerie 1,0 · Kanonen 1,5). Ist die <b>Kasse leer und das Einkommen negativ, verlieren alle Truppen Moral</b> — Truppen auflösen oder Wirtschaft bauen!</li>
+        <li><b>🌊 Über See:</b> Truppen können Wasser überqueren (deutlich langsamer, Angriff von See um 50 % geschwächt) — Wasserfelder selbst lassen sich nicht erobern, Truppen auf See nicht angreifen.</li>
         <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · <b>B</b> Frontlinie ziehen · S/M teilen/vereinen · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
       </ul>
       <p class="small hint">(Klick neben das Fenster zum Schließen)</p>
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=29"></script>
-  <script src="js/map.js?v=29"></script>
-  <script src="js/game.js?v=29"></script>
-  <script src="js/ui.js?v=29"></script>
-  <script src="js/net.js?v=29"></script>
-  <script src="js/main.js?v=29"></script>
+  <script src="js/mapdata.js?v=30"></script>
+  <script src="js/map.js?v=30"></script>
+  <script src="js/game.js?v=30"></script>
+  <script src="js/ui.js?v=30"></script>
+  <script src="js/net.js?v=30"></script>
+  <script src="js/main.js?v=30"></script>
 </body>
 </html>

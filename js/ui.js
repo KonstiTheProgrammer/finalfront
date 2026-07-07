@@ -36,6 +36,24 @@ const UI = {
 
 const NEUTRAL_COLOR = '#a8aba4';
 
+/* ---------- HUD-Sichtbarkeit: alles Unwichtige ist ausblendbar ----------
+   Ereignis-Log ist standardmäßig AUS — wichtige Dinge kommen als Toast. */
+UI.hud = (() => {
+  try { return Object.assign({ log: false, rank: true, mini: true }, JSON.parse(localStorage.getItem('finalfront_hud') || '{}')); }
+  catch (e) { return { log: false, rank: true, mini: true }; }
+})();
+
+function applyHud() {
+  document.getElementById('log').classList.toggle('hidden', !UI.hud.log);
+  document.getElementById('ranking').classList.toggle('hidden', !UI.hud.rank);
+  document.getElementById('minimap').classList.toggle('hidden', !UI.hud.mini);
+  for (const [k, id] of [['log', 'hud-log'], ['rank', 'hud-rank'], ['mini', 'hud-mini']]) {
+    const b = document.getElementById(id);
+    if (b) b.classList.toggle('active', !!UI.hud[k]);
+  }
+  try { localStorage.setItem('finalfront_hud', JSON.stringify(UI.hud)); } catch (e) { /* egal */ }
+}
+
 /* ---------- Farb-Helfer ---------- */
 function shade(hex, f) {
   const n = parseInt(hex.slice(1), 16);
@@ -92,6 +110,7 @@ function uiInit() {
   bindInput();
   bindPanels();
   bindMinimap();
+  applyHud();
 }
 
 function resizeCanvas() {
@@ -1409,6 +1428,7 @@ function drawArrow(ctx, x1, y1, x2, y2, color) {
 
 /* ---------- Minimap ---------- */
 function drawMinimap() {
+  if (!UI.hud.mini) return;
   const m = UI.minimap;
   const mctx = m.getContext('2d');
   mctx.drawImage(UI.minimapBase, 0, 0);
@@ -1941,7 +1961,7 @@ function updateTooltip(sx, sy) {
     }
     if (h.road) html += ' · 🛣️';
     const tq = game.training.filter(q => q.c === h.c && q.r === h.r);
-    if (tq.length) html += `<br><span class="tt-dim">🎖️ in Ausbildung: ${tq.map(q =>
+    if (tq.length) html += `<br><span class="tt-dim">🪖 in Ausbildung: ${tq.map(q =>
       `${BAL.divTypes[q.type].name} (${Math.max(0, q.ready - game.dayFloat).toFixed(0)} T.)`).join(', ')}</span>`;
     if (h.terrain !== 'water')
       html += `<br><span class="tt-dim">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
@@ -2026,6 +2046,10 @@ function bindPanels() {
     UI.supplyOverlay = !UI.supplyOverlay;
     updateTopbar();
   });
+  for (const [k, id] of [['log', 'hud-log'], ['rank', 'hud-rank'], ['mini', 'hud-mini']]) {
+    const b = document.getElementById(id);
+    if (b) b.addEventListener('click', () => { UI.hud[k] = !UI.hud[k]; applyHud(); });
+  }
   document.getElementById('btn-save').addEventListener('click', () => {
     if (game && game._net) { pushToast('🌐 Multiplayer — kein Speichern, die Runde zählt!'); return; }
     try {
@@ -2085,8 +2109,9 @@ function updateTopbar() {
     + (game.isTraitor(game.player)
       ? ` <span title="Verräter! Noch ${game.nations[game.player].traitorUntil - game.day} Tage geächtet: kein Handel, keine Bündnisse.">🐍</span>` : '');
   const inc = nat.incomePerDay * (nat.econMult || 1);
-  document.getElementById('tb-gold').textContent =
-    `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
+  const goldEl = document.getElementById('tb-gold');
+  goldEl.textContent = `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
+  goldEl.parentElement.classList.toggle('broke', !!nat._broke);
   const atCap = nat.popCap && nat.leute >= nat.popCap - 0.05;
   document.getElementById('tb-mp').textContent =
     `${nat.leute.toFixed(1)}k/${Math.round(nat.popCap || 0)}k${atCap ? ' ⚠' : ` (+${nat.leutePerDay.toFixed(2)})`}`;
@@ -2170,6 +2195,7 @@ function rankRowHtml(place, id) {
 function renderRanking() {
   const el = document.getElementById('ranking');
   if (!game || game.over) { el.innerHTML = ''; return; }
+  if (!UI.hud.rank) return;
   const ids = rankedNations();
   let html = `<div class="rank-head">🏆 RANGLISTE — 🏛️ Hauptstädte · Provinzen</div>`;
   ids.forEach((id, i) => {
@@ -2244,7 +2270,7 @@ function panelBauen() {
   // Ausbildung an Städten/Hauptstadt/Kasernen
   if (game.isTrainSite(h, game.player)) {
     const fast = h.building === 'kaserne';
-    html += `<hr><h3>🎖️ Ausbilden${fast ? ' — Kaserne: doppelt so schnell!' : ''}</h3>
+    html += `<hr><h3>Ausbilden${fast ? ' — Kaserne: doppelt so schnell!' : ''}</h3>
       <p class="small">Die Truppe erscheint nach der Ausbildung <b>auf diesem Feld</b>.</p>`;
     for (const ty of ['inf', 'kav', 'kan']) {
       const t = BAL.divTypes[ty];
@@ -2276,7 +2302,7 @@ function panelTruppen() {
   let html = `<p class="hint small"><b>Rechtsklick</b> = Marsch · Truppen erobern freies Nachbarland von selbst ·
     <b>Strg+Klick auf eine Grenze</b> = Frontlinie gegen den Nachbarn · <b>B</b> = eigene Linie ziehen ·
     <b>S/M</b> = teilen/vereinen.</p>
-    <h3>🎖️ Ausbilden</h3>
+    <h3>Ausbilden</h3>
     <p class="hint small">Klicke eine <b>🏙️ Stadt, deine Hauptstadt oder eine 🎪 Kaserne</b> an —
     dort bildest du Truppen aus. <b>Kasernen sind doppelt so schnell.</b>
     Die Truppe erscheint nach der Ausbildung am Standort.${game.training.some(q => q.nation === game.player)
@@ -2373,7 +2399,7 @@ function bindPanelActions(el) {
     if (!UI.selectedHex) return;
     const ty = b.dataset.trainat;
     const res = game.issue('trainAt', UI.selectedHex.c, UI.selectedHex.r, ty);
-    if (res === true || res === 'sent') pushToast(`🎖️ ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
+    if (res === true || res === 'sent') pushToast(`🪖 ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
     else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
     refreshPanel(); updateTopbar();
     if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
@@ -2589,6 +2615,9 @@ const ADVISOR_CHECKS = [
   { key: 'leute', cd: 60000,
     when: g => { const n = g.nations[g.player]; return n.leute < 5 && n.leutePerDay < 0.3; },
     msg: '⚠️ Kaum noch 👥 Leute — bau Dörfer, Fischereien oder Städte!' },
+  { key: 'pleite', cd: 60000,
+    when: g => !!g.nations[g.player]._broke,
+    msg: '💸 PLEITE! Truppen verlieren Moral — löse Truppen auf (🗑) oder bau Gold-Gebäude (Forsterei/Stadt).' },
   { key: 'ruestung', cd: 90000,
     when: g => {
       const n = g.nations[g.player];
@@ -2652,7 +2681,7 @@ function finishSpawnPhase() {
 /* ---------- Ereignis-Log ---------- */
 let lastLogLen = 0;
 function updateLog() {
-  if (!game) return;
+  if (!game || !UI.hud.log) return;
   if (game.log.length === lastLogLen) return;
   lastLogLen = game.log.length;
   const el = document.getElementById('log');

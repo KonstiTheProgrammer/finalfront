@@ -542,3 +542,7 @@ button.peace:hover { background: #26512e; }
   border: 1px solid rgba(255,255,255,0.14); image-rendering: pixelated;
 }
 .rank-who { font-weight: 400; font-size: 11px; color: #b8c4d4; }
+
+/* Pleite: Gold-Anzeige schlägt Alarm */
+.tb-group.broke { outline: 1px solid rgba(255, 80, 60, 0.8); border-radius: 5px; }
+.tb-group.broke, .tb-group.broke * { color: #ff7a64 !important; }

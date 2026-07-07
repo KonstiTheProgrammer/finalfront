@@ -65,11 +65,12 @@ const BAL = {
   //   Kavallerie braucht 🐎 Pferde (Farmen) · Kanonen brauchen 🔩 Eisen (Minen)
   divTypes: {
     inf: { name: 'Krieger',    gold: 60,  mp: 10,                upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', gold: 100, mp: 8,  pferde: 8,     upkeep: 0.9, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    gold: 130, mp: 6,  eisen: 10,     upkeep: 1.3, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    kav: { name: 'Kavallerie', gold: 100, mp: 8,  pferde: 8,     upkeep: 1.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    gold: 130, mp: 6,  eisen: 10,     upkeep: 1.5, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
+  brokeMoralDrain: 0.08,   // Staatskasse leer + Minus: Moralverlust/Tag
   reinforceRate: 3.0,
   reinforceMpCost: 0.1,
   orgRegen: 7.0,
@@ -1059,6 +1060,11 @@ class Game {
       mult = 1 + (mult - 1) * (1 - lf);
       nat.econMult = nat.incomePerDay > 0 ? mult : 1;
       nat.gold = Math.max(0, nat.gold + nat.incomePerDay * nat.econMult * dt);
+      // Pleite: Kasse leer UND laufendes Minus — der Sold bleibt aus
+      const brokeNow = nat.gold <= 0.01 && nat.incomePerDay < 0;
+      if (brokeNow && !nat._broke && nat.id === this.player)
+        this.addLog('💸 Staatskasse leer — der Sold bleibt aus, deine Truppen verlieren Moral! (Truppen auflösen oder Wirtschaft bauen)', true);
+      nat._broke = brokeNow;
       // Bevölkerungslimit: Wachstum stoppt am Cap, Überschuss baut sich ab
       const cap = nat.popCap || 999;
       if (nat.leute < cap) nat.leute = Math.min(cap, nat.leute + nat.leutePerDay * dt);
@@ -2163,6 +2169,7 @@ class Game {
         }
       }
       div.moral += (1.0 - div.moral) * BAL.moralBaselinePull * dt;
+      if (nat._broke) div.moral -= BAL.brokeMoralDrain * dt;   // kein Sold = sinkende Moral
       if (sup.level < BAL.lowSupply) {
         div.str -= BAL.attritionStr * dt;
         div.moral = Math.max(BAL.moralMin, div.moral - BAL.attritionMoral * dt);
