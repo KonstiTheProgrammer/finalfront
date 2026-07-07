@@ -53,16 +53,16 @@ async function netFindServer() {
 }
 
 function netStatusText(info) {
-  if (!info) return '🌐 Multiplayer: Server offline';
-  const duel = info.duel ? ` · ⚔️ Duell ${info.duel.players}/${info.duel.needed}` : '';
-  return `🌐 online — FFA ${info.lobby.players}/${info.lobby.needed} (${info.lobby.map})${duel}`;
+  if (!info) return '🌐❌';
+  const duel = info.duel ? ` · ⚔️${info.duel.players}/${info.duel.needed}` : '';
+  return `🌐✅ 🌍${info.lobby.players}/${info.lobby.needed}${duel}`;
 }
 
 /* Startbildschirm: Status anzeigen (wird beim Öffnen geprüft) */
 async function netProbeForStartScreen() {
   const el = document.getElementById('mp-status');
   if (!el) return;
-  el.textContent = '🌐 Multiplayer: suche Server …';
+  el.textContent = '🌐⏳';
   const found = await netFindServer();
   NET._found = found;
   el.textContent = netStatusText(found && found.info);
@@ -77,9 +77,9 @@ function netJoin(mode) {
   if (!NET.mode) NET.mode = 'ffa';
   if (NET.ws) { try { NET.ws.close(); } catch (e) {} NET.ws = null; }
   const found = NET._found;
-  if (!found) { pushToast('🌐 Kein Multiplayer-Server erreichbar — spiel solange Solo!'); return; }
+  if (!found) { pushToast('🌐❌'); return; }
   NET.state = 'connecting';
-  netShowLobby('Verbinde …');
+  netShowLobby('⏳');
   const ws = new WebSocket(found.url);
   NET.ws = ws;
   ws.onopen = () => {
@@ -104,12 +104,12 @@ function netJoin(mode) {
         setTimeout(netJoin, 700);
         return;
       }
-      pushToast('🌐 Verbindung fehlgeschlagen — Server nicht erreichbar.');
+      pushToast('🌐❌');
       netLeave();
       return;
     }
     if (NET.state === 'game' && window.game && game._net && !game.over) {
-      pushToast('🔌 Verbindung zum Server verloren — die Runde läuft ohne dich weiter.');
+      pushToast('🔌❌');
     }
     if (NET.state !== 'off') netLeave(true);
   };
@@ -157,7 +157,7 @@ function netHandle(msg) {
     if (NET.state !== 'game') { NET.state = 'lobby'; netRenderLobby(); }
 
   } else if (msg.t === 'err') {
-    pushToast('🌐 ' + msg.msg);
+    pushToast('🌐⚠');
 
   } else if (msg.t === 'start') {
     netStartGame(msg);
@@ -251,20 +251,17 @@ function netRenderLobby() {
   if (!l) return;
   netShowLobby();
   netDrawMapPreview(l.mapId);
-  const title = l.mode === 'duel' ? '⚔️ 1v1-DUELL' : '🌍 5-SPIELER-RUNDE';
   document.getElementById('mp-lobby-map').innerHTML =
-    `<b>${title}</b> — Karte: <b>${l.mapName || l.mapId}</b> · startet bei <b>${l.needed} Spielern</b> oder wenn alle bereit sind`
-    + (l.rounds ? `<br><span class="small">${l.rounds} Runde(n) laufen gerade</span>` : '');
+    `<b>${l.mode === 'duel' ? '⚔️' : '🌍'} ${l.players.length}/${l.needed} 👤</b>${l.rounds ? ` · ▶${l.rounds}` : ''}`;
   const me = l.players.find(p => p.nation === NET.you);
   document.getElementById('mp-lobby-list').innerHTML = l.players.map(p => `
     <div class="mp-row ${p.nation === NET.you ? 'me' : ''}">
       <span class="chip" style="background:${NATION_DEFS[p.nation] ? NATION_DEFS[p.nation].color : '#888'}"></span>
-      <b>${p.name}</b>${p.nation === NET.you ? ' (du)' : ''}
-      <span class="mp-ready">${p.ready ? '✔ bereit' : '… wartet'}</span>
-    </div>`).join('')
-    + `<p class="small hint">${l.players.length}/${l.needed} Spieler — freie Plätze werden beim Start mit Bots gefüllt.</p>`;
+      <b>${(p.name || '').replace(/</g, '&lt;')}</b>${p.nation === NET.you ? ' 👈' : ''}
+      <span class="mp-ready">${p.ready ? '✔' : '⏳'}</span>
+    </div>`).join('');
   const btn = document.getElementById('mp-ready');
-  btn.textContent = me && me.ready ? '✔ Bereit (warte auf andere)' : '▶ Bereit — los geht\'s!';
+  btn.textContent = me && me.ready ? '✔…' : '✔';
   btn.dataset.ready = me && me.ready ? '1' : '0';
 }
 
@@ -296,7 +293,7 @@ function netStartGame(msg) {
   UI._ghost = null;
   game.speed = 2;         // nur Anzeige — der Server taktet
   refreshPanel(); updateTopbar(); updateUnitbar(); updateTutorial(); updateSpawnPhase();
-  pushToast(`🌐 Runde läuft! Du bist ${game.nationName(msg.you)} — wähle deinen Startplatz.`);
+  pushToast(`🌐▶ 📍`);
 
   // Step-Treiber: unabhängig vom Renderer (läuft auch im Hintergrund-Tab)
   if (NET.driver) clearInterval(NET.driver);
@@ -325,7 +322,7 @@ function netBackToLobby() {
   document.getElementById('gameover').classList.add('hidden');
   if (NET.ws && NET.ws.readyState === 1) {
     NET.state = 'lobby';
-    netShowLobby('Betrete die nächste Lobby …');
+    netShowLobby('⏳');
     NET.ws.send(JSON.stringify({ t: 'join', mode: NET.mode || 'ffa' }));
   } else {
     netProbeThenJoin();
@@ -333,10 +330,10 @@ function netBackToLobby() {
 }
 
 async function netProbeThenJoin() {
-  netShowLobby('Suche Server …');
+  netShowLobby('⏳');
   NET._found = await netFindServer();
   if (NET._found) netJoin();
-  else { pushToast('🌐 Server nicht erreichbar.'); netLeave(); }
+  else { pushToast('🌐❌'); netLeave(); }
 }
 
 /* ---------- Kommandos zum Server ---------- */

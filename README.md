@@ -114,11 +114,13 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
   0,6 · Kavallerie 1,4 · Kanonen 2,0) — ist die Kasse leer bei negativem Einkommen,
   verlieren alle Truppen Moral (Pleite!). **Besiegte Divisionen (Org bricht) werden
   VERNICHTET** — kein Rückzug, kein Wiederkommen: Schlachten sind endgültig.
-- **Weniger HUD:** 📜 Ereignis-Log (standardmäßig aus), 🏆 Rangliste und 🗺️ Minimap sind
-  über die Topbar einzeln ausblendbar (gemerkt im Browser). Truppen können **über See**
+- **Textfreies UI:** Das Spiel kommt komplett ohne Sprache aus — nur Icons, Zahlen und
+  Farben (universell verständlich). 📜 Log, 🏆 Rangliste und 🗺️ Minimap sind über die
+  Topbar ausblendbar. **Lager-Caps:** Eisen/Pferde stapeln nur bis Minen-/Farm-Kapazität
+  (Level × 15 bzw. × 12); Start ohne Rohstoffe. Truppen können **über See**
   ziehen (langsamer, Angriff von See geschwächt); Wasser ist nicht eroberbar. 🏙️ **Stadt** = Dorf-Ausbau: Gold + Leute +
   Versorgungs-Hub, und **Straßen zu nahen Städten wachsen automatisch** (schnellere Truppen).
-  🗼 **Wehrturm**: Miliz umliegender Felder ×1,5, Ausbau = doppelte Reichweite — fällt er,
+  🛡️ **Bunker**: Die Division AUF dem Feld verteidigt ×2/×2,5/×3 (3 Level) — fällt er,
   wirkt er für den Eroberer. 🎪 **Kasernen bilden Leute zu Soldaten aus** — neue
   Divisionen und Verstärkung kosten Gold + Soldaten. 🛣️ Straßen = Bewegung + Versorgung.
 - **Bauen per Feld-Klick:** Eigenes Feld anklicken → Liste, was genau dort gebaut werden

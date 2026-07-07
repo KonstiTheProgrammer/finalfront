@@ -546,3 +546,13 @@ button.peace:hover { background: #26512e; }
 /* Pleite: Gold-Anzeige schlägt Alarm */
 .tb-group.broke { outline: 1px solid rgba(255, 80, 60, 0.8); border-radius: 5px; }
 .tb-group.broke, .tb-group.broke * { color: #ff7a64 !important; }
+
+/* ---------- Textfreies UI: Icon-Baugitter ---------- */
+.icon-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 6px 0; }
+.icon-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 4px; font-size: 13px;
+}
+.icon-btn .ib-icon { font-size: 22px; line-height: 1; }
+.icon-btn .ib-cost { font-weight: 700; }
+.icon-btn .ib-yield { font-size: 11px; opacity: 0.85; }

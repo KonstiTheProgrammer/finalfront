@@ -271,6 +271,12 @@ function drawShallowAt(ctx, p, size) {
 function drawBuilding(ctx, h, x, y, detailed) {
   ctx.save();
   ctx.translate(x, y);
+  // Ausbau-Level VISUELL: das Gebäude selbst wird größer (kein Symbol-Kram)
+  const lvl = h.level || 1;
+  if (lvl > 1 && h.building) {
+    const s = 1 + (lvl - 1) * 0.22;
+    ctx.scale(s, s);
+  }
   ctx.lineWidth = detailed ? 0.9 : 0.8;
   if (h.building === 'dorf') {
     const house = (hx, hy, w, hh, roof) => {
@@ -393,26 +399,29 @@ function drawBuilding(ctx, h, x, y, detailed) {
     ctx.beginPath(); ctx.arc(3.8, 1.9, 1.1, 0, 7); ctx.fill();
     ctx.fillRect(4.4, 0.9, 1.4, 0.8);
   } else if (h.building === 'turm') {
-    // Wehrturm: Steinturm mit Zinnen
+    // BUNKER: flache Betonkuppel mit Schießscharte und Sandsäcken
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(-4.4, 4.2, 9.4, 1.3);
-    ctx.fillStyle = '#9aa2ad'; ctx.strokeStyle = '#2b313c';
-    ctx.fillRect(-3.2, -3.6, 6.4, 8); ctx.strokeRect(-3.2, -3.6, 6.4, 8);
-    // Sockel breiter
-    ctx.fillRect(-4.2, 2.6, 8.4, 1.9); ctx.strokeRect(-4.2, 2.6, 8.4, 1.9);
-    // Zinnen
-    ctx.fillStyle = '#b8c0cc';
-    for (const zx of [-3.9, -1.3, 1.3]) { ctx.fillRect(zx, -5.4, 2.6, 2); ctx.strokeRect(zx, -5.4, 2.6, 2); }
+    ctx.fillRect(-6, 3.6, 12.4, 1.3);
+    ctx.fillStyle = '#8d939c'; ctx.strokeStyle = '#2b313c';
+    ctx.beginPath();
+    ctx.moveTo(-6, 3.6);
+    ctx.quadraticCurveTo(-6.2, -2.6, 0, -3.4);
+    ctx.quadraticCurveTo(6.2, -2.6, 6, 3.6);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // Schießscharte
+    ctx.fillStyle = '#181d26';
+    ctx.fillRect(-3.4, -0.6, 6.8, 1.7);
     if (detailed) {
-      ctx.fillStyle = '#232a36';
-      ctx.fillRect(-0.9, -1.6, 1.8, 2.6);   // Schießscharte
-      ctx.beginPath(); ctx.arc(0, 1.9, 0.7, 0, 7); ctx.fill();
+      // Betonfugen + Sandsäcke
+      ctx.strokeStyle = 'rgba(40,46,56,0.5)'; ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(-5.4, 1.8); ctx.quadraticCurveTo(0, 0.4, 5.4, 1.8);
+      ctx.stroke();
+      ctx.fillStyle = '#a89468'; ctx.strokeStyle = '#4a3f28';
+      for (const sx of [-5.6, -3.6, 3.6, 5.6]) {
+        ctx.beginPath(); ctx.arc(sx, 3.2, 1.2, 0, 7); ctx.fill(); ctx.stroke();
+      }
     }
-    ctx.strokeStyle = '#3a3a3a'; ctx.lineWidth = 0.8;
-    ctx.beginPath(); ctx.moveTo(2.6, -5.4); ctx.lineTo(2.6, -8.2); ctx.stroke();
-    ctx.fillStyle = '#d4b13f';
-    ctx.beginPath(); ctx.moveTo(2.6, -8.2); ctx.lineTo(5.4, -7.5); ctx.lineTo(2.6, -6.7);
-    ctx.closePath(); ctx.fill();
   } else if (h.building === 'kaserne') {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.fillRect(-5.7, 3.5, 12.3, 1.2);
@@ -431,16 +440,6 @@ function drawBuilding(ctx, h, x, y, detailed) {
     ctx.fillStyle = '#d84343';
     ctx.beginPath(); ctx.moveTo(4.7, -8); ctx.lineTo(8.4, -7.1); ctx.lineTo(4.7, -5.9);
     ctx.closePath(); ctx.fill();
-  }
-  // Ausbau-Level: goldene Punkte oben rechts (Level 2/3)
-  if (h.building && (h.level || 1) > 1) {
-    ctx.strokeStyle = 'rgba(60,45,0,0.9)';
-    ctx.lineWidth = 0.7;
-    for (let i = 0; i < h.level; i++) {
-      ctx.fillStyle = '#ffd75e';
-      ctx.beginPath(); ctx.arc(7.8, -6 + i * 3.4, 1.4, 0, 7);
-      ctx.fill(); ctx.stroke();
-    }
   }
   if (h.capital || h.vp) {
     // Siegpunkt-Hauptstädte behalten ihren Stern dauerhaft — sie sind das Rundenziel
@@ -474,20 +473,29 @@ function fillHex(ctx, h, p) {
 }
 
 function drawRoadsAt(ctx, h, p) {
+  // Straßen verbinden sich NUR mit Straßen und Städten — sonst entsteht
+  // ein wirres Muster aus Stichstraßen zu jedem Gebäude
   if (!h.road) return;
-  let connected = false;
+  const segs = [];
   for (const [nc, nr] of neighborsOf(h.c, h.r)) {
     const nh = game.hexAt(nc, nr);
-    if (nh && (nh.road || nh.building || nh.capital)) {
+    if (nh && (nh.road || nh.building === 'stadt' || nh.capital)) {
       const np = hexToPixel(nc, nr);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo((p.x + np.x) / 2, (p.y + np.y) / 2);
-      ctx.stroke();
-      connected = true;
+      segs.push([(p.x + np.x) / 2, (p.y + np.y) / 2]);
     }
   }
-  if (!connected) { ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, 7); ctx.stroke(); }
+  if (!segs.length) segs.push([p.x + 4, p.y]);
+  // Zwei Durchgänge: dunkle Fassung + sandiger Kern = lesbare Straße
+  for (const [w, style] of [[3.6, 'rgba(40,30,18,0.85)'], [2.0, 'rgba(196,168,120,0.95)']]) {
+    ctx.strokeStyle = style;
+    ctx.lineWidth = w;
+    for (const [mx, my] of segs) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(mx, my);
+      ctx.stroke();
+    }
+  }
 }
 
 function drawBordersAt(ctx, h, p, thick) {
@@ -527,7 +535,7 @@ function drawBordersAt(ctx, h, p, thick) {
 function renderMapLayer() {
   const ctx = UI.mapCtx;
   const S = UI.MAP_SCALE;
-  const rect = game._dirtyAll ? null : game.dirtyRect;
+  const rect = null;   // IMMER voll neu zeichnen — Teilflächen hinterlassen Näht-Rahmen
   // WICHTIG gegen Nähte: der Neuzeichnungs-Ring (±3 Hexes) muss ÜBER den
   // Clip-Rand (±2,6 Hexbreiten) hinausreichen, damit am Rand keine
   // angeschnittenen Nachbar-Hexes stehen bleiben.
@@ -560,8 +568,6 @@ function renderMapLayer() {
     fillHex(ctx, h, p);
     drawTerrainArt(ctx, h, p.x, p.y, false);
   }
-  ctx.strokeStyle = 'rgba(88,68,44,0.95)';
-  ctx.lineWidth = 2.4;
   ctx.lineCap = 'round';
   for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
     const h = game.hexAt(c, r);
@@ -867,8 +873,6 @@ function render() {
       fillHex(ctx, h, p);
       drawTerrainArt(ctx, h, p.x, p.y, true);
     }
-    ctx.strokeStyle = 'rgba(88,68,44,0.95)';
-    ctx.lineWidth = 2.6;
     ctx.lineCap = 'round';
     for (let r = rMin; r <= rMax; r++) for (let c = cMin; c <= cMax; c++) {
       const h = game.hexAt(c, r);
@@ -933,7 +937,7 @@ function render() {
         ctx.lineWidth = 3 / zoom + 1;
         ctx.strokeStyle = `rgba(30, 8, 6, ${0.7 + 0.2 * pulse})`;
         ctx.fillStyle = `rgba(255, 96, 80, ${0.75 + 0.25 * pulse})`;
-        const label = pk.divCount > 0 ? `⚔ KESSEL (${pk.divCount})` : '⚔ KESSEL';
+        const label = pk.divCount > 0 ? `⚔${pk.divCount}` : '⚔';
         ctx.strokeText(label, pk.cx, pk.cy);
         ctx.fillText(label, pk.cx, pk.cy);
       }
@@ -1027,7 +1031,7 @@ function render() {
       ctx.lineWidth = 3 / zoom + 1;
       ctx.strokeStyle = 'rgba(10,14,20,0.9)';
       ctx.fillStyle = mine ? '#ffd75e' : '#f0ece0';
-      const label = mine ? '★ DU' : NATION_DEFS[id].name;
+      const label = mine ? '★' : NATION_DEFS[id].name;
       ctx.strokeText(label, p.x, p.y - HEX_SIZE * 1.8);
       ctx.fillText(label, p.x, p.y - HEX_SIZE * 1.8);
     }
@@ -1303,17 +1307,6 @@ function render() {
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2.4 / zoom + 1;
     ctx.stroke();
-    const sh = game.hexAt(UI.selectedHex.c, UI.selectedHex.r);
-    if (sh && sh.building === 'turm') {
-      const range = (sh.level || 1) >= 2 ? BAL.turm.range2 : BAL.turm.range;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, HEX_SIZE * SQRT3 * (range + 0.55), 0, 7);
-      ctx.strokeStyle = 'rgba(150,190,255,0.6)';
-      ctx.lineWidth = 1.8 / zoom + 0.5;
-      ctx.setLineDash([6, 5]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
   }
   if (UI.buildMode && UI.hoverHex) {
     const p = hexToPixel(UI.hoverHex.c, UI.hoverHex.r);
@@ -1325,17 +1318,6 @@ function render() {
     ctx.setLineDash([5, 4]);
     ctx.stroke();
     ctx.setLineDash([]);
-    // Wehrturm: Wirkungsradius als Ring zeigen
-    if (UI.buildMode === 'turm' && ok) {
-      const range = h.building === 'turm' && (h.level || 1) >= 1 ? BAL.turm.range2 : BAL.turm.range;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, HEX_SIZE * SQRT3 * (range + 0.55), 0, 7);
-      ctx.strokeStyle = 'rgba(150,190,255,0.65)';
-      ctx.lineWidth = 1.8 / zoom + 0.5;
-      ctx.setLineDash([6, 5]);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
   } else if (UI.hoverHex && !UI.selectedDivs.size) {
     const p = hexToPixel(UI.hoverHex.c, UI.hoverHex.r);
     hexPath(ctx, p.x, p.y, HEX_SIZE + 0.5);
@@ -1680,7 +1662,7 @@ function splitSelection() {
   if (res === 'sent') { setTimeout(updateUnitbar, 450); return; }
   const twins = Array.isArray(res) ? res : [];
   twins.forEach(id => UI.selectedDivs.add(id));
-  if (!twins.length) pushToast('⚠ Teilen braucht ≥ 40 Stärke.');
+  if (!twins.length) pushToast('⚠✂');
   updateUnitbar();
 }
 
@@ -1695,7 +1677,7 @@ function mergeSelection() {
     const d = game.divisions.find(x => x.id === id);
     if (!d || d.dead) UI.selectedDivs.delete(id);
   }
-  if (!merged) pushToast('⚠ Zum Vereinen mind. 2 Divisionen gleichen Typs auswählen.');
+  if (!merged) pushToast('⚠🔗');
   updateUnitbar();
 }
 
@@ -1766,7 +1748,7 @@ function finishFrontDraw() {
   }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('frontLine', draw.path, ids);
-  if (!res && res !== 'sent') pushToast('⚠ Die Linie muss über Land verlaufen.');
+  if (!res && res !== 'sent') pushToast('⚠📏');
   refreshPanel();
 }
 
@@ -1778,7 +1760,7 @@ function handleClick(sx, sy, additive) {
     const hx = pixelToHex(w.x, w.y);
     if (hx) {
       const ok = game.issue('spawn', hx.c, hx.r);
-      if (!ok && ok !== 'sent') pushToast('⚠ Hier geht kein Startplatz.');
+      if (!ok && ok !== 'sent') pushToast('⚠📍');
     }
     return;
   }
@@ -1911,47 +1893,26 @@ function updateTooltip(sx, sy) {
   if (!UI.hoverHex || !game || UI._overUI) { tip.style.display = 'none'; return; }
   const h = game.hexAt(UI.hoverHex.c, UI.hoverHex.r);
   if (!h) { tip.style.display = 'none'; return; }
-  let html = `<b>${TERRAIN[h.terrain].name}</b>${h.river ? ' · 🌊 <b>Fluss</b> <span class="tt-dim">(langsam · Angriffe geschwächt · Straße = Brücke)</span>' : ''}`;
-  if (h._pocket) html += ' · <span style="color:#ff6050"><b>⚔ KESSEL</b></span>';
+  let html = `<b>${TERRAIN_ICON[h.terrain] || ''}</b>${h.river ? ' 🌊' : ''}`;
+  if (h._pocket) html += ' <span style="color:#ff6050">⚔</span>';
   if (h.owner) {
-    html += ` — <span style="color:${NATION_DEFS[h.owner].color}">${game.nationName(h.owner)}</span>`;
-    if (game.isTraitor(h.owner)) html += ' 🐍';
-    if (game.allied(game.player, h.owner)) html += ' 🤝';
-    if (h.capital) html += ' ★';
-    if (h.vp) html += ' · <b>🏛️ Siegpunkt-Hauptstadt</b>';
-    if (h.cityName) html += ` · <b>${h.cityName}</b>`;
-    if (h.building) {
-      const lvl = h.level || 1;
-      html += `<br>${buildingName(h.building)}${lvl > 1 ? ` <b>· Level ${lvl}</b>` : ''}`;
-      const y = BAL.yields[h.building];
-      const eff = y ? [
-        y.gold ? `+${(y.gold * lvl).toFixed(1)} Gold/Tag` : '',
-        y.leute ? `+${(y.leute * lvl).toFixed(2)}k Leute/Tag` : '',
-        y.eisen ? `+${(((h.terrain === 'hills' && y.hillsEisen) ? y.hillsEisen : y.eisen) * lvl).toFixed(2)} 🔩 Eisen/Tag` : '',
-        y.pferde ? `+${(y.pferde * lvl).toFixed(2)} 🐎 Pferde/Tag` : '',
-      ].filter(Boolean).join(' · ')
-        : h.building === 'stadt' ? `+${BAL.incomeStadt} Gold · +${BAL.leuteStadt}k Leute/Tag · Versorgungs-Hub`
-          : h.building === 'kaserne' ? 'bildet Truppen doppelt so schnell aus'
-            : h.building === 'turm' ? `Miliz umliegender Felder ×${BAL.turm.boost} (Reichweite ${lvl >= 2 ? BAL.turm.range2 : BAL.turm.range})`
-              : '';
-      if (eff) html += ` <span class="tt-dim">(${eff})</span>`;
-      const lvlCap = h.building === 'stadt' ? 1 : h.building === 'turm' ? BAL.turm.maxLevel : BAL.maxLevel;
-      if (lvl < lvlCap) html += `<br><span class="tt-dim">nochmal bauen = Ausbau auf Level ${lvl + 1}${h.building === 'turm' ? ' (doppelte Reichweite)' : ''}</span>`;
-    }
+    html += ` <span class="chip" style="background:${NATION_DEFS[h.owner].color}"></span>`;
+    if (game.isTraitor(h.owner)) html += '🐍';
+    if (game.allied(game.player, h.owner)) html += '🤝';
+    if (h.capital || h.vp) html += '★';
+    if (h.building) html += ` · ${buildingName(h.building)}${'▮'.repeat(h.level || 1)}`;
     if (h.road) html += ' · 🛣️';
     const tq = game.training.filter(q => q.c === h.c && q.r === h.r);
-    if (tq.length) html += `<br><span class="tt-dim">🪖 in Ausbildung: ${tq.map(q =>
-      `${BAL.divTypes[q.type].name} (${Math.max(0, q.ready - game.dayFloat).toFixed(0)} T.)`).join(', ')}</span>`;
+    if (tq.length) html += `<br>${tq.map(q => `${TYPE_ICON[q.type]}⏱${Math.max(0, q.ready - game.dayFloat).toFixed(0)}`).join(' ')}`;
     if (h.terrain !== 'water')
-      html += `<br><span class="tt-dim">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
+      html += `<br><span class="tt-dim">🚚${Math.round(h.supply * 100)}% · 🛡${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
   } else if (h.terrain !== 'water') {
-    html += ` — <span class="tt-dim">neutral (Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)})</span>`;
+    html += ` <span class="tt-dim">🛡${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
   }
   const d = game.divisionAt(UI.hoverHex.c, UI.hoverHex.r);
   if (d) {
-    const army = d.army != null ? game.armyById(d.nation, d.army) : null;
-    html += `<hr><b>${d.name}</b><br><span style="color:${NATION_DEFS[d.nation].color}">${game.nationName(d.nation)}</span>`;
-    html += `${army ? ' · ' + army.name : ''}<br><span class="tt-dim">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)} · Moral ${Math.round(d.moral * 100)} %</span>`;
+    html += `<hr><span class="chip" style="background:${NATION_DEFS[d.nation].color}"></span> ${TYPE_ICON[d.type]}
+      <span class="tt-dim">💪${Math.round(d.str)} · ⚡${Math.round(d.org)} · ${Math.round(d.moral * 100)}%</span>`;
   }
   tip.innerHTML = html;
   tip.style.display = 'block';
@@ -1960,8 +1921,10 @@ function updateTooltip(sx, sy) {
 }
 
 function buildingName(b) {
-  return { dorf: '🏠 Dorf', stadt: '🏙️ Stadt', mine: '⛏️ Mine', farm: '🚜 Farm', forsterei: '🪓 Forsterei', fischerei: '🎣 Fischerei', kaserne: '🎪 Kaserne', turm: '🗼 Wehrturm' }[b] || b;
+  return { dorf: '🏠', stadt: '🏙️', mine: '⛏️', farm: '🚜', forsterei: '🪓', fischerei: '🎣', kaserne: '🎪', turm: '🛡️' }[b] || b;
 }
+const TERRAIN_ICON = { plains: '🌾', forest: '🌲', hills: '⛰️', mountain: '🏔️', water: '🌊' };
+const TYPE_ICON = { inf: '🛡', kav: '🐎', kan: '💥' };
 
 /* =========================================================
    TOASTS & ANGEBOTE
@@ -1987,10 +1950,9 @@ function renderOffers() {
   const box = document.getElementById('offers');
   box.innerHTML = game.allianceOffers.filter(o => (o.to || game.player) === game.player).map(o => `
     <div class="offer">
-      <span class="chip" style="background:${game.nationColor(o.from)}"></span>
-      <b>${game.nationName(o.from)}</b>&nbsp;bietet eine Allianz an
-      <button data-accept="${o.from}">✔ Annehmen</button>
-      <button data-decline="${o.from}" class="danger">✖ Ablehnen</button>
+      <span class="chip" style="background:${game.nationColor(o.from)}"></span> 🤝
+      <button data-accept="${o.from}">✔</button>
+      <button data-decline="${o.from}" class="danger">✖</button>
     </div>`).join('');
   box.querySelectorAll('[data-accept]').forEach(b =>
     b.addEventListener('click', () => game.issue('answerOffer', b.dataset.accept, true)));
@@ -2042,12 +2004,6 @@ function bindPanels() {
   });
   document.getElementById('btn-restart').addEventListener('click', () => showStartScreen());
   document.getElementById('spawn-ready').addEventListener('click', finishSpawnPhase);
-  document.getElementById('btn-help').addEventListener('click', () => {
-    document.getElementById('help').classList.toggle('hidden');
-  });
-  document.getElementById('help').addEventListener('click', e => {
-    if (e.target.id === 'help') e.target.classList.add('hidden');
-  });
 }
 
 function readSlot(key) {
@@ -2086,24 +2042,23 @@ function updateTopbar() {
   document.getElementById('tb-nation').innerHTML =
     `<span class="chip" style="background:${game.nationColor(game.player)}"></span>${game.nationName(game.player)}`
     + (game.isTraitor(game.player)
-      ? ` <span title="Verräter! Noch ${game.nations[game.player].traitorUntil - game.day} Tage geächtet: kein Handel, keine Bündnisse.">🐍</span>` : '');
+      ? ' 🐍' : '');
   const inc = nat.incomePerDay * (nat.econMult || 1);
   const goldEl = document.getElementById('tb-gold');
-  goldEl.textContent = `${Math.floor(nat.gold)} (${inc >= 0 ? '+' : ''}${inc.toFixed(1)})`;
+  goldEl.textContent = `${Math.floor(nat.gold)} ${inc >= 0 ? '▲' : '▼'}${Math.abs(inc).toFixed(1)}`;
   goldEl.parentElement.classList.toggle('broke', !!nat._broke);
-  const atCap = nat.popCap && nat.leute >= nat.popCap - 0.05;
   document.getElementById('tb-mp').textContent =
-    `${nat.leute.toFixed(1)}k/${Math.round(nat.popCap || 0)}k${atCap ? ' ⚠' : ` (+${nat.leutePerDay.toFixed(2)})`}`;
+    `${Math.floor(nat.leute)}/${Math.round(nat.popCap || 0)}`;
   document.getElementById('tb-eisen').textContent =
-    `${Math.floor(nat.eisen)} (+${nat.eisenPerDay.toFixed(1)})`;
+    `${Math.floor(nat.eisen)}/${Math.round(nat.eisenCap || 0)}`;
   document.getElementById('tb-pferde').textContent =
-    `${Math.floor(nat.pferde)} (+${nat.pferdePerDay.toFixed(1)})`;
+    `${Math.floor(nat.pferde)}/${Math.round(nat.pferdeCap || 0)}`;
   document.getElementById('tb-div').textContent = `${game.divisionsOf(game.player).length}`;
   const share = Math.round(nat.hexCount / game.totalLand * 100);
   document.getElementById('tb-prov').textContent = `${nat.hexCount} (${share} %)`;
   document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${game.vpNeed || BAL.round.vpToWin}`;
-  document.getElementById('tb-day').textContent = dateStr(game.day);
-  document.getElementById('tb-round').textContent = `noch ${Math.max(0, BAL.round.days - game.day)} T.`;
+  document.getElementById('tb-day').textContent = `📅 ${game.day}`;
+  document.getElementById('tb-round').textContent = `⏳${Math.max(0, BAL.round.days - game.day)}`;
 
   document.getElementById('replay-badge').classList.toggle('hidden', !game._replayCmds);
 
@@ -2113,9 +2068,7 @@ function updateTopbar() {
     const own = game.vpLeader === game.player;
     const rest = Math.max(0, game.vpDeadline - game.day);
     banner.className = own ? 'own' : '';
-    banner.innerHTML = own
-      ? `👑 Du hältst ${game.nations[game.vpLeader].vp} Hauptstädte — <b>Sieg in ${rest} Tagen!</b> Halte durch!`
-      : `👑 <b>${game.nationName(game.vpLeader)}</b> hält ${game.nations[game.vpLeader].vp} Hauptstädte — Sieg in <b>${rest} Tagen</b>! Haltet ihn auf!`;
+    banner.innerHTML = `👑 <span class="chip" style="background:${game.nationColor(game.vpLeader)}"></span> 🏛️${game.nations[game.vpLeader].vp} · ⏳<b>${rest}</b>`;
   } else {
     banner.className = 'hidden';
   }
@@ -2140,12 +2093,7 @@ function updateTopbar() {
   }
 }
 
-const PANEL_TITLES = {
-  bauen: '🏗 Bauen',
-  armeen: '🪖 Truppen',
-  nationen: '🌍 Nationen & Diplomatie',
-  info: 'ℹ️ Info',
-};
+const PANEL_TITLES = { bauen: '🏗', armeen: '🪖', nationen: '🌍', info: 'ℹ️' };
 
 /* ---------- Live-Rangliste (Rundenmodus) ---------- */
 function rankedNations() {
@@ -2176,11 +2124,11 @@ function renderRanking() {
   if (!game || game.over) { el.innerHTML = ''; return; }
   if (!UI.hud.rank) return;
   const ids = rankedNations();
-  let html = `<div class="rank-head">🏆 RANGLISTE — 🏛️ Hauptstädte · Provinzen</div>`;
+  let html = `<div class="rank-head">🏆 · 🏛️ · ⬡</div>`;
   ids.forEach((id, i) => {
     if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id);
   });
-  if (!game.nations[game.player].alive) html += `<div class="rank-row me"><span class="rank-pl">☠</span><span class="rank-name">Du bist ausgeschieden</span></div>`;
+  if (!game.nations[game.player].alive) html += `<div class="rank-row me"><span class="rank-pl">☠</span></div>`;
   el.innerHTML = html;
 }
 
@@ -2202,164 +2150,127 @@ function refreshPanel() {
 function panelBauen() {
   const hx = UI.selectedHex;
   const h = hx && game.hexAt(hx.c, hx.r);
-  const strassenBtn = `<hr><button data-buildmode="strasse" class="${UI.buildMode === 'strasse' ? 'active-build' : ''}">🛣️ Straßen ziehen — ${BAL.cost.strasse} G je Feld</button>
-    <p class="small">Modus: mit gedrückter Maustaste über die Karte ziehen. Esc beendet.</p>`;
+  const strassenBtn = `<hr><button data-buildmode="strasse" class="${UI.buildMode === 'strasse' ? 'active-build' : ''}">🛣️ ${BAL.cost.strasse} 🪙</button>`;
   const mine = h && h.owner === game.player;
   const fischbar = h && h.terrain === 'water' && game.canBuild(game.player, h, 'fischerei') === true;
-  if (!h || (!mine && !fischbar)) {
-    return `<p class="hint">Klicke ein <b>eigenes Feld</b> an — dort erscheint die Liste, was auf dem Feld
-      gebaut werden kann. 🎣 Fischerei: freies <b>Küstenwasser neben deinem Land</b> anklicken.<br><br>
-      🏙️ Städte, die Hauptstadt und 🎪 Kasernen bilden <b>Truppen aus</b> (Feld anklicken) —
-      Kasernen doppelt so schnell.</p>` + strassenBtn;
-  }
+  if (!h || (!mine && !fischbar)) return `<p class="hint" style="text-align:center;font-size:24px">👆⬡</p>` + strassenBtn;
 
-  // Feld-Kopf
-  let html = `<p><b>${TERRAIN[h.terrain].name}</b>${h.river ? ' · 🌊 Fluss' : ''} (${h.c}|${h.r})`;
-  if (h.building) html += `<br>${buildingName(h.building)}${(h.level || 1) > 1 ? ` · Level ${h.level}` : ''}`;
-  if (h.road) html += ' · 🛣️ Straße';
-  if (mine && h.terrain !== 'water') html += `<br><span class="small">Versorgung ${Math.round(h.supply * 100)} % · Miliz ${Math.round(h.resist)}/${Math.round(h.resistMax)}</span>`;
-  html += '</p>';
+  let html = `<p style="font-size:16px">${TERRAIN_ICON[h.terrain] || ''}${h.river ? ' 🌊' : ''}`
+    + (h.building ? ` · ${buildingName(h.building)}${'▮'.repeat(h.level || 1)}` : '')
+    + (h.road ? ' · 🛣️' : '') + '</p>';
+  if (mine && h.terrain !== 'water')
+    html += `<p class="small">🚚 ${Math.round(h.supply * 100)}% · 🛡 ${Math.round(h.resist)}/${Math.round(h.resistMax)}</p>`;
 
-  // Bauliste: alles, was auf DIESEM Feld geht (Ausbau eingeschlossen)
   const y = BAL.yields;
-  const DESCS = {
-    mine: `+${y.mine.eisen} 🔩 Eisen/Tag${h.terrain === 'hills' ? ` (Hügel: +${y.mine.hillsEisen})` : ''} — für Kanonen`,
-    farm: `+${y.farm.pferde} 🐎 Pferde/Tag — für Kavallerie · +${BAL.pop.farm} Kapazität · nur Ebene`,
-    forsterei: `+${y.forsterei.gold} G und +${y.forsterei.leute}k 👥/Tag · +${BAL.pop.forsterei} Kapazität`,
-    fischerei: `+${y.fischerei.gold} G und +${y.fischerei.leute}k 👥/Tag · +${BAL.pop.fischerei} Kapazität`,
-    dorf: `+${y.dorf.leute}k 👥/Tag · +${BAL.pop.dorf} Kapazität`,
-    stadt: `+${BAL.incomeStadt} G · +${BAL.leuteStadt}k 👥/Tag · +${BAL.pop.stadt} Kapazität · Hub · Auto-Straßen`,
-    turm: `Miliz umliegender Felder ×${BAL.turm.boost} · Level 2 = doppelte Reichweite`,
-    kaserne: `bildet doppelt so schnell aus · +${BAL.pop.kaserne} Kapazität`,
+  const YIELD = {
+    mine: `+${y.mine.eisen}🔩`,
+    farm: `+${y.farm.pferde}🐎`,
+    forsterei: `+${y.forsterei.gold}🪙 +${y.forsterei.leute}👥`,
+    fischerei: `+${y.fischerei.gold}🪙 +${y.fischerei.leute}👥`,
+    dorf: `+${y.dorf.leute}👥`,
+    stadt: `+${BAL.incomeStadt}🪙 +${BAL.leuteStadt}👥 ⭘`,
+    turm: `🛡×${BAL.bunker.def[0]}–${BAL.bunker.def[2]}`,
+    kaserne: `🎓 ×2`,
   };
-  html += '<h3>Bauen</h3>';
+  html += '<div class="icon-grid">';
   let any = false;
   for (const key of ['mine', 'farm', 'forsterei', 'fischerei', 'dorf', 'stadt', 'turm', 'kaserne']) {
     const res = game.canBuild(game.player, h, key);
     if (res !== true) continue;
     const up = h.building === key;
     any = true;
-    html += `<div class="build-row">
-      <button data-buildat="${key}">${buildingName(key)}${up ? ` → Level ${(h.level || 1) + 1}` : ''} — ${game.buildCost(game.player, h, key)} G</button>
-      <div class="small">${DESCS[key] || ''}</div>
-    </div>`;
+    html += `<button class="icon-btn" data-buildat="${key}">
+      <span class="ib-icon">${buildingName(key)}${up ? '▲' : ''}</span>
+      <span class="ib-cost">${game.buildCost(game.player, h, key)} 🪙</span>
+      <span class="ib-yield">${YIELD[key] || ''}</span>
+    </button>`;
   }
-  if (!any) html += `<p class="small hint">Hier geht nichts mehr — Feld belegt oder Terrain passt nicht.</p>`;
+  html += '</div>';
+  if (!any) html += `<p class="hint" style="text-align:center;font-size:20px">🚫</p>`;
 
-  // Ausbildung an Städten/Hauptstadt/Kasernen
   if (game.isTrainSite(h, game.player)) {
     const fast = h.building === 'kaserne';
-    html += `<hr><h3>Ausbilden${fast ? ' — Kaserne: doppelt so schnell!' : ''}</h3>
-      <p class="small">Die Truppe erscheint nach der Ausbildung <b>auf diesem Feld</b>.</p>`;
+    html += `<hr><div class="icon-grid">`;
     for (const ty of ['inf', 'kav', 'kan']) {
       const t = BAL.divTypes[ty];
       const tage = BAL.trainTime[ty] * (fast ? BAL.kaserneTrainFactor : 1);
-      const extra = (t.pferde ? ` · ${t.pferde} 🐎` : '') + (t.eisen ? ` · ${t.eisen} 🔩` : '');
-      html += `<div class="build-row">
-        <button data-trainat="${ty}">${t.name} — ${t.mp}k 👥${extra} · ${tage} Tage</button>
-        <div class="small">${TYPE_HINT[ty]} · Unterhalt ${t.upkeep} G/Tag</div>
-      </div>`;
+      const extra = (t.pferde ? ` ${t.pferde}🐎` : '') + (t.eisen ? ` ${t.eisen}🔩` : '');
+      html += `<button class="icon-btn" data-trainat="${ty}">
+        <span class="ib-icon">${TYPE_ICON[ty]}</span>
+        <span class="ib-cost">${t.mp}👥${extra}</span>
+        <span class="ib-yield">⏱${tage} · ${t.upkeep}🪙</span>
+      </button>`;
     }
+    html += '</div>';
     const queue = game.training.filter(q => q.c === h.c && q.r === h.r);
     if (queue.length) {
-      html += `<p class="small"><b>In Ausbildung:</b> ${queue.map(q =>
-        `${BAL.divTypes[q.type].name} (${Math.max(0, q.ready - game.dayFloat).toFixed(0)} T.)`).join(' · ')}</p>`;
+      html += `<p>${queue.map(q => `${TYPE_ICON[q.type]}⏱${Math.max(0, q.ready - game.dayFloat).toFixed(0)}`).join(' · ')}</p>`;
     }
   }
   return html + strassenBtn;
 }
 
-const TYPE_HINT = {
-  inf: '🛡 hält die Linie · schlägt Kavallerie · erobert schwach',
-  kav: '🐎 schnell unterwegs · schlägt Kanonen · erobert ordentlich · braucht Pferde (Farm)',
-  kan: '💥 Erobert STARK (2,5×) · schlägt Krieger · langsam · braucht Eisen (Mine)',
-};
-
 function panelTruppen() {
   const myDivs = game.divisionsOf(game.player);
   const frei = myDivs.filter(d => d.front == null).length;
-  let html = `<p class="hint small"><b>Rechtsklick</b> = Marsch (überallhin!) · <b>Stehen</b> = Standfeld übernehmen ·
-    Städte übernehmen ihr Umland von selbst · <b>Strg+Klick auf eine Grenze</b> = Frontlinie ·
-    <b>B</b> = Linie ziehen · <b>S/M</b> = teilen/vereinen.</p>
-    <h3>Ausbilden</h3>
-    <p class="hint small">Klicke eine <b>🏙️ Stadt, deine Hauptstadt oder eine 🎪 Kaserne</b> an —
-    dort bildest du Truppen aus. <b>Kasernen sind doppelt so schnell.</b>
-    Die Truppe erscheint nach der Ausbildung am Standort.${game.training.some(q => q.nation === game.player)
-      ? `<br><b>In Ausbildung: ${game.training.filter(q => q.nation === game.player).length}</b>` : ''}</p>
-    <hr><h3>Frontlinien</h3>`;
+  const queued = game.training.filter(q => q.nation === game.player).length;
+  let html = `<p style="font-size:15px">🪖 ${myDivs.length} · 🆓 ${frei}${queued ? ` · 🎓 ${queued}` : ''}</p><hr>`;
   const myFronts = game.fronts.filter(f => f.owner === game.player);
-  if (!myFronts.length) {
-    html += `<p class="hint small">Noch keine. Truppen auswählen, dann <b>Strg+Klick</b> auf deine Grenze zu
-      einem Nachbarn — oder <b>B</b> drücken und eine Linie über die Karte ziehen.</p>`;
-  }
   for (const f of myFronts) {
     const divs = game.frontDivisions(f);
-    const label = f.kind === 'border'
-      ? `⚔ Front gegen ${game.nationName(f.target)}`
-      : `📏 Linie ${f.id}`;
+    const chip = f.kind === 'border'
+      ? `<span class="chip" style="background:${game.nationColor(f.target)}"></span>`
+      : '📏';
     html += `<div class="front-row">
-      <div class="diplo-info"><b>${label}</b>
-        <span class="small">${divs.length} Truppen · ${f.hexes.length} Felder${f.push ? ' · 🎯 Vormarsch läuft' : ''}</span></div>
-      <button class="mini" data-selfront="${f.id}" title="Truppen dieser Front auswählen">👥</button>
+      <div class="diplo-info">⚔ ${chip} <b>${divs.length}</b>${f.push ? ' 🎯' : ''}</div>
+      <button class="mini" data-selfront="${f.id}">👥</button>
       ${f.push
-        ? `<button class="mini" data-stoppush="${f.id}" title="Vormarsch stoppen — die Front hält">⏹</button>`
-        : `<button class="mini" data-pushfront="${f.id}" title="Vormarsch: danach ein Ziel auf der Karte anklicken">🎯</button>`}
-      <button class="mini danger" data-delfront="${f.id}" title="Front auflösen — Truppen werden frei">✖</button>
+        ? `<button class="mini" data-stoppush="${f.id}">⏹</button>`
+        : `<button class="mini" data-pushfront="${f.id}">🎯</button>`}
+      <button class="mini danger" data-delfront="${f.id}">✖</button>
     </div>`;
   }
-  html += `<p class="small" style="margin-top:8px">Frei: <b>${frei}</b> von ${myDivs.length} Truppen ohne Frontdienst.</p>`;
   return html;
 }
 
 function panelNationen() {
-  let html = `<p class="hint small">Keine Kriegserklärungen — jeder Nicht-Verbündete ist angreifbar.
-    Allianz: Rechtsklick auf fremdes Land oder hier anbieten (max. ${BAL.maxAllies}).</p>`;
-  const ids = Object.keys(NATION_DEFS).filter(id => id !== game.player);
+  let html = '';
+  const ids = Object.keys(game.nations).filter(id => id !== game.player);
   ids.sort((a, b) => game.nations[b].hexCount - game.nations[a].hexCount);
   for (const id of ids) {
     const n = game.nations[id];
     const isAlly = game.allied(game.player, id);
     html += `<div class="diplo-row ${n.alive ? '' : 'dead'}">
       <span class="chip" style="background:${game.nationColor(id)}"></span>
-      <div class="diplo-info"><b>${game.nationName(id)}${isAlly ? ' 🤝' : ''}${game.isTraitor(id) ? ' 🐍' : ''}</b>
-        <span class="small">${n.alive ? `${n.hexCount} Provinzen · ${game.divisionsOf(id).length} Div.` : '☠ untergegangen'}</span></div>
+      <div class="diplo-info"><b>${isAlly ? '🤝 ' : ''}${game.isTraitor(id) ? '🐍 ' : ''}${n.alive ? `⬡${n.hexCount} · 🪖${game.divisionsOf(id).length}` : '☠'}</b></div>
       ${n.alive ? (isAlly
-        ? `<button data-unally="${id}" class="danger">💔 Lösen</button>`
-        : `<button data-ally="${id}" class="peace">🤝 Allianz</button>`) : ''}
+        ? `<button data-unally="${id}" class="danger">💔</button>`
+        : `<button data-ally="${id}" class="peace">🤝</button>`) : ''}
     </div>`;
   }
   return html;
 }
 
 function panelInfo() {
-  // Divisionen werden in der Einheiten-Leiste unten verwaltet —
-  // hier gibt es Infos zu Feldern und Nationen.
   if (UI.selectedHex) {
     const h = game.hexAt(UI.selectedHex.c, UI.selectedHex.r);
     if (h && h.owner) {
       const id = h.owner;
       const n = game.nations[id];
       const isAlly = id !== game.player && game.allied(game.player, id);
-      let html = `<h3><span class="chip" style="background:${game.nationColor(id)}"></span>${game.nationName(id)}${isAlly ? ' 🤝' : ''}</h3>
-        <p class="small">${n.hexCount} Provinzen · ${game.divisionsOf(id).length} Divisionen · Einkommen ${n.incomePerDay.toFixed(1)}/Tag</p>
-        <p>${TERRAIN[h.terrain].name}${h.cityName ? ' · ' + h.cityName : ''}${h.building ? ' · ' + buildingName(h.building) : ''}${h.capital ? ' ★' : ''}</p>`;
+      let html = `<p style="font-size:16px"><span class="chip" style="background:${game.nationColor(id)}"></span>
+        ${isAlly ? '🤝' : ''} ⬡${n.hexCount} · 🪖${game.divisionsOf(id).length}</p>
+        <p style="font-size:16px">${TERRAIN_ICON[h.terrain] || ''}${h.building ? ' · ' + buildingName(h.building) : ''}${h.capital ? ' ★' : ''}</p>`;
       if (id !== game.player && n.alive) {
         html += isAlly
-          ? `<button data-unally="${id}" class="wide danger">💔 Allianz lösen</button>`
-          : `<button data-ally="${id}" class="wide peace">🤝 Allianz anbieten</button>
-             <p class="small hint">Angreifen: Truppen auswählen und per Rechtsklick hierher schicken.</p>`;
+          ? `<button data-unally="${id}" class="wide danger">💔</button>`
+          : `<button data-ally="${id}" class="wide peace">🤝</button>`;
       }
       return html;
     }
-    if (h && h.terrain !== 'water') {
-      return `<p class="hint">${TERRAIN[h.terrain].name} — <b>neutrales Land</b>.<br><br>
-        Truppen auswählen und per Rechtsklick hierher expandieren!</p>`;
-    }
-    return `<p class="hint">${h ? TERRAIN[h.terrain].name : ''}</p>`;
+    return `<p class="hint" style="font-size:20px;text-align:center">${h ? (TERRAIN_ICON[h.terrain] || '') : ''}</p>`;
   }
-  return `<p class="hint">Klicke auf ein Feld für Details.<br><br>
-    Divisionen wählst du direkt auf der Karte aus (Klick oder Links-Ziehen) —
-    sie erscheinen dann in der <b>Einheiten-Leiste unten</b>.</p>`;
+  return `<p class="hint" style="font-size:24px;text-align:center">👆⬡</p>`;
 }
 
 function bindPanelActions(el) {
@@ -2369,7 +2280,7 @@ function bindPanelActions(el) {
   el.querySelectorAll('[data-buildat]').forEach(b => b.addEventListener('click', () => {
     if (!UI.selectedHex) return;
     const res = game.issue('build', UI.selectedHex.c, UI.selectedHex.r, b.dataset.buildat);
-    if (res !== true && res !== 'sent') pushToast('⚠ ' + (game._replayCmds ? 'Replay läuft.' : res));
+    if (res !== true && res !== 'sent') pushToast(game._replayCmds ? '🎬' : String(res));
     refreshPanel(); updateTopbar();
     if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
   }));
@@ -2377,7 +2288,7 @@ function bindPanelActions(el) {
     if (!UI.selectedHex) return;
     const ty = b.dataset.trainat;
     const res = game.issue('trainAt', UI.selectedHex.c, UI.selectedHex.r, ty);
-    if (res !== true && res !== 'sent') pushToast('⚠ ' + (game._replayCmds ? 'Replay läuft.' : res));
+    if (res !== true && res !== 'sent') pushToast(game._replayCmds ? '🎬' : String(res));
     refreshPanel(); updateTopbar();
     if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
   }));
@@ -2435,29 +2346,20 @@ function updateUnitbar() {
     const d = sel[0];
     const t = BAL.divTypes[d.type];
     const sup = game.supplyModOf(d);
-    const army = d.army != null ? game.armyById(d.nation, d.army) : null;
-    const wp = d.queue && d.queue.length ? ` · 📍 ${d.queue.length} Wegpunkt(e)` : '';
-    // UI-Diät: Moral als Zustand, Versorgung nur wenn sie zum Problem wird
+    const wp = d.queue && d.queue.length ? ` · 📍${d.queue.length}` : '';
     const moralIcon = d.moral >= 1.05 ? '😄' : d.moral >= 0.85 ? '🙂' : d.moral >= 0.65 ? '😐' : '😟';
-    const supWarn = sup.level < 0.5
-      ? ` · <span style="color:#e0a34a">⚠️ Nachschub ${Math.round(sup.level * 100)} %</span>` : '';
+    const supWarn = sup.level < 0.5 ? ` · <span style="color:#e0a34a">🚚${Math.round(sup.level * 100)}%</span>` : '';
     const front = d.front != null ? game.frontById(d.front) : null;
-    const status = front
-      ? `⚔ Frontdienst${front.kind === 'border' ? ' gegen ' + game.nationName(front.target) : ' (Linie)'}`
-      : '🎮 dein Befehl';
     const stackN = game.divisionsAt(d.c, d.r).length;
-    const stackHtml = stackN > 1 ? ` · <b>📚 ${stackN} auf diesem Feld</b>` : '';
-    head.innerHTML = `<b>${d.name}</b><span class="small"> ${status}${wp}</span>
-      <span class="small ub-stats">Stärke ${Math.round(d.str)} · Org ${Math.round(d.org)}/${t.maxOrg} · ${moralIcon}${supWarn}${stackHtml}</span>
-      <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
+    head.innerHTML = `<b style="font-size:15px">${TYPE_ICON[d.type]}</b><span class="small"> ${front ? '⚔' : '🎮'}${wp}</span>
+      <span class="small ub-stats">💪${Math.round(d.str)} · ⚡${Math.round(d.org)}/${t.maxOrg} · ${moralIcon}${supWarn}${stackN > 1 ? ` · 📚${stackN}` : ''}</span>
+      <button class="mini" id="ub-close">✕</button>`;
   } else {
     const avgStr = sel.reduce((s, d) => s + d.str, 0) / sel.length;
     const frontN = sel.filter(d => d.front != null).length;
     const sameHex = sel.every(x => x.c === sel[0].c && x.r === sel[0].r);
-    const stackHtml = sameHex ? ` · <b>📚 ${sel.length} auf diesem Feld</b>` : '';
-    head.innerHTML = `<b>${sel.length} Truppen</b><span class="small"> · Ø Stärke ${Math.round(avgStr)} % · ${frontN ? frontN + '× ⚔ Frontdienst' : 'alle frei'}</span>
-      <span class="small ub-stats">Rechtsklick = Marsch · Strg+Klick Grenze = Front · B = Linie${stackHtml}</span>
-      <button class="mini" id="ub-close" title="Auswahl aufheben (Esc)">✕</button>`;
+    head.innerHTML = `<b>🪖 ${sel.length}</b><span class="small ub-stats">💪${Math.round(avgStr)}${frontN ? ` · ⚔${frontN}` : ''}${sameHex ? ` · 📚${sel.length}` : ''}</span>
+      <button class="mini" id="ub-close">✕</button>`;
   }
 
   const cards = document.getElementById('unitbar-cards');
@@ -2465,7 +2367,7 @@ function updateUnitbar() {
   cards.innerHTML = shown.map(d => {
     const t = BAL.divTypes[d.type];
     const lowSup = game.supplyModOf(d).level < 0.25 ? '⚠️' : '';
-    return `<div class="ucard" data-div="${d.id}" title="${d.name} — Klick: einzeln wählen, Strg/Shift: abwählen">
+    return `<div class="ucard" data-div="${d.id}">
       <div class="ucard-type" style="border-top-color:${TYPE_STRIPE[d.type] || '#8fa0b3'}">${TYPE_SHORT[d.type] || '?'}</div>
       <div class="ubar"><i style="width:${Math.max(0, Math.min(100, d.str))}%;background:#57c268"></i></div>
       <div class="ubar"><i style="width:${Math.max(0, Math.min(100, d.org / t.maxOrg * 100))}%;background:#e0b34a"></i></div>
@@ -2476,10 +2378,10 @@ function updateUnitbar() {
   const anyFront = sel.some(d => d.front != null);
   const actions = document.getElementById('unitbar-actions');
   actions.innerHTML = `
-    <button id="ub-split" title="Teilen — braucht ≥ 40 Stärke (S). Front-Truppen verteilen sich neu auf der Linie">✂ Teilen</button>
-    <button id="ub-merge" title="Gleiche Typen vereinen (M)">🔗 Vereinen</button>
-    ${anyFront ? '<button id="ub-release" title="Aus der Frontlinie lösen — Truppen werden frei">↩ Front lösen</button>' : ''}
-    <button id="ub-disband" class="danger" title="Ausgewählte Truppen auflösen (50 % der Leute zurück)">🗑</button>`;
+    <button id="ub-split">✂</button>
+    <button id="ub-merge">🔗</button>
+    ${anyFront ? '<button id="ub-release">↩</button>' : ''}
+    <button id="ub-disband" class="danger">🗑</button>`;
 
   document.getElementById('ub-close').onclick = () => { UI.selectedDivs.clear(); updateUnitbar(); };
   cards.querySelectorAll('.ucard').forEach(el => el.addEventListener('click', e => {
@@ -2681,7 +2583,7 @@ function showStartScreen() {
       for (const row of m.rows) for (const ch of row) if (ch !== '.') land++;
       return `<button class="nation-card map-card ${UI.selectedMap === id ? 'sel' : ''}" data-map="${id}">
         <b>${id === 'duell' ? '⚔️' : '🗺️'} ${m.name}</b>
-        <span class="small">${m.w}×${m.h} · ${land} Provinzen${id === 'duell' ? ' · nur 2 Spieler, gespiegelt fair' : ''}</span>
+        <span class="small">⬡${land} · ${id === 'duell' ? '2' : '5'}👤</span>
       </button>`;
     }).join('');
     mapGrid.querySelectorAll('.map-card').forEach(b =>
@@ -2693,8 +2595,6 @@ function showStartScreen() {
   grid.innerHTML = Object.entries(NATION_DEFS).map(([id, def]) => {
     return `<button class="nation-card" data-nation="${id}">
       <span class="chip big" style="background:${def.color}"></span>
-      <b>${def.name}</b>
-      <span class="small">Startplatz frei wählbar</span>
     </button>`;
   }).join('');
   grid.querySelectorAll('.nation-card').forEach(b =>
@@ -2760,8 +2660,8 @@ function checkGameOver() {
   const el = document.getElementById('gameover');
   if (!el.classList.contains('hidden')) return;
   el.classList.remove('hidden');
-  el.querySelector('h1').textContent = game.over.win ? '🏆 SIEG!' : '💀 NIEDERLAGE';
-  el.querySelector('p').textContent = game.over.text;
+  el.querySelector('h1').textContent = game.over.win ? '🏆' : '💀';
+  el.querySelector('p').textContent = '';
   const rbtn = document.getElementById('gameover-replay');
   rbtn.classList.toggle('hidden', !(game._replayCapable && game.cmdLog));
   rbtn.onclick = startReplay;
@@ -2773,12 +2673,12 @@ function checkGameOver() {
   // Endstand: Top 5 + Spieler
   game.vpRecount();
   const ids = rankedNations();
-  let html = `<div class="rank-head">ENDSTAND (Tag ${game.day}) — 🏛️ Hauptstädte · Provinzen</div>`;
+  let html = `<div class="rank-head">📅${game.day} · 🏛️ · ⬡</div>`;
   ids.forEach((id, i) => {
     if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id);
   });
   if (!game.nations[game.player].alive)
-    html += `<div class="rank-row me"><span class="rank-pl">☠</span><span class="rank-name">Dein Reich ist untergegangen</span></div>`;
+    html += `<div class="rank-row me"><span class="rank-pl">☠</span></div>`;
   document.getElementById('gameover-stats').innerHTML = html;
   document.getElementById('ranking').innerHTML = '';
 }

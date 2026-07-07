@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=35">
+  <link rel="stylesheet" href="style.css?v=36">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -12,51 +12,50 @@
   <!-- Obere Leiste: Ressourcen links, Datum + Geschwindigkeit rechts (HOI4-Stil) -->
   <div id="topbar">
     <div class="tb-group" id="tb-nation"></div>
-    <div class="tb-group" title="Gold (Einkommen/Tag)">🪙 <span id="tb-gold">0</span></div>
-    <div class="tb-group" title="Leute / Bevölkerungslimit — Dörfer, Städte, Fischereien u. a. erhöhen die Kapazität; Krieger rekrutieren Leute">👥 <span id="tb-mp">0</span></div>
-    <div class="tb-group" title="Eisen (Förderung/Tag) — aus ⛏️ Minen; Kanonen kosten Eisen">🔩 <span id="tb-eisen">0</span></div>
-    <div class="tb-group" title="Pferde (Zucht/Tag) — aus 🚜 Farmen; Kavallerie kostet Pferde">🐎 <span id="tb-pferde">0</span></div>
-    <div class="tb-group" title="Divisionen">🪖 <span id="tb-div">0</span></div>
-    <div class="tb-group" title="Gehaltene Hauptstädte — 3 starten den Sieg-Countdown!">🏛️ <span id="tb-vp">1/3</span></div>
-    <div class="tb-group" title="Provinzen (Anteil Europas)">🗺️ <span id="tb-prov">0</span></div>
+    <div class="tb-group">🪙 <span id="tb-gold">0</span></div>
+    <div class="tb-group">👥 <span id="tb-mp">0</span></div>
+    <div class="tb-group">🔩 <span id="tb-eisen">0</span></div>
+    <div class="tb-group">🐎 <span id="tb-pferde">0</span></div>
+    <div class="tb-group">🪖 <span id="tb-div">0</span></div>
+    <div class="tb-group">🏛️ <span id="tb-vp">1/3</span></div>
+    <div class="tb-group">🗺️ <span id="tb-prov">0</span></div>
     <div class="tb-spacer"></div>
     <div class="tb-group">
-      <button id="btn-supply" title="Versorgungs-Overlay (V)">🚚</button>
-      <button id="hud-log" title="Ereignis-Log ein/aus">📜</button>
-      <button id="hud-rank" title="Rangliste ein/aus">🏆</button>
-      <button id="hud-mini" title="Minimap ein/aus">🗺️</button>
-      <button id="btn-save" title="Speichern">💾</button>
-      <button id="btn-load" title="Laden">📂</button>
-      <button id="btn-restart" title="Neues Spiel">🔄</button>
-      <button id="btn-help" title="Hilfe">❓</button>
+      <button id="btn-supply">🚚</button>
+      <button id="hud-log">📜</button>
+      <button id="hud-rank">🏆</button>
+      <button id="hud-mini">🗺️</button>
+      <button id="btn-save">💾</button>
+      <button id="btn-load">📂</button>
+      <button id="btn-restart">🔄</button>
     </div>
     <div class="tb-group" id="tb-datebox">
       <span id="tb-live" class="hidden"></span>
       <span id="tb-day">1. Januar 1936</span>
-      <span id="tb-round" class="small" title="Verbleibende Tage der Runde"></span>
+      <span id="tb-round" class="small"></span>
       <span class="speed">
-        <button id="btn-pause" title="Pause (Leertaste)">⏸</button>
-        <button id="btn-speed1" title="Normal (1)">▶</button>
-        <button id="btn-speed2" title="Schnell (2)">▶▶</button>
-        <button id="btn-speed3" title="Sehr schnell (3)">▶▶▶</button>
-        <button id="btn-speed4" title="Turbo (4)">▶▶▶▶</button>
+        <button id="btn-pause">⏸</button>
+        <button id="btn-speed1">▶</button>
+        <button id="btn-speed2">▶▶</button>
+        <button id="btn-speed3">▶▶▶</button>
+        <button id="btn-speed4">▶▶▶▶</button>
       </span>
     </div>
   </div>
 
   <!-- Linke Menüleiste (HOI4-Stil) -->
   <div id="sidebar">
-    <button data-tab="bauen" title="Bauen">🏗️</button>
-    <button data-tab="armeen" title="Truppen">🪖</button>
-    <button data-tab="nationen" title="Nationen &amp; Diplomatie">🌍</button>
-    <button data-tab="info" title="Info">ℹ️</button>
+    <button data-tab="bauen">🏗️</button>
+    <button data-tab="armeen">🪖</button>
+    <button data-tab="nationen">🌍</button>
+    <button data-tab="info">ℹ️</button>
   </div>
 
   <!-- Ausklappbares Panel neben der Menüleiste -->
   <div id="panel" class="hidden">
     <div id="panel-head">
       <b id="panel-title"></b>
-      <button id="panel-close" class="mini" title="Schließen (Esc)">✕</button>
+      <button id="panel-close" class="mini">✕</button>
     </div>
     <div id="panel-content"></div>
   </div>
@@ -69,9 +68,8 @@
   </div>
 
   <!-- Spawn-Phase: Startplatz wählen -->
-  <div id="spawn-banner" class="hidden">📍 <b>Wähle deinen Startplatz!</b> Klick auf die Karte — du siehst, wo die anderen starten.
-    Start in <b><span id="spawn-count">15</span>&thinsp;s</b>
-    <button id="spawn-ready">✔ Bereit</button></div>
+  <div id="spawn-banner" class="hidden">📍 <b><span id="spawn-count">15</span></b>
+    <button id="spawn-ready">✔</button></div>
 
   <!-- Sieg-Countdown-Banner -->
   <div id="vp-banner" class="hidden"></div>
@@ -93,7 +91,7 @@
 
   <!-- Multiplayer-Chat (Enter) -->
   <div id="chat-log" class="hidden"></div>
-  <div id="chat-input"><input maxlength="160" placeholder="Chat — Enter sendet, Esc bricht ab"></div>
+  <div id="chat-input"><input maxlength="160" placeholder="💬"></div>
 
   <!-- Toasts -->
   <div id="toasts"></div>
@@ -108,23 +106,15 @@
   <div id="start" class="overlay">
     <div class="overlay-box">
       <h1>FINAL FRONT</h1>
-      <p class="subtitle">Europa in Flammen — Echtzeit-Strategie</p>
       <div id="mp-block">
-        <button id="btn-mp" class="wide continue">🌐 MULTIPLAYER — 5-Spieler-Runde</button>
-        <button id="btn-mp-duel" class="wide continue">⚔️ MULTIPLAYER — 1v1-Duell (faire Mini-Karte)</button>
-        <div id="mp-status" class="small">🌐 Multiplayer: suche Server …</div>
-        <div class="small" style="margin-top:6px"><label>Dein Name: <input id="mp-name" maxlength="20"></label></div>
+        <button id="btn-mp" class="wide continue">🌐 5👤</button>
+        <button id="btn-mp-duel" class="wide continue">⚔️ 1v1</button>
+        <div id="mp-status" class="small">🌐 …</div>
+        <div class="small" style="margin-top:6px"><label>👤 <input id="mp-name" maxlength="20"></label></div>
       </div>
-      <h2>— oder 🤖 Solo gegen Bots —</h2>
-      <p class="intro"><b>5 Spieler, eine kompakte Europakarte.</b> Wähle in der Startphase (15 s) deinen
-        Spawn frei auf der Karte — du siehst, wo die anderen starten. Jeder beginnt mit <b>einer Stadt samt
-        Umland und einer Armee</b> — für alle exakt gleich. Deine Städte übernehmen freies Umland von selbst; Frontlinien ziehst du per
-        <b>Strg+Klick auf die Grenze</b> oder mit <b>B</b>. <b>Wer 3 der 5 Hauptstädte hält, startet den
-        Sieg-Countdown!</b> Eine Runde ≈ 20–30 Minuten.</p>
-      <button id="btn-continue" class="wide continue hidden">▶ Weiterspielen (letzter Spielstand)</button>
-      <h2>Wähle deine Karte</h2>
+      <h2>🤖</h2>
+      <button id="btn-continue" class="wide continue hidden">▶ 💾</button>
       <div id="map-grid"></div>
-      <h2>Wähle deine Farbe</h2>
       <div id="nation-grid"></div>
     </div>
   </div>
@@ -132,15 +122,12 @@
   <!-- Multiplayer-Lobby -->
   <div id="mp-lobby" class="overlay hidden">
     <div class="overlay-box small-box">
-      <h1>🌐 LOBBY</h1>
+      <h1>🌐</h1>
       <p id="mp-lobby-map" class="small"></p>
       <canvas id="mp-lobby-preview" width="220" height="150"></canvas>
-      <div id="mp-lobby-list"><p class="hint">Verbinde …</p></div>
-      <button id="mp-ready" class="wide continue">▶ Bereit — los geht's!</button>
-      <button id="mp-leave" class="wide danger">← Lobby verlassen</button>
-      <p class="small hint">Die Runde startet bei <b>5 Spielern</b> — oder sobald <b>alle Anwesenden bereit</b> sind
-        (freie Plätze übernehmen Bots). Danach rotiert die Karte für die nächste Lobby.
-        Sieg: <b>3 Hauptstädte</b> halten oder <b>80 % der Karte</b> erobern.</p>
+      <div id="mp-lobby-list"><p class="hint">⏳</p></div>
+      <button id="mp-ready" class="wide continue">✔</button>
+      <button id="mp-leave" class="wide danger">←</button>
     </div>
   </div>
 
@@ -150,59 +137,18 @@
       <h1></h1>
       <p></p>
       <div id="gameover-stats"></div>
-      <button id="gameover-lobby" class="wide continue hidden">🌐 Zurück zur Lobby (nächste Karte)</button>
-      <button id="gameover-replay" class="wide hidden">🎬 Replay ansehen</button>
-      <button id="gameover-restart" class="wide">Neues Spiel</button>
+      <button id="gameover-lobby" class="wide continue hidden">🌐</button>
+      <button id="gameover-replay" class="wide hidden">🎬</button>
+      <button id="gameover-restart" class="wide">🔄</button>
     </div>
   </div>
 
-  <!-- Hilfe -->
-  <div id="help" class="overlay hidden">
-    <div class="overlay-box">
-      <h2>Anleitung</h2>
-      <ul class="help-list">
-        <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = alle eigenen Truppen</b>. Ausgewählte Truppen erscheinen in der <b>Einheiten-Leiste unten</b> (Teilen, Vereinen, Front lösen, Auflösen).</li>
-        <li><b>Teilen &amp; Vereinen:</b> <b>S</b> teilt ausgewählte Divisionen in zwei Hälften · <b>M</b> vereint ausgewählte Divisionen gleichen Typs</li>
-        <li><b>🏙️ Eroberung durch Städte:</b> Städte und die Hauptstadt <b>strahlen aus</b> — freies Umland im <b>kleinen Radius (2 Felder)</b> schließt sich langsam von selbst an (das Feld füllt sich mit deiner Farbe), je näher an der Stadt, desto schneller. Feindland wird davon NICHT beeinflusst.</li>
-        <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen können <b>überall hinlaufen</b>, auch durch unerobertes und fremdes Land (ohne Verbindung aber kein Nachschub!) · <b>Shift+Rechtsklick = Wegpunkte</b>. Bleibt eine Truppe auf einem fremden Feld <b>stehen, übernimmt sie genau dieses Feld</b> — langsam, stärkeabhängig, Nachbarfelder nicht mehr. 💥 Kanonen erobern stark · 🐎 Kavallerie mittel · 🛡 Krieger schwach. ⛰️ Berge und 🌊 Flussfelder sind zäher. Kämpfe gibt es nur noch gegen feindliche <b>Truppen</b>.</li>
-        <li><b>⚔ Frontlinien:</b> <b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Front entlang des Grenzverlaufs (wächst mit) · <b>B</b> = eigene Linie über die Karte ziehen (hält Stellung). Zugewiesene Truppen <b>verteilen sich selbst</b> auf der Linie und kämpfen dort. <b>S</b> teilt Front-Truppen und verteilt sie neu. Front lösen: Truppen-Menü oder Einheiten-Leiste. <b>🎯 Vormarsch:</b> Front-Badge (Kreis mit Truppenzahl) anklicken, dann ein Ziel auf der Karte — die Front kämpft sich dorthin vor.</li>
-        <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
-        <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt samt Umland (7 Felder) und einer Armee Krieger</b> — für alle exakt gleich.</li>
-        <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien: Wer AUF einem Flussfeld steht, ist deutlich schwerer anzugreifen, und Flussfelder leisten der Eroberung länger Widerstand. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
-        <li><b>🌐 Multiplayer:</b> Zwei Warteschlangen — die <b>5-Spieler-Runde</b> (Karte rotiert: Europa → Mitteleuropa → Westeuropa) und das <b>⚔️ 1v1-Duell</b> auf der spiegelsymmetrisch fairen Duell-Insel (startet bei 2 Spielern; Sieg schon mit 2 Hauptstädten oder 80 %). Bei voller Lobby (oder wenn alle bereit sind; Rest wird KI) startet die Runde. Feste, gemütliche Geschwindigkeit (1 Tag/s), kein Pause/Speichern — alle spielen dieselbe Simulation. <b>Enter = Chat.</b> Nach der Runde: „Zurück zur Lobby" — die nächste Karte wartet.</li>
-        <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Wer <b>80 % der Karte</b> kontrolliert, gewinnt sofort (Dominanz). Nach <b>600 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 360: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
-        <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>40 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
-        <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
-        <li><b>Allianzen:</b> Rechtsklick (ohne Truppenauswahl) auf fremdes Land = Allianz anbieten. Angebote an dich erscheinen oben. Verbündete können sich nicht angreifen. Lösen im Nationen-Tab. <b>Verrat:</b> Wer ein Bündnis löst und den Ex-Verbündeten binnen 25 Tagen angreift, ist 60 Tage <b>🐍 Verräter</b> — kein Handel, keine neuen Bündnisse, bevorzugtes Ziel aller.</li>
-        <li><b>Bauen:</b> Klicke ein <b>eigenes Feld</b> an — links erscheint die Liste, was genau dort gebaut werden kann (inkl. Ausbau-Level). 🎣 Fischerei: freies Küstenwasser neben deinem Land anklicken. Straßen lassen sich über den Modus-Button weiterhin <b>ziehen</b>.</li>
-        <li><b>📈 Preis-Staffel:</b> Jedes weitere <b>selbst gebaute</b> Gebäude eines Typs <b>verdoppelt dessen Preis</b> (nach 4 Verdopplungen konstant, max. ×16). <b>Eroberte Gebäude zählen nicht</b> — Expansion ist der günstige Weg zu mehr Wirtschaft; verlierst du ein Gebäude, wird dein nächstes wieder billiger.</li>
-        <li><b>Wirtschaft — klare Rollen:</b> ⛏️ <b>Mine</b> = 🔩 Eisen für Kanonen (überall, Hügel-Bonus) · 🚜 <b>Farm</b> = 🐎 Pferde für Kavallerie (nur Ebene) · 🪓 <b>Forsterei</b> = Gold + etwas Leute (Wald) · 🎣 <b>Fischerei</b> = Gold + viele Leute (Küstenwasser) · 🏠 <b>Dorf</b> = Leute · 🏙️ Stadt = Gold + Leute + Hub. 🎪 <b>Kaserne bildet doppelt so schnell aus</b> · 🛣️ Straßen = Bewegung + Versorgung.</li>
-        <li><b>Ausbau-Level:</b> Gleiches Gebäude nochmal aufs Feld bauen = <b>Level 2/3</b> (goldene Punkte am Gebäude) — kostet das 2-/3-fache, bringt das Doppelte/Dreifache. Auch Kasernen sind ausbaubar.</li>
-        <li><b>🏙️ Stadt (Dorf-Ausbau):</b> Ein Dorf lässt sich zur Stadt ausbauen — Gold + Leute + Versorgungs-Hub, und <b>Straßen zu nahen Städten wachsen automatisch</b> (schnellere Truppen, Brücken über Flüsse).</li>
-        <li><b>🗼 Wehrturm:</b> Verstärkt die <b>Miliz aller umliegenden eigenen Felder ×1,5</b> — dein Land fällt langsamer. Ausbau (Level 2) = <b>doppelte Reichweite</b>. Fällt der Turm, wirkt er für den Eroberer!</li>
-        <li><b>Passives Land:</b> Unbebautes eigenes Land arbeitet mit — Wald/Hügel/Berge bringen etwas Gold, Ebenen etwas Leute. Gebäude sind um ein Vielfaches stärker.</li>
-        <li><b>📚 Armee-Stapel:</b> Mehrere Armeen können auf einem Feld stehen (z. B. nach dem Teilen) — der Stapel zeigt oben rechts seine Anzahl. Klick aufs Feld wählt alle; in der Einheiten-Leiste unten wählst du sie einzeln an.</li>
-        <li><b>Gefechtsprognose:</b> Über laufenden Kämpfen und beim Zeigen auf eine feindliche Armee (mit eigener Auswahl) erscheint die <b>HOI-Bubble</b>: Grün = du gewinnst, Gelb = knapp, Rot = Finger weg. RPS-Dreieck, Gelände, Fluss, Organisation und Kessel sind eingerechnet.</li>
-        <li><b>🎖️ Ausbildung:</b> Truppen werden in <b>🏙️ Städten, der Hauptstadt oder 🎪 Kasernen</b> ausgebildet — Feld anklicken, Typ wählen. <b>Kasernen bilden doppelt so schnell aus.</b> Die fertige Division <b>erscheint am Ausbildungsort</b>. <b>Truppen kosten bei der Erstellung KEIN Gold</b> — nur 👥 Leute plus Rohstoffe (Kavallerie 🐎 Pferde, Kanonen 🔩 Eisen). Dafür kostet der <b>laufende Unterhalt Gold, gestaffelt nach Qualität</b> (Krieger 0,6 · Kavallerie 1,4 · Kanonen 2,0 pro Tag).</li>
-        <li><b>👥 Bevölkerungslimit:</b> Dein Reich versorgt nur begrenzt viele Leute (oben: <b>x/Limit</b>). Kapazität geben: Basis 20 · jedes Landfeld +0,2 · 🏙️ Stadt +25 · 🏠 Dorf +10, 🎣 Fischerei +8, 🪓 Forsterei +4, 🎪 Kaserne +5 (je × Level). Am Limit stoppt das Wachstum!</li>
-        <li><b>Truppendreieck (EU4-Stil):</b> 🛡 <b>Krieger</b> halten die Linie und schlagen Kavallerie · 🐎 <b>Kavallerie</b> ist schnell und schlägt Kanonen · 💥 <b>Kanonen</b> belagern (2,5× gegen Miliz) und schlagen Krieger — aber langsam und fragil.</li>
-        <li><b>Versorgung (Taste V):</b> fließt von Hauptstadt/Städten/Kasernen über Straßen. Ohne Nachschub → Stärke- und Moralverlust.</li>
-        <li><b>Organisation (gelb):</b> sinkt im Kampf — <b>bricht sie, ist die Division VERNICHTET</b> (kein Rückzug, kein Wiederkommen): Schlachten sind endgültig, die Prognose-Bubble lohnt sich. <b>Moral:</b> Siege ↑, Mangel ↓ — multipliziert Kampfkraft. <b>Einkesselung</b> vernichtet: abgeschnittene Gebiete werden rot als <b>⚔ KESSEL</b> markiert, eingeschlossene Truppen kämpfen viel schwächer und nehmen mehr Schaden — Küsten evakuieren über See. <b>🔒 Umzingelt = verloren:</b> Kleine Gebiete (bis 12 Felder, ohne Hauptstadt und Verteidiger), die komplett von EINER Nation <b>eingezäunt</b> sind, fallen ihr kampflos zu — aber nur ohne Meerzugang: ein abgeschnittener Küstenzipfel zählt NICHT als umzingelt.</li>
-        <li><b>Hauptstadt</b> verloren? Der Regierungssitz wird verlegt, solange dein Reich groß genug ist — sonst Untergang. Der <b>Siegpunkt</b> bleibt aber am Originalort und kann zurückerobert werden!</li>
-        <li><b>Weniger HUD:</b> Oben rechts lassen sich 📜 Ereignis-Log (standardmäßig aus), 🏆 Rangliste und 🗺️ Minimap einzeln ein-/ausblenden — Wichtiges kommt weiterhin als kurze Einblendung.</li>
-        <li><b>💰 Unterhalt:</b> Jede Division kostet Gold pro Tag (Krieger 0,6 · Kavallerie 1,4 · Kanonen 2,0). Ist die <b>Kasse leer und das Einkommen negativ, verlieren alle Truppen Moral</b> — Truppen auflösen oder Wirtschaft bauen!</li>
-        <li><b>🌊 Über See:</b> Truppen können Wasser überqueren (deutlich langsamer, Angriff von See um 50 % geschwächt) — Wasserfelder selbst lassen sich nicht erobern, Truppen auf See nicht angreifen.</li>
-        <li><b>Tasten:</b> Leertaste Pause · 1–4 Geschwindigkeit · <b>B</b> Frontlinie ziehen · S/M teilen/vereinen · V Versorgung · Esc abbrechen · Autosave läuft automatisch</li>
-      </ul>
-      <p class="small hint">(Klick neben das Fenster zum Schließen)</p>
-    </div>
-  </div>
 
-  <script src="js/mapdata.js?v=35"></script>
-  <script src="js/map.js?v=35"></script>
-  <script src="js/game.js?v=35"></script>
-  <script src="js/ui.js?v=35"></script>
-  <script src="js/net.js?v=35"></script>
-  <script src="js/main.js?v=35"></script>
+  <script src="js/mapdata.js?v=36"></script>
+  <script src="js/map.js?v=36"></script>
+  <script src="js/game.js?v=36"></script>
+  <script src="js/ui.js?v=36"></script>
+  <script src="js/net.js?v=36"></script>
+  <script src="js/main.js?v=36"></script>
 </body>
 </html>

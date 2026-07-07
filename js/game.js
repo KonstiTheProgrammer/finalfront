@@ -35,6 +35,9 @@ const BAL = {
   //   Dorf (überall):        nur Leute
   //   Mine (überall):        🔩 Eisen  · Hügel-Bonus (für Kanonen)
   //   Farm (nur Ebene):      🐎 Pferde (für Kavallerie)
+  // Lager-Cap: Eisen/Pferde stapeln nur bis zur Kapazität der Gebäude
+  storePerMine: 15,   // Eisen-Lager je Minen-Level
+  storePerFarm: 12,   // Pferde-Lager je Farm-Level
   yields: {
     mine:      { gold: 0,   leute: 0,    eisen: 0.6, hillsEisen: 0.85 },
     farm:      { gold: 0,   leute: 0,    pferde: 0.5 },
@@ -52,9 +55,9 @@ const BAL = {
   },
   // Baukosten (Ausbau auf Level N kostet das N-fache)
   cost: { strasse: 25, dorf: 60, fischerei: 80, farm: 90, mine: 90, forsterei: 110, turm: 120, kaserne: 120, stadt: 180 },
-  // Wehrturm: verstärkt die Miliz umliegender eigener Felder.
-  // Level 2 verdoppelt die Reichweite (1 → 2 Felder).
-  turm: { boost: 1.5, range: 1, range2: 2, maxLevel: 2 },
+  // Bunker (intern 'turm'): verstärkt die VERTEIDIGUNG der Division,
+  // die auf dem Feld steht — ×2 / ×2.5 / ×3 über 3 Level.
+  bunker: { def: [2, 2.5, 3], maxLevel: 3 },
   // Truppendreieck nach EU4-Vorbild:
   //   Krieger schlagen Kavallerie · Kavallerie schlägt Kanonen · Kanonen schlagen Krieger
   // Erober-Profil (militia = Tempo gegen Miliz, skaliert zusätzlich linear
@@ -66,9 +69,9 @@ const BAL = {
   // kostet KEIN Gold. Dafür kostet der laufende UNTERHALT Gold, gestaffelt
   // nach Qualität der Truppe (Pleite → Moralverfall).
   divTypes: {
-    inf: { name: 'Krieger',    mp: 12,                upkeep: 0.6, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 1.4, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 2.0, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    mp: 12,                upkeep: 1.5, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', mp: 9,  pferde: 10,    upkeep: 3.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    mp: 7,  eisen: 12,     upkeep: 4.5, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -194,7 +197,6 @@ class Game {
     this._frontsDirtyIds = new Set();
     this._damagedHexes = new Set();    // Hexes mit angeschlagener Miliz (für militiaDaily)
     this._kasernen = [];               // Cache: alle Kasernen-Hexes (recalcEconomy)
-    this._tuerme = [];                 // Cache: alle Wehrturm-Hexes (recalcEconomy)
     this.training = [];                // Ausbildungs-Warteschlange {c, r, nation, type, ready}
     this._borderCache = null;          // Cache: borderNationsOf pro Tag
     this._hasDead = false;
@@ -453,10 +455,10 @@ class Game {
     const nat = {
       id,
       alive: true,
-      gold: 200,
+      gold: 100,
       leute: 20,        // Bevölkerungs-Pool — ALLE Truppen rekrutieren hieraus
-      eisen: 10,        // 🔩 aus Minen — Kanonen
-      pferde: 8,        // 🐎 aus Farmen — Kavallerie
+      eisen: 0,         // 🔩 aus Minen (Lager-Cap: Minen-Level × 15)
+      pferde: 0,        // 🐎 aus Farmen (Lager-Cap: Farm-Level × 12)
       allies: new Set(),
       armies: [],
       ai: this._humans ? !this._humans.includes(id) : id !== this.player,
@@ -612,8 +614,6 @@ class Game {
     // Gelände verteidigt mit: Berge sind Festungen, Flussfelder zäh
     base *= BAL.terrainResist[h.terrain] || 1;
     if (h.river) base *= BAL.riverResist;
-    // Wehrturm in Reichweite: Miliz der umliegenden Felder verstärkt
-    if (h.owner && this._towerNear(h)) base *= BAL.turm.boost;
     h.resistMax = base;
     if (h.resist <= 0 || h.resist > base) h.resist = base;
   }
@@ -723,13 +723,13 @@ class Game {
      Kasernen bilden doppelt so schnell aus; die Division spawnt am Standort. */
   queueTraining(nation, c, r, type) {
     const h = this.hexAt(c, r);
-    if (!this.isTrainSite(h, nation)) return 'Nur in Städten, der Hauptstadt oder Kasernen';
+    if (!this.isTrainSite(h, nation)) return '⚠🏙️';
     const t = BAL.divTypes[type];
-    if (!t) return 'Unbekannter Typ';
+    if (!t) return '⚠';
     const nat = this.nations[nation];
-    if (nat.leute < t.mp) return `Zu wenig 👥 Leute (${t.mp}k) — Dörfer/Städte/Fischereien!`;
-    if (t.eisen && nat.eisen < t.eisen) return `Zu wenig 🔩 Eisen (${t.eisen}) — Minen fördern es`;
-    if (t.pferde && nat.pferde < t.pferde) return `Zu wenig 🐎 Pferde (${t.pferde}) — Farmen züchten sie`;
+    if (nat.leute < t.mp) return '⚠👥 ' + t.mp;
+    if (t.eisen && nat.eisen < t.eisen) return '⚠🔩 ' + t.eisen;
+    if (t.pferde && nat.pferde < t.pferde) return '⚠🐎 ' + t.pferde;
     nat.leute -= t.mp;
     if (t.eisen) nat.eisen -= t.eisen;
     if (t.pferde) nat.pferde -= t.pferde;
@@ -884,28 +884,6 @@ class Game {
     return merged;
   }
 
-  /* Steht ein eigener Wehrturm in Reichweite? (Level 2 = doppelte Reichweite) */
-  _towerNear(h) {
-    for (const t of this._tuerme) {
-      if (t.building !== 'turm' || t.owner !== h.owner) continue;
-      const range = (t.level || 1) >= 2 ? BAL.turm.range2 : BAL.turm.range;
-      if (hexDist(t.c, t.r, h.c, h.r) <= range) return true;
-    }
-    return false;
-  }
-
-  /* Miliz-Obergrenzen rund um einen (neuen/verlorenen) Turm neu setzen */
-  refreshTowerRing(h) {
-    for (let dr = -BAL.turm.range2; dr <= BAL.turm.range2; dr++) {
-      for (let dc = -BAL.turm.range2 - 1; dc <= BAL.turm.range2 + 1; dc++) {
-        const x = this.hexAt(h.c + dc, h.r + dr);
-        if (!x || x.terrain === 'water' || hexDist(h.c, h.r, x.c, x.r) > BAL.turm.range2) continue;
-        this.setResist(x);
-        if (x.resist < x.resistMax) this._damagedHexes.add(x);
-      }
-    }
-  }
-
   /* Stadt-Ausbau: Straßen wachsen automatisch zu nahen eigenen Städten —
      schnellere Truppen, bessere Versorgung, Brücken über Flüsse */
   connectCities(h) {
@@ -955,38 +933,38 @@ class Game {
   }
 
   canBuild(nation, h, what) {
-    if (!h) return 'Kein Feld';
-    if (!BAL.cost[what]) return 'Gibt es nicht mehr';
+    if (!h) return '⚠';
+    if (!BAL.cost[what]) return '⚠';
     // Fischerei ist das einzige Gebäude im Meer — auf Küstenwasser neben eigenem Land
     if (what === 'fischerei') {
-      if (h.terrain !== 'water') return 'Nur auf Küstenwasser';
-      if (h.owner && h.owner !== nation) return 'Fremdes Gewässer';
+      if (h.terrain !== 'water') return '⚠🌊';
+      if (h.owner && h.owner !== nation) return '⚠';
       if (h.building === 'fischerei') {
-        if ((h.level || 1) >= BAL.maxLevel) return `Schon Level ${BAL.maxLevel} (max.)`;
-      } else if (h.building) return 'Feld belegt';
+        if ((h.level || 1) >= BAL.maxLevel) return '⚠';
+      } else if (h.building) return '⚠⬡';
       if (!neighborsOf(h.c, h.r).some(([nc, nr]) => {
         const nh = this.hexAt(nc, nr);
         return nh && nh.owner === nation && nh.terrain !== 'water';
-      })) return 'Braucht eigenes Land am Ufer';
+      })) return '⚠';
     } else if (h.owner !== nation) {
-      return 'Nicht dein Gebiet';
+      return '⚠';
     } else if (what === 'strasse') {
-      if (h.terrain === 'water') return 'Nicht im Meer';
-      if (h.road) return 'Bereits Straße';
+      if (h.terrain === 'water') return '⚠🌊';
+      if (h.road) return '⚠';
     } else if (what === 'stadt') {
-      if (h.building === 'stadt') return 'Schon eine Stadt';
-      if (h.building !== 'dorf') return 'Braucht ein Dorf (Ausbau)';
+      if (h.building === 'stadt') return '⚠';
+      if (h.building !== 'dorf') return '⚠🏠';
     } else {
-      if (!TERRAIN[h.terrain].buildable) return TERRAIN[h.terrain].name + ' — nicht bebaubar';
-      if (what === 'forsterei' && h.terrain !== 'forest') return 'Nur im Wald';
-      if (what === 'farm' && h.terrain !== 'plains') return 'Nur auf Ebenen';
+      if (!TERRAIN[h.terrain].buildable) return '⚠⬡';
+      if (what === 'forsterei' && h.terrain !== 'forest') return '⚠🌲';
+      if (what === 'farm' && h.terrain !== 'plains') return '⚠🌾';
       if (h.building === what) {
-        const cap = what === 'turm' ? BAL.turm.maxLevel : BAL.maxLevel;
-        if ((h.level || 1) >= cap) return `Schon Level ${cap} (max.)`;
-      } else if (h.building) return 'Feld belegt';
+        const cap = what === 'turm' ? BAL.bunker.maxLevel : BAL.maxLevel;
+        if ((h.level || 1) >= cap) return '⚠';
+      } else if (h.building) return '⚠⬡';
     }
     const cost = this.buildCost(nation, h, what);
-    if (this.nations[nation].gold < cost) return `Zu wenig Gold (${cost})`;
+    if (this.nations[nation].gold < cost) return '⚠🪙 ' + cost;
     return true;
   }
 
@@ -1005,7 +983,6 @@ class Game {
         this.addLog(`🏙️ Neue Stadt — Straßen zu ${roads} Nachbarstadt/-städten wachsen von selbst!`);
     } else if (h.building === what) {
       h.level = (h.level || 1) + 1;   // Ausbau
-      if (what === 'turm') this.refreshTowerRing(h);   // Level 2: doppelte Reichweite
     } else {
       h.building = what;
       h.level = 1;
@@ -1013,7 +990,6 @@ class Game {
       if (what === 'fischerei') h.owner = nation;   // Küstenwasser gehört jetzt dir
       this.setResist(h);
       if (what === 'kaserne') this._kasernen.push(h);
-      else if (what === 'turm') { this._tuerme.push(h); this.refreshTowerRing(h); }
     }
     this._supplyDirtyIds.add(nation);
     this.economyDirty = true;
@@ -1028,12 +1004,13 @@ class Game {
       nat.leutePerDay = 0;
       nat.eisenPerDay = 0;
       nat.pferdePerDay = 0;
+      nat.eisenCap = 0;
+      nat.pferdeCap = 0;
       nat.hexCount = 0;
       nat.staedte = 0;
       nat.popCap = BAL.pop.base;   // Bevölkerungslimit: Basis + Gebäude + Land
     }
     this._kasernen = [];
-    this._tuerme = [];
     this._staedte = [];
     for (const row of this.hexes) for (const h of row) {
       if (!h.owner) continue;
@@ -1048,14 +1025,14 @@ class Game {
         // Gebäude-Ertrag × Level (Mine: Hügel-Bonus aufs Eisen)
         nat.incomePerDay += y.gold * lvl;
         nat.leutePerDay += y.leute * lvl;
-        if (y.eisen) nat.eisenPerDay += ((h.terrain === 'hills' && y.hillsEisen) ? y.hillsEisen : y.eisen) * lvl;
-        if (y.pferde) nat.pferdePerDay += y.pferde * lvl;
+        if (y.eisen) { nat.eisenPerDay += ((h.terrain === 'hills' && y.hillsEisen) ? y.hillsEisen : y.eisen) * lvl; nat.eisenCap += BAL.storePerMine * lvl; }
+        if (y.pferde) { nat.pferdePerDay += y.pferde * lvl; nat.pferdeCap += BAL.storePerFarm * lvl; }
       } else if (h.building === 'stadt') {
         nat.incomePerDay += BAL.incomeStadt; nat.leutePerDay += BAL.leuteStadt; nat.staedte++;
       } else if (h.building === 'kaserne') {
         this._kasernen.push(h);
       } else if (h.building === 'turm') {
-        this._tuerme.push(h);
+        /* Bunker: kein Ertrag — wirkt im Kampf */
       } else {
         // Unbebautes Land arbeitet passiv — viel schwächer als jedes Gebäude
         const p = BAL.passive[h.terrain];
@@ -1093,9 +1070,10 @@ class Game {
       const cap = nat.popCap || 999;
       if (nat.leute < cap) nat.leute = Math.min(cap, nat.leute + nat.leutePerDay * dt);
       else nat.leute = Math.max(cap, nat.leute - 0.4 * dt);
-      // Rohstoffe: Minen fördern Eisen, Farmen züchten Pferde (Lager 999)
-      nat.eisen = Math.min(999, nat.eisen + nat.eisenPerDay * dt);
-      nat.pferde = Math.min(999, nat.pferde + nat.pferdePerDay * dt);
+      // Rohstoffe: Minen fördern Eisen, Farmen züchten Pferde —
+      // das LAGER ist durch die Gebäude begrenzt (Cap = Level-Summe × Wert)
+      nat.eisen = Math.min(Math.max(nat.eisen, nat.eisenCap), nat.eisen + nat.eisenPerDay * dt);
+      nat.pferde = Math.min(Math.max(nat.pferde, nat.pferdeCap), nat.pferde + nat.pferdePerDay * dt);
     }
   }
 
@@ -1348,9 +1326,18 @@ class Game {
     };
     const sorted = divs.map(d => [idxOf(d), d]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
     const used = new Set();
-    sorted.forEach((d, i) => {
-      const idx = sorted.length === 1 ? Math.floor(line.length / 2)
-        : Math.round(i * (line.length - 1) / (sorted.length - 1));
+    // STICKY: wer schon nah an der Linie steht, behält seine Station —
+    // kein ewiges Hin-und-her-Geschiebe
+    const rest = [];
+    for (const d of sorted) {
+      if (d.station && line.some(h => hexDist(h.c, h.r, d.station[0], d.station[1]) <= 1)
+        && !used.has(d.station[0] + d.station[1] * MAP_W)) {
+        used.add(d.station[0] + d.station[1] * MAP_W);
+      } else rest.push(d);
+    }
+    rest.forEach((d, i) => {
+      const idx = rest.length === 1 ? Math.floor(line.length / 2)
+        : Math.round(i * (line.length - 1) / (rest.length - 1));
       let h = line[Math.min(idx, line.length - 1)];
       if (used.has(h.c + h.r * MAP_W)) {
         const free = this.findFreeStation(army.nation, h, used);
@@ -1528,9 +1515,17 @@ class Game {
       return [bi, d];
     }).sort((a, b) => a[0] - b[0]).map(x => x[1]);
     const used = new Set();
-    sorted.forEach((d, i) => {
-      const idx = sorted.length === 1 ? Math.floor(line.length / 2)
-        : Math.round(i * (line.length - 1) / (sorted.length - 1));
+    // STICKY: Truppen nah an der Linie behalten ihre Station
+    const rest = [];
+    for (const d of sorted) {
+      if (d.station && line.some(h => hexDist(h.c, h.r, d.station[0], d.station[1]) <= 1)
+        && !used.has(d.station[0] + d.station[1] * MAP_W)) {
+        used.add(d.station[0] + d.station[1] * MAP_W);
+      } else rest.push(d);
+    }
+    rest.forEach((d, i) => {
+      const idx = rest.length === 1 ? Math.floor(line.length / 2)
+        : Math.round(i * (line.length - 1) / (rest.length - 1));
       let h = line[Math.min(idx, line.length - 1)];
       if (used.has(h.c + h.r * MAP_W)) {
         const free = this.findFreeStation(f.owner, h, used);
@@ -1788,15 +1783,19 @@ class Game {
       const defT = BAL.divTypes[def.type];
       // Truppendreieck: Krieger > Kavallerie > Kanonen > Krieger
       power *= (BAL.rps[atk.type] && BAL.rps[atk.type][def.type]) || 1;
-      const defPower = this.attackPower(def) * defT.defF * dRand
+      // BUNKER: die Division auf dem Bunker-Feld verteidigt massiv stärker
+      const dh0 = this.hexAt(def.c, def.r);
+      const bunker = (dh0 && dh0.building === 'turm' && dh0.owner === def.nation)
+        ? BAL.bunker.def[Math.min((dh0.level || 1), BAL.bunker.def.length) - 1] : 1;
+      const defPower = this.attackPower(def) * defT.defF * dRand * bunker
         * ((BAL.rps[def.type] && BAL.rps[def.type][atk.type]) || 1);
       // Endphase: Angreifer schlagen härter durch — Stellungskriege lösen sich,
       // Hauptstädte fallen, die Runde findet ihren Sieger
       const lateAtk = 1 + 0.8 * this.lateFactor();
       const dh = this.hexAt(def.c, def.r);
       const pocketDmg = dh && dh._pocket ? 1.45 : 1;   // im Kessel: leicht zu vernichten
-      def.org -= power * BAL.atkBase * BAL.orgDmg * lateAtk * pocketDmg * dt;
-      def.str -= power * BAL.atkBase * BAL.strDmg * lateAtk * pocketDmg * dt;
+      def.org -= power * BAL.atkBase * BAL.orgDmg * lateAtk * pocketDmg / bunker * dt;
+      def.str -= power * BAL.atkBase * BAL.strDmg * lateAtk * pocketDmg / bunker * dt;
       atk.org -= defPower * BAL.atkBase * BAL.orgDmg * 0.75 * dt;
       atk.str -= defPower * BAL.atkBase * BAL.strDmg * 0.6 * dt;
       // Besiegt = vernichtet: bricht die Organisation, wird die Division
@@ -1883,7 +1882,6 @@ class Game {
     h.owner = div.nation;
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
-    if (h.building === 'turm') this.refreshTowerRing(h);   // Turm wirkt jetzt für den Eroberer
     this._damagedHexes.add(h);
     // Die Truppe bleibt STEHEN — das Land wird von der Position aus übernommen
     // (War-of-Dots). War das Feld das Marschziel, ist der Befehl erledigt;
@@ -2442,6 +2440,15 @@ class Game {
     const army = nat.armies[0];
     if (!army) return;
     const myPow = this.nationPower(id);
+    // Hysterese: Zielwechsel höchstens alle 15 Tage — kein Truppen-Pendeln
+    const prevTarget = army.target;
+    const setTarget = (t, m) => {
+      if (t !== prevTarget && this.day - (army._switchDay || -99) < 15) return false;
+      if (t !== prevTarget) army._switchDay = this.day;
+      army.target = t;
+      army.mode = m;
+      return true;
+    };
 
     // 0) Schonfrist: nur expandieren
     if (this.day < BAL.graceDays) {
@@ -2449,10 +2456,11 @@ class Game {
       army.mode = 'attack';
       return;
     }
-    // 1) Unter Beschuss? Verteidigen/zurückschlagen
+    // 1) Unter Beschuss? Verteidigen/zurückschlagen (überstimmt die Hysterese)
     if (this.day - nat._lastAttackedDay < 10 && nat._lastAttacker
       && this.nations[nat._lastAttacker].alive && this.hostile(id, nat._lastAttacker)) {
       const ratio = myPow / Math.max(0.1, this.nationPower(nat._lastAttacker));
+      if (army.target !== nat._lastAttacker && army.target !== 'ALL') army._switchDay = this.day;
       army.target = ratio > 0.85 ? nat._lastAttacker : 'ALL';
       army.mode = ratio > 0.85 ? 'attack' : 'defend';
       return;
@@ -2477,18 +2485,16 @@ class Game {
     // Wer selbst Hauptstädte sammelt, greift nach der Krone
     if (victim && vRatio > 1.4 - 0.2 * lf && this.divisionsOf(id).length >= 5
       && this.rand() < aggression + 0.25 + 0.2 * lf + 0.08 * ((nat.vp || 1) - 1)) {
-      army.target = victim;
-      army.mode = 'attack';
+      setTarget(victim, 'attack');
       return;
     }
     // 3) Sonst: expandieren, solange es neutrales Land gibt
-    army.target = 'EXPAND';
-    army.mode = 'attack';
+    if (!setTarget('EXPAND', 'attack')) return;
     this.computeFront(army);
     if (!army.frontHexes.length) {
       // nichts Neutrales mehr erreichbar
-      if (victim && vRatio > 1.1) { army.target = victim; army.mode = 'attack'; }
-      else { army.target = 'ALL'; army.mode = 'defend'; }
+      if (victim && vRatio > 1.1) setTarget(victim, 'attack');
+      else setTarget('ALL', 'defend');
     }
   }
 
