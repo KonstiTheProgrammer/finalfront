@@ -24,6 +24,9 @@ const NET = {
   nextTick: 0,
   driver: null,
   active: false,       // true, solange eine MP-Runde läuft
+  names: null,         // Nation -> Spielername (vom Server)
+  rtt: null,           // gemessener Ping (ms)
+  _pinger: null,
 };
 
 /* ---------- Server finden & verbinden ---------- */
@@ -77,6 +80,11 @@ function netJoin() {
   ws.onopen = () => {
     ws.send(JSON.stringify({ t: 'hello', name: netPlayerName() }));
     ws.send(JSON.stringify({ t: 'join' }));
+    clearInterval(NET._pinger);
+    NET._pinger = setInterval(() => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'ping', ts: performance.now() }));
+    }, 4000);
+    if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'ping', ts: performance.now() }));
   };
   ws.onmessage = ev => {
     let msg;
@@ -121,7 +129,14 @@ function netLeave(silent) {
   NET.ws = null;
   NET.state = 'off';
   NET.active = false;
+  NET.rtt = null;
+  clearInterval(NET._pinger);
+  NET._pinger = null;
   if (NET.driver) { clearInterval(NET.driver); NET.driver = null; }
+  const cl = document.getElementById('chat-log');
+  if (cl) { cl.innerHTML = ''; cl.classList.add('hidden'); }
+  const ci = document.getElementById('chat-input');
+  if (ci) ci.classList.remove('open');
   if (window.game && game._net) game._net = null;
   const ov = document.getElementById('mp-lobby');
   if (ov) ov.classList.add('hidden');
@@ -144,7 +159,53 @@ function netHandle(msg) {
 
   } else if (msg.t === 'step') {
     NET.steps.push(msg);
+
+  } else if (msg.t === 'pong') {
+    NET.rtt = Math.max(1, Math.round(performance.now() - msg.ts));
+
+  } else if (msg.t === 'chat') {
+    netChatShow(msg);
   }
+}
+
+/* ---------- Chat ---------- */
+function netChatShow(msg) {
+  const box = document.getElementById('chat-log');
+  if (!box) return;
+  const el = document.createElement('div');
+  el.className = 'chat-line';
+  const col = msg.n && NATION_DEFS[msg.n] ? NATION_DEFS[msg.n].color : '#9fb2c8';
+  el.innerHTML = `<b style="color:${col}">${(msg.name || '?').replace(/</g, '&lt;')}:</b> ${String(msg.msg).replace(/</g, '&lt;')}`;
+  box.appendChild(el);
+  while (box.children.length > 6) box.removeChild(box.firstChild);
+  box.classList.remove('hidden');
+  clearTimeout(NET._chatHideT);
+  NET._chatHideT = setTimeout(() => { if (!document.getElementById('chat-input').classList.contains('open')) box.classList.add('hidden'); }, 12000);
+}
+
+function netChatSend(text) {
+  text = (text || '').trim();
+  if (!text || !NET.ws || NET.ws.readyState !== 1) return;
+  NET.ws.send(JSON.stringify({ t: 'chat', msg: text.slice(0, 160) }));
+}
+
+/* Enter = Chat öffnen/senden (nur wenn verbunden) */
+function netToggleChat() {
+  if (!NET.ws || NET.ws.readyState !== 1) return false;
+  const wrap = document.getElementById('chat-input');
+  const inp = wrap.querySelector('input');
+  if (wrap.classList.contains('open')) {
+    const v = inp.value;
+    inp.value = '';
+    wrap.classList.remove('open');
+    inp.blur();
+    if (v.trim()) netChatSend(v);
+  } else {
+    wrap.classList.add('open');
+    document.getElementById('chat-log').classList.remove('hidden');
+    inp.focus();
+  }
+  return true;
 }
 
 /* ---------- Lobby-UI ---------- */
@@ -155,12 +216,39 @@ function netShowLobby(text) {
   if (text) document.getElementById('mp-lobby-list').innerHTML = `<p class="hint">${text}</p>`;
 }
 
+function netDrawMapPreview(mapId) {
+  const cv = document.getElementById('mp-lobby-preview');
+  if (!cv || !GENMAPS[mapId]) return;
+  if (cv._drawn === mapId) return;
+  cv._drawn = mapId;
+  const m = GENMAPS[mapId];
+  const px = Math.max(2, Math.floor(Math.min(220 / m.w, 150 / m.h)));
+  cv.width = m.w * px + px;
+  cv.height = m.h * px;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#16283a';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const COLS = { p: '#a8aba4', f: '#98a89a', h: '#a49e8e', m: '#7e7a80' };
+  for (let r = 0; r < m.h; r++) {
+    const row = m.rows[r] || '';
+    const riv = (m.rivers && m.rivers[r]) || '';
+    for (let c = 0; c < m.w; c++) {
+      const ch = row[c];
+      if (!ch || ch === '.') continue;
+      ctx.fillStyle = riv[c] === 'r' ? '#5a9ed6' : (COLS[ch] || '#a8aba4');
+      ctx.fillRect(c * px + ((r & 1) ? px / 2 : 0), r * px, px, px);
+    }
+  }
+}
+
 function netRenderLobby() {
   const l = NET.lobby;
   if (!l) return;
   netShowLobby();
+  netDrawMapPreview(l.mapId);
   document.getElementById('mp-lobby-map').innerHTML =
-    `🗺️ Karte dieser Runde: <b>${l.mapName || l.mapId}</b> · Runde startet bei <b>${l.needed} Spielern</b> oder wenn alle bereit sind`;
+    `🗺️ Karte dieser Runde: <b>${l.mapName || l.mapId}</b> · Runde startet bei <b>${l.needed} Spielern</b> oder wenn alle bereit sind`
+    + (l.rounds ? `<br><span class="small">${l.rounds} Runde(n) laufen gerade</span>` : '');
   const me = l.players.find(p => p.nation === NET.you);
   document.getElementById('mp-lobby-list').innerHTML = l.players.map(p => `
     <div class="mp-row ${p.nation === NET.you ? 'me' : ''}">
@@ -184,6 +272,8 @@ function netStartGame(msg) {
 
   window.game = new Game(msg.you, msg.seed, msg.mapId, msg.humans);
   game._net = NET;
+  NET.names = msg.names || null;
+  game._names = NET.names;
   rebuildLayers();
   lastLogLen = 0;
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;
@@ -221,6 +311,28 @@ function netDrive() {
   }
 }
 
+/* Nach dem Rundenende: direkt zurück in die (nächste) Lobby — die Karte rotiert */
+function netBackToLobby() {
+  if (NET.driver) { clearInterval(NET.driver); NET.driver = null; }
+  if (window.game && game._net) game._net = null;
+  NET.active = false;
+  document.getElementById('gameover').classList.add('hidden');
+  if (NET.ws && NET.ws.readyState === 1) {
+    NET.state = 'lobby';
+    netShowLobby('Betrete die nächste Lobby …');
+    NET.ws.send(JSON.stringify({ t: 'join' }));
+  } else {
+    netProbeThenJoin();
+  }
+}
+
+async function netProbeThenJoin() {
+  netShowLobby('Suche Server …');
+  NET._found = await netFindServer();
+  if (NET._found) netJoin();
+  else { pushToast('🌐 Server nicht erreichbar.'); netLeave(); }
+}
+
 /* ---------- Kommandos zum Server ---------- */
 NET.sendCmd = function (cmd, args) {
   if (!NET.ws || NET.ws.readyState !== 1) return null;
@@ -244,6 +356,18 @@ window.addEventListener('DOMContentLoaded', () => {
     nameInput.value = netPlayerName();
     nameInput.addEventListener('change', () => {
       try { localStorage.setItem('finalfront_name', nameInput.value.slice(0, 20) || 'Spieler'); } catch (e) {}
+    });
+  }
+  const chatInp = document.querySelector('#chat-input input');
+  if (chatInp) {
+    chatInp.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') netToggleChat();
+      else if (e.key === 'Escape') {
+        chatInp.value = '';
+        document.getElementById('chat-input').classList.remove('open');
+        chatInp.blur();
+      }
     });
   }
 });

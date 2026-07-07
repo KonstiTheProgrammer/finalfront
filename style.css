@@ -514,3 +514,31 @@ button.peace:hover { background: #26512e; }
   background: rgba(255,255,255,0.05); border-radius: 6px; }
 .mp-row.me { outline: 1px solid rgba(255,215,94,0.5); }
 .mp-row .mp-ready { margin-left: auto; color: #8fc98f; font-size: 12px; }
+
+/* ---------- Multiplayer: Chat, LIVE-Badge, Lobby-Vorschau ---------- */
+#chat-log {
+  position: fixed; left: 62px; bottom: 168px; z-index: 40;
+  max-width: 360px; font-size: 12.5px; pointer-events: none;
+}
+.chat-line {
+  background: rgba(14, 20, 30, 0.85); border-left: 3px solid #3a4a5e;
+  border-radius: 4px; padding: 3px 8px; margin-top: 3px; color: #e8e4da;
+}
+#chat-input {
+  position: fixed; left: 62px; bottom: 140px; z-index: 41; display: none;
+}
+#chat-input.open { display: block; }
+#chat-input input {
+  width: 320px; background: #16202e; border: 1px solid #4a5a70; color: #e8e4da;
+  border-radius: 5px; padding: 6px 10px; font-size: 13px; outline: none;
+}
+#tb-live {
+  color: #7fd08f; font-weight: 700; font-size: 12.5px; margin-right: 8px;
+  white-space: nowrap;
+}
+#tb-live.lag { color: #e0a34a; }
+#mp-lobby-preview {
+  display: block; margin: 8px auto 4px; border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.14); image-rendering: pixelated;
+}
+.rank-who { font-weight: 400; font-size: 11px; color: #b8c4d4; }

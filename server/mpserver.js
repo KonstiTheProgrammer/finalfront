@@ -77,6 +77,8 @@ function startRound() {
   };
   rounds.add(round);
   const humans = [...round.players.values()].map(p => p.nation);
+  const names = {};
+  for (const p of round.players.values()) names[p.nation] = p.name;
   console.log(`[Runde ${round.id}] Start: ${round.mapId}, Seed ${round.seed}, Spieler: ${humans.join(',')}`);
 
   for (const [ws, p] of round.players) {
@@ -87,6 +89,7 @@ function startRound() {
       seed: round.seed,
       mapId: round.mapId,
       humans,
+      names,
       you: p.nation,
       spawnSeconds: SPAWN_SECONDS,
       stepMs: STEP_MS,
@@ -201,6 +204,21 @@ wss.on('connection', ws => {
     } else if (msg.t === 'leave') {
       if (ws._lobby) { lobby.players.delete(ws); ws._lobby = false; broadcastLobby(); }
       leaveRound(ws);
+
+    } else if (msg.t === 'ping') {
+      send(ws, { t: 'pong', ts: msg.ts });
+
+    } else if (msg.t === 'chat') {
+      // Chat ist reine Anzeige (kein Sim-Kommando) — leichtes Rate-Limit
+      const now = Date.now();
+      if (now - (ws._lastChat || 0) < 400) return;
+      ws._lastChat = now;
+      const text = String(msg.msg || '').slice(0, 160).trim();
+      if (!text) return;
+      const sender = ws._round ? ws._round.players.get(ws) : lobby.players.get(ws);
+      const out = { t: 'chat', name: ws._name, n: sender ? sender.nation : null, msg: text };
+      if (ws._round) broadcast(ws._round, out);
+      else if (ws._lobby) for (const w2 of lobby.players.keys()) send(w2, out);
 
     } else if (msg.t === 'cmd') {
       const round = ws._round;

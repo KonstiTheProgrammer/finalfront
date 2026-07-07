@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=25">
+  <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -27,6 +27,7 @@
       <button id="btn-help" title="Hilfe">❓</button>
     </div>
     <div class="tb-group" id="tb-datebox">
+      <span id="tb-live" class="hidden"></span>
       <span id="tb-day">1. Januar 1936</span>
       <span id="tb-round" class="small" title="Verbleibende Tage der Runde"></span>
       <span class="speed">
@@ -86,6 +87,10 @@
   <!-- Ereignis-Log -->
   <div id="log"></div>
 
+  <!-- Multiplayer-Chat (Enter) -->
+  <div id="chat-log" class="hidden"></div>
+  <div id="chat-input"><input maxlength="160" placeholder="Chat — Enter sendet, Esc bricht ab"></div>
+
   <!-- Toasts -->
   <div id="toasts"></div>
 
@@ -124,6 +129,7 @@
     <div class="overlay-box small-box">
       <h1>🌐 LOBBY</h1>
       <p id="mp-lobby-map" class="small"></p>
+      <canvas id="mp-lobby-preview" width="220" height="150"></canvas>
       <div id="mp-lobby-list"><p class="hint">Verbinde …</p></div>
       <button id="mp-ready" class="wide continue">▶ Bereit — los geht's!</button>
       <button id="mp-leave" class="wide danger">← Lobby verlassen</button>
@@ -139,6 +145,7 @@
       <h1></h1>
       <p></p>
       <div id="gameover-stats"></div>
+      <button id="gameover-lobby" class="wide continue hidden">🌐 Zurück zur Lobby (nächste Karte)</button>
       <button id="gameover-replay" class="wide hidden">🎬 Replay ansehen</button>
       <button id="gameover-restart" class="wide">Neues Spiel</button>
     </div>
@@ -156,7 +163,7 @@
         <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
         <li><b>Startphase:</b> 15 Sekunden Zeit, deinen Spawn per Klick zu wählen — alle sehen einander, umziehen erlaubt. Jeder startet mit <b>einer Stadt samt Umland (7 Felder) und einer Armee Krieger</b> — für alle exakt gleich.</li>
         <li><b>🌊 Flüsse</b> (echte Geodaten — Rhein, Donau &amp; Co.): Bewegung über Flüsse ist langsam, Angriffe aus dem Fluss sind um <b>40 % geschwächt</b> — Flüsse sind natürliche Verteidigungslinien: Wer AUF einem Flussfeld steht, ist deutlich schwerer anzugreifen, und Flussfelder leisten der Eroberung länger Widerstand. <b>Straßen wirken als Brücken</b> und heben den Bewegungsmalus auf.</li>
-        <li><b>🌐 Multiplayer:</b> Auf dem Startbildschirm <b>MULTIPLAYER</b> wählen — du landest in der Lobby. Bei <b>5 Spielern</b> (oder wenn alle bereit sind; Rest wird KI) startet die Runde, die <b>Karte rotiert</b> von Runde zu Runde. Feste Geschwindigkeit, kein Pause/Speichern — alle spielen dieselbe Simulation.</li>
+        <li><b>🌐 Multiplayer:</b> Auf dem Startbildschirm <b>MULTIPLAYER</b> wählen — du landest in der Lobby. Bei <b>5 Spielern</b> (oder wenn alle bereit sind; Rest wird KI) startet die Runde, die <b>Karte rotiert</b> von Runde zu Runde. Feste Geschwindigkeit, kein Pause/Speichern — alle spielen dieselbe Simulation. <b>Enter = Chat.</b> Nach der Runde: „Zurück zur Lobby" — die nächste Karte wartet.</li>
         <li><b>Sieg — halte 3 Hauptstädte:</b> Die 5 Startstädte (⭐ dauerhaft markiert) sind die Siegpunkte. Wer <b>3 hält, startet einen 50-Tage-Countdown</b>, den alle sehen — fällt eine zurück, stoppt er. Wer <b>80 % der Karte</b> kontrolliert, gewinnt sofort (Dominanz). Nach <b>600 Tagen</b> gewinnt sonst die stärkste Macht. Ab Tag 360: <b>Endphase</b> — Milizen ermüden, die Karte konsolidiert sich.</li>
         <li><b>Kein Kriegserklären:</b> Jeder Nicht-Verbündete ist angreifbar — und du auch! In den ersten <b>40 Tagen gilt eine Schonfrist</b> (nur Expansion ins Neutralland).</li>
         <li><b>Fairness:</b> Kleine Nationen bekommen einen Einkommensbonus (bis +35 %), der Spitzenreiter einen Malus — und Spieler unter 12 Provinzen verteidigen sich zäher. Aufholen ist immer möglich!</li>
@@ -180,11 +187,11 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=25"></script>
-  <script src="js/map.js?v=25"></script>
-  <script src="js/game.js?v=25"></script>
-  <script src="js/ui.js?v=25"></script>
-  <script src="js/net.js?v=25"></script>
-  <script src="js/main.js?v=25"></script>
+  <script src="js/mapdata.js?v=26"></script>
+  <script src="js/map.js?v=26"></script>
+  <script src="js/game.js?v=26"></script>
+  <script src="js/ui.js?v=26"></script>
+  <script src="js/net.js?v=26"></script>
+  <script src="js/main.js?v=26"></script>
 </body>
 </html>

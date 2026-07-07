@@ -12,10 +12,10 @@ const UI = {
   canvas: null, ctx: null,
   mapLayer: null, mapCtx: null,
   ovLayer: null, ovCtx: null,     // flache Übersichtsebene für weite Zooms
-  MAP_SCALE: 1.1,
+  MAP_SCALE: 1.7,                 // Cache-Schärfe: reicht bis Zoom ~2.1 ohne Matsch
   OV_SCALE: 0.55,
   OV_ZMAX: 0.92,                  // bis zu diesem Zoom: ruhige Übersichtsebene
-  ZSWITCH: 1.35,
+  ZSWITCH: 2.1,                   // erst darüber: teures Live-Zeichnen pro Frame
   minimap: null, minimapBase: null,
   cam: { x: 0, y: 0, zoom: 0.6 },
   selectedHex: null,
@@ -1089,18 +1089,21 @@ function render() {
 
   // Gefechtsprognose (HOI-Bubble) über laufenden Kämpfen mit Spieler-Beteiligung
   if (zoom >= 0.65) {
-    const bubbled = new Set();
+    // Angreifer je Verteidiger in EINEM Durchlauf sammeln (statt n²-Filter)
+    const atkByDef = new Map();
     for (const a of game.divisions) {
       if (a.dead || !a.attackTarget) continue;
       const def = game.divisionAt(a.attackTarget[0], a.attackTarget[1]);
       if (!def || def.dead || def.nation === a.nation) continue;
       if (a.nation !== game.player && def.nation !== game.player) continue;
-      if (bubbled.has(def.id)) continue;
-      bubbled.add(def.id);
-      const atkers = game.divisions.filter(x => !x.dead && x.nation === a.nation && x.attackTarget
-        && x.attackTarget[0] === def.c && x.attackTarget[1] === def.r);
-      const share = battleOdds(atkers, def);
-      const myShare = a.nation === game.player ? share : 1 - share;
+      const e = atkByDef.get(def);
+      if (e) { if (e.nation === a.nation) e.list.push(a); }
+      else atkByDef.set(def, { nation: a.nation, list: [a] });
+    }
+    for (const [def, e] of atkByDef) {
+      const share = battleOdds(e.list, def);
+      const myShare = e.nation === game.player ? share : 1 - share;
+      const a = e.list[0];
       const p2 = hexToPixel(def.c, def.r);
       drawOddsBubble(ctx, (a.x + p2.x) / 2, (a.y + p2.y) / 2 - 9, myShare, zoom, false);
     }
@@ -1476,6 +1479,10 @@ function bindInput() {
 
   window.addEventListener('keydown', e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    // Enter = Chat öffnen (Multiplayer, in Lobby und Runde)
+    if (e.code === 'Enter' && typeof NET !== 'undefined' && NET.ws && NET.state !== 'off') {
+      if (netToggleChat()) { e.preventDefault(); return; }
+    }
     // S = teilen, M = vereinen (wenn Truppen ausgewählt sind)
     if (e.code === 'KeyS' && UI.selectedDivs.size && !e.ctrlKey) { splitSelection(); return; }
     if (e.code === 'KeyM' && UI.selectedDivs.size) { mergeSelection(); return; }
@@ -1570,7 +1577,7 @@ function splitSelection() {
   if (game._replayCmds) { replayBlockedToast(); return; }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('split', ids);
-  if (res === 'sent') { pushToast('✂️ Teilen …'); return; }
+  if (res === 'sent') { pushToast('✂️ Teilen …'); setTimeout(updateUnitbar, 450); return; }
   const twins = Array.isArray(res) ? res : [];
   twins.forEach(id => UI.selectedDivs.add(id));
   pushToast(twins.length ? `✂️ ${twins.length} Division(en) geteilt — beide stehen auf dem Feld (📚 Stapel).` : '⚠ Teilen braucht ≥ 40 Stärke.');
@@ -1582,7 +1589,7 @@ function mergeSelection() {
   if (game._replayCmds) { replayBlockedToast(); return; }
   const ids = playerSelection().map(d => d.id);
   const res = game.issue('merge', ids);
-  if (res === 'sent') { pushToast('🔗 Vereinen …'); return; }
+  if (res === 'sent') { pushToast('🔗 Vereinen …'); setTimeout(updateUnitbar, 450); return; }
   const merged = res || 0;
   for (const id of [...UI.selectedDivs]) {
     const d = game.divisions.find(x => x.id === id);
@@ -2028,6 +2035,21 @@ function updateTopbar() {
   for (const s of [1, 2, 3, 4])
     document.getElementById('btn-speed' + s).classList.toggle('active', !game.paused && game.speed === s);
   document.getElementById('btn-supply').classList.toggle('active', UI.supplyOverlay);
+
+  // Multiplayer: Server taktet — Tempo-Buttons weg, LIVE-Badge mit Ping hin
+  const mp = !!game._net;
+  const speedBox = document.querySelector('#tb-datebox .speed');
+  if (speedBox) speedBox.style.display = mp ? 'none' : '';
+  const live = document.getElementById('tb-live');
+  if (live) {
+    live.classList.toggle('hidden', !mp);
+    if (mp) {
+      const lag = (typeof NET !== 'undefined' && NET.steps.length > 16);
+      live.innerHTML = lag ? '🌐 LIVE · ⏳ hole auf …'
+        : `🌐 LIVE${(typeof NET !== 'undefined' && NET.rtt) ? ` · ${NET.rtt} ms` : ''}`;
+      live.classList.toggle('lag', lag);
+    }
+  }
 }
 
 const PANEL_TITLES = {
@@ -2047,10 +2069,15 @@ function rankedNations() {
 
 function rankRowHtml(place, id) {
   const n = game.nations[id];
+  let who = '';
+  if (game._names) {   // Multiplayer: wer ist Mensch, wer Bot?
+    const nm = !n.ai && game._names[id] ? String(game._names[id]).replace(/</g, '&lt;') : null;
+    who = nm ? ` <span class="rank-who">👤 ${nm}</span>` : ' <span class="rank-who">🤖</span>';
+  }
   return `<div class="rank-row ${id === game.player ? 'me' : ''}">
     <span class="rank-pl">${place}.</span>
     <span class="chip" style="background:${game.nationColor(id)}"></span>
-    <span class="rank-name">${game.nationName(id)}${game.isTraitor(id) ? ' 🐍' : ''}</span>
+    <span class="rank-name">${game.nationName(id)}${game.isTraitor(id) ? ' 🐍' : ''}${who}</span>
     <span class="rank-vp">🏛️ ${n.vp || 0}</span>
     <span class="rank-hex">${n.hexCount}</span>
   </div>`;
@@ -2254,6 +2281,7 @@ function bindPanelActions(el) {
     if (res === true || res === 'sent') pushToast(`🏗️ ${buildingName(b.dataset.buildat)} gebaut.`);
     else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
     refreshPanel(); updateTopbar();
+    if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
   }));
   el.querySelectorAll('[data-trainat]').forEach(b => b.addEventListener('click', () => {
     if (!UI.selectedHex) return;
@@ -2262,6 +2290,7 @@ function bindPanelActions(el) {
     if (res === true || res === 'sent') pushToast(`🎖️ ${BAL.divTypes[ty].name} in Ausbildung — erscheint hier auf dem Feld.`);
     else pushToast('⚠ ' + (game._replayCmds ? 'Replay — Eingaben gesperrt.' : res));
     refreshPanel(); updateTopbar();
+    if (res === 'sent') setTimeout(() => { refreshPanel(); updateTopbar(); }, 450);
   }));
   el.querySelectorAll('[data-ally]').forEach(b => b.addEventListener('click', () => {
     const res = game.issue('ally', b.dataset.ally);
@@ -2638,6 +2667,11 @@ function checkGameOver() {
   const rbtn = document.getElementById('gameover-replay');
   rbtn.classList.toggle('hidden', !(game._replayCapable && game.cmdLog));
   rbtn.onclick = startReplay;
+  const lbtn = document.getElementById('gameover-lobby');
+  if (lbtn) {
+    lbtn.classList.toggle('hidden', !game._net);
+    lbtn.onclick = () => netBackToLobby();
+  }
   // Endstand: Top 5 + Spieler
   game.vpRecount();
   const ids = rankedNations();

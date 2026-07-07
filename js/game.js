@@ -2528,12 +2528,12 @@ class Game {
   /* ---------- Replay ---------- */
   getReplay() {
     if (!this._replayCapable) return null;
-    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, cmds: this.cmdLog };
+    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, humans: this._humans || undefined, cmds: this.cmdLog };
   }
 
   static fromReplay(rep) {
     if (!rep || rep.seed === undefined || !NATION_DEFS[rep.player]) return null;
-    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa');
+    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa', rep.humans);
     g._replayCmds = (rep.cmds || []).slice();
     g._replayIdx = 0;
     g.cmdLog = g._replayCmds;
