@@ -790,6 +790,19 @@ function drawDivision(ctx, d, zoom) {
   ctx.fillRect(x, y + hh + 3.8, w, 2.2);
   ctx.fillStyle = '#e0b34a';
   ctx.fillRect(x + 0.3, y + hh + 4.1, (w - 0.6) * Math.max(0, d.org / t.maxOrg), 1.6);
+  const vet = game.vetLevel(d);
+  if (vet > 0) {
+    // Veteranen: goldene Winkel überm Counter
+    ctx.fillStyle = '#ffd76a';
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.lineWidth = 0.6;
+    for (let v = 0; v < vet; v++) {
+      const vx = x + 2.4 + v * 4.4, vy = y - 1.8;
+      ctx.beginPath();
+      ctx.moveTo(vx - 1.8, vy); ctx.lineTo(vx, vy - 2.9); ctx.lineTo(vx + 1.8, vy);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+  }
   if (d.inCombat) {
     ctx.fillStyle = '#ff5040';
     ctx.strokeStyle = 'rgba(0,0,0,0.6)';
@@ -1175,6 +1188,33 @@ function render() {
 
   // Laufende Gefechte: Pfeil zeigt LIVE vom Angreifer aufs Ziel —
   // die Kampfrichtung ist auf einen Blick lesbar
+  // Marsch-Vorschau: gestrichelte Linie von der Auswahl zum Hover-Feld
+  if (UI.selectedDivs.size && UI.hoverHex && !UI._overUI && zoom >= 0.5) {
+    const lead = playerSelection()[0];
+    const hh = UI.hoverHex;
+    if (lead && !(lead.inCombat && !lead.attackTarget)) {
+      const key = lead.id + '|' + hh.c + '|' + hh.r + '|' + lead.c + '|' + lead.r;
+      if (UI._pvKey !== key) {
+        UI._pvKey = key;
+        UI._pvPath = game.findPath(lead.nation, lead.c, lead.r, hh.c, hh.r, false);
+      }
+      if (UI._pvPath && UI._pvPath.length) {
+        ctx.save();
+        ctx.setLineDash([5, 5]);
+        ctx.lineDashOffset = -((now / 45) % 10);
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(lead.x, lead.y);
+        for (const [pc, pr] of UI._pvPath) { const pp = hexToPixel(pc, pr); ctx.lineTo(pp.x, pp.y); }
+        ctx.stroke();
+        const end = hexToPixel(...UI._pvPath[UI._pvPath.length - 1]);
+        ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(end.x, end.y, 5, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
   if (zoom >= 0.5) {
     for (const a of game.divisions) {
       if (a.dead || !a.attackTarget) continue;

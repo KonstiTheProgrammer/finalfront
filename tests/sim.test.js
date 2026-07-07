@@ -138,6 +138,83 @@ const out = vm.runInContext(`
     ok('Angreifer darf abbrechen', !!aF.path && aF.attackTarget === null);
   }
 
+  /* ===== Veteranen, Flanken, Beute, Lazarett, neue Karten ===== */
+  {
+    const gX = new Game('B', 743); gX.endSpawnPhase();
+    gX.day = BAL.graceDays + 1; gX.dayFloat = gX.day;
+    const aX = gX.divisionsOf('B')[0];
+    let hX = null;
+    for (const [nc, nr] of neighborsOf(aX.c, aX.r)) {
+      const h = gX.hexAt(nc, nr);
+      if (h && h.terrain !== 'water') { hX = h; break; }
+    }
+    hX.owner = 'C';
+    const dX = gX.divisionsOf('C')[0];
+    gX._placeDiv(dX, hX.c, hX.r);
+    aX.str = 100; aX.org = 60; dX.str = 100; dX.org = 60;
+    for (let i = 0; i < 8; i++) gX.resolveCombat(aX, hX, 0.25);
+    ok('Gefecht bringt Erfahrung (beide Seiten)', aX.xp > 1.9 && dX.xp > 1.9, 'xp=' + aX.xp.toFixed(1));
+    const roh = { ...aX, xp: 0 };
+    const vet = { ...aX, xp: BAL.vet.steps[2] };
+    ok('Veteranenstufen 0 und 3', gX.vetLevel(roh) === 0 && gX.vetLevel(vet) === 3);
+    ok('Veteranen kaempfen staerker', gX.attackPower(vet) > gX.attackPower(roh) * 1.2);
+
+    // Flanken: 3 Angreifer aufs selbe Feld schlagen haerter zu
+    gX._atkCount = new Map();
+    const k = hX.c + hX.r * MAP_W;
+    dX.org = 60; dX.str = 100;
+    gX._atkCount.set(k, 1);
+    const o1 = dX.org;
+    gX.resolveCombat(aX, hX, 0.25);
+    const solo = o1 - dX.org;
+    dX.org = 60; dX.str = 100;
+    gX._atkCount.set(k, 3);
+    const o2 = dX.org;
+    gX.resolveCombat(aX, hX, 0.25);
+    const massiert = o2 - dX.org;
+    ok('Flankenbonus wirkt', massiert > solo * 1.1, solo.toFixed(2) + ' vs ' + massiert.toFixed(2));
+
+    // Beute: eroberte Stadt fuellt die Kasse
+    const beuteHex = hX;
+    beuteHex.owner = 'C'; beuteHex.building = 'stadt'; beuteHex.level = 2;
+    const goldVor = gX.nations['B'].gold;
+    gX.captureHex(beuteHex, aX);
+    const erwartet = Math.round(BAL.cost.stadt * BAL.loot * 2);
+    ok('Beute bei Eroberung', Math.round(gX.nations['B'].gold - goldVor) === erwartet, '+' + (gX.nations['B'].gold - goldVor));
+
+    // Lazarett: gleiche Stelle, einmal ohne, einmal mit Stadt
+    const heimDiv = gX.divisionsOf('B')[0];
+    let feld = null;
+    for (const row of gX.hexes) for (const h of row) {
+      if (h.owner === 'B' && !h.building && !h.capital && h.terrain !== 'water') { feld = h; break; }
+    }
+    gX._placeDiv(heimDiv, feld.c, feld.r);
+    heimDiv.inCombat = false; heimDiv.moral = 1;
+    heimDiv.org = 0;
+    gX.regenTick(1);
+    const ohne = heimDiv.org;
+    feld.building = 'stadt'; feld.level = 1;
+    heimDiv.org = 0;
+    gX.regenTick(1);
+    const mit = heimDiv.org;
+    ok('Lazarett: Stadt heilt schneller', mit > ohne * 1.15, ohne.toFixed(1) + ' -> ' + mit.toFixed(1));
+    feld.building = null;
+
+    // Erfahrung uebersteht Speichern/Laden
+    aX.xp = 42;
+    const wieder = Game.deserialize(gX.serialize());
+    const aW = wieder.divisions.find(d => d.id === aX.id);
+    ok('Erfahrung wird gespeichert', aW && aW.xp === 42);
+  }
+
+  /* Neue Karten starten sauber */
+  for (const mapId of ['kontinent', 'inselmeer', 'steppe']) {
+    const gM = new Game('A', 5, mapId); gM.endSpawnPhase();
+    const caps = Object.values(gM.nations).filter(n => n.capital).length;
+    for (let i = 0; i < 20; i++) gM.runTick();
+    ok('Karte ' + mapId + ' spielbar', caps === 5 && !gM.over);
+  }
+
   /* ===== Stadt-Einfluss (Radius 2, näher = schneller) ===== */
   g = new Game('A', 99); g.endSpawnPhase();
   const startHex = g.nations['A'].hexCount;

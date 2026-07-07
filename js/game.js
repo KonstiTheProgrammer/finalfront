@@ -58,6 +58,11 @@ const BAL = {
   // Bunker (intern 'turm'): verstärkt die VERTEIDIGUNG der Division,
   // die auf dem Feld steht — ×2 / ×2.5 / ×3 über 3 Level.
   bunker: { def: [2, 2.5, 3], maxLevel: 3 },
+  // Veteranen: Gefechtstage härten Truppen ab (goldene ▲ am Counter)
+  vet: { steps: [12, 30, 60], bonus: 0.08 },
+  flank: 0.15,                        // je weiterem Angreifer aufs selbe Ziel (max +45 %)
+  loot: 0.35,                         // Beute: Anteil des Gebäudewerts bei Eroberung
+  cityHeal: { str: 2.0, org: 1.3 },   // Lazarett: eigene Stadt heilt & sammelt schneller
   // Truppendreieck nach EU4-Vorbild:
   //   Krieger schlagen Kavallerie · Kavallerie schlägt Kanonen · Kanonen schlagen Krieger
   // Erober-Profil (militia = Tempo gegen Miliz, skaliert zusätzlich linear
@@ -693,7 +698,7 @@ class Game {
       c: spawn.c, r: spawn.r,
       x: 0, y: 0,
       str: free ? 100 : 60,
-      org: 0,   // frisch ausgehoben: Organisation baut sich erst auf
+      org: 0, xp: 0,   // frisch ausgehoben: Organisation baut sich erst auf
       moral: 1.0,
       army: army ? army.id : null,
       front: null,
@@ -779,7 +784,7 @@ class Game {
       name: `${nat.divNameSeq++}. ${t.name}division`,
       nation, type,
       c: h.c, r: h.r, x: p.x, y: p.y,
-      str: 85, org: 0, moral: 1.0,   // frisch ausgebildet: Org wächst im Feld
+      str: 85, org: 0, xp: 0, moral: 1.0,   // frisch ausgebildet: Org wächst im Feld
       army: nat.armies[0] ? nat.armies[0].id : null,
       front: null, station: null,
       path: null, pathI: 0, moveProgress: 0,
@@ -839,7 +844,7 @@ class Game {
       name: `${nat.divNameSeq++}. ${t.name}division`,
       nation: div.nation, type: div.type,
       c: div.c, r: div.r, x: p.x, y: p.y,
-      str: half, org: div.org, moral: div.moral,
+      str: half, org: div.org, moral: div.moral, xp: div.xp || 0,
       army: div.army, front: div.front, station: null,
       path: null, pathI: 0, moveProgress: 0,
       queue: [],
@@ -1759,12 +1764,19 @@ class Game {
     return best;
   }
 
+  /* Veteranenstufe 0–3: Gefechtstage zählen (siehe BAL.vet.steps) */
+  vetLevel(div) {
+    const s = BAL.vet.steps, xp = div.xp || 0;
+    return xp >= s[2] ? 3 : xp >= s[1] ? 2 : xp >= s[0] ? 1 : 0;
+  }
+
   attackPower(div) {
     const t = BAL.divTypes[div.type];
     const sup = this.supplyModOf(div);
     const h = this.hexAt(div.c, div.r);
     const pocket = h && h._pocket ? 0.55 : 1;   // eingekesselt: kaum Kampfkraft (HOI)
-    return (div.str / 100) * div.moral * sup.mod * t.atk * pocket;
+    const vet = 1 + BAL.vet.bonus * this.vetLevel(div);
+    return (div.str / 100) * div.moral * sup.mod * t.atk * pocket * vet;
   }
 
   resolveCombat(atk, targetHex, dt) {
@@ -1778,6 +1790,9 @@ class Game {
     // Flussübergang: Angriff aus dem Fluss heraus oder in ihn hinein ist geschwächt
     if (fromHex && fromHex.river) power *= BAL.river.attackFrom;
     else if (targetHex.river) power *= BAL.river.attackInto;
+    // Konzentrischer Angriff: Flanken aus mehreren Richtungen wirken
+    const massed = this._atkCount ? (this._atkCount.get(targetHex.c + targetHex.r * MAP_W) || 1) : 1;
+    power *= 1 + BAL.flank * Math.min(3, massed - 1);
     const neutral = targetHex.owner === null;
 
     const def = this.divisionAt(targetHex.c, targetHex.r);
@@ -1792,6 +1807,8 @@ class Game {
 
     if (def && !def.dead) {
       def.inCombat = true;
+      atk.xp = (atk.xp || 0) + dt;   // Gefechtstage: beide Seiten werden Veteranen
+      def.xp = (def.xp || 0) + dt;
       if (def.nation !== atk.nation) {
         this.warHeat[[atk.nation, def.nation].sort().join('|')] = this.day;
         this._checkBetrayal(atk.nation, def.nation);
@@ -1896,6 +1913,15 @@ class Game {
 
   captureHex(h, div) {
     const loser = h.owner;
+    // Beute: erobertes Gebäude/Hauptstadt füllt die Kriegskasse des Siegers
+    if (loser && loser !== div.nation && (h.building || h.capital)) {
+      const basis = h.capital ? 220 : (BAL.cost[h.building] || 0);
+      const beute = Math.round(basis * BAL.loot * (h.level || 1));
+      if (beute > 0) {
+        this.nations[div.nation].gold += beute;
+        if (div.nation === this.player) this.addLog(`💰 +${beute}`, true);
+      }
+    }
     h.owner = div.nation;
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
@@ -2272,10 +2298,13 @@ class Game {
       const sup = this.supplyModOf(div);
 
       if (!div.inCombat) {
-        div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * sup.mod * div.moral * dt);
+        // Lazarett: auf eigener Stadt/Hauptstadt sammelt und heilt es sich schneller
+        const heimH = this.hexAt(div.c, div.r);
+        const heim = heimH && heimH.owner === div.nation && (heimH.capital || heimH.building === 'stadt');
+        div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * sup.mod * div.moral * (heim ? BAL.cityHeal.org : 1) * dt);
         // Verstärkung rekrutiert immer normale Leute
         if (div.str < BAL.maxStr && sup.level > 0.4 && nat.leute > 0.5) {
-          const pts = Math.min(BAL.reinforceRate * dt, BAL.maxStr - div.str, nat.leute / BAL.reinforceMpCost);
+          const pts = Math.min(BAL.reinforceRate * (heim ? BAL.cityHeal.str : 1) * dt, BAL.maxStr - div.str, nat.leute / BAL.reinforceMpCost);
           div.str += pts;
           nat.leute -= pts * BAL.reinforceMpCost;
         }
@@ -2628,7 +2657,7 @@ class Game {
       }])),
       divisions: this.divisions.filter(d => !d.dead).map(d => ({
         id: d.id, name: d.name, nation: d.nation, type: d.type, c: d.c, r: d.r,
-        str: Math.round(d.str), org: Math.round(d.org), moral: +d.moral.toFixed(2),
+        str: Math.round(d.str), org: Math.round(d.org), moral: +d.moral.toFixed(2), xp: Math.round(d.xp || 0),
         army: d.army, manual: d.manual, front: d.front,
       })),
     });

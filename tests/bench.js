@@ -8,7 +8,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 
 for (const seed of [7, 42]) {
-  for (const mapId of ['europa', 'mitteleuropa']) {
+  for (const mapId of ['europa', 'kontinent', 'steppe']) {
     const FixedDate = new Proxy(Date, { get: (t, k) => (k === 'now' ? () => 987654321 : t[k]) });
     const ctx = {
       performance: { now: () => 987654 },

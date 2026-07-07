@@ -17,8 +17,8 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 8571;
 const STEP_MS = +process.env.STEP_MS || 250;   // 4 Ticks/s = 1 Spieltag/s — feste MP-Geschwindigkeit (entschleunigt)
 const SLOTS = ['A', 'B', 'C', 'D', 'E'];
-const MAPS = ['europa', 'mitteleuropa', 'westeuropa'];   // Map-Rotation (5-Spieler-Runden)
-const MAP_NAMES = { europa: 'Europa', mitteleuropa: 'Mitteleuropa', westeuropa: 'Westeuropa', duell: 'Duell-Insel' };
+const MAPS = ['europa', 'kontinent', 'mitteleuropa', 'inselmeer', 'westeuropa', 'steppe'];   // Map-Rotation (5-Spieler-Runden)
+const MAP_NAMES = { europa: 'Europa', kontinent: 'Kontinent', mitteleuropa: 'Mitteleuropa', inselmeer: 'Inselmeer', westeuropa: 'Westeuropa', steppe: 'Steppe', duell: 'Duell-Insel' };
 const SPAWN_SECONDS = +process.env.SPAWN_SECONDS || 20;   // Startplatz-Wahl
 const MAX_TICKS = 4000;              // Sicherheitsnetz: ~16 min, Runde ist längst vorbei
 
