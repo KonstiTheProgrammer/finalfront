@@ -52,7 +52,7 @@ automatisch (lokal hat `ws://localhost:8571` Vorrang — praktisch zum Entwickel
   🐎 Kavallerie ist schnell/hart und schlägt Kanonen · 💥 Kanonen belagern (2,5× gegen
   Miliz) und schlagen Krieger — langsam und fragil.
 - **Eroberung durch Städte:** Städte und Hauptstädte **strahlen aus** — freies Umland im
-  Radius 4 schließt sich langsam von selbst an (näher = schneller); Feindland bleibt
+  kleinen Radius (2 Felder) schließt sich langsam von selbst an (näher = schneller); Feindland bleibt
   unberührt. **Truppen laufen überall hin** (auch durch fremdes Land — ohne Verbindung
   aber ohne Nachschub) und übernehmen im **Stehen genau ihr Standfeld**: langsam,
   stärkeabhängig, 💥 Kanonen stark · 🐎 Kavallerie mittel · 🛡 Krieger schwach; ⛰️ Berge

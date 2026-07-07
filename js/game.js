@@ -18,7 +18,7 @@ const BAL = {
   leuteStadt: 0.20,
   // Truppen werden AUSGEBILDET (Warteschlange pro Standort) und spawnen dort:
   // Städte/Hauptstadt bilden aus, Kasernen doppelt so schnell.
-  trainTime: { inf: 6, kav: 8, kan: 10 },   // Tage an einer Stadt
+  trainTime: { inf: 9, kav: 12, kan: 15 },  // Tage an einer Stadt (Kaserne: halb)
   kaserneTrainFactor: 0.5,                  // Kaserne: halbe Zeit
   // Bevölkerungs-Kapazität: das Reich versorgt nur begrenzt viele Leute.
   // Gebäude (× Level) und Landfläche erhöhen das Limit.
@@ -65,9 +65,9 @@ const BAL = {
   // ALLE Truppen rekrutieren 👥 Leute (mp). Dazu Rohstoff-Kosten:
   //   Kavallerie braucht 🐎 Pferde (Farmen) · Kanonen brauchen 🔩 Eisen (Minen)
   divTypes: {
-    inf: { name: 'Krieger',    gold: 60,  mp: 10,                upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
-    kav: { name: 'Kavallerie', gold: 100, mp: 8,  pferde: 8,     upkeep: 1.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
-    kan: { name: 'Kanonen',    gold: 130, mp: 6,  eisen: 10,     upkeep: 1.5, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
+    inf: { name: 'Krieger',    gold: 90,  mp: 12,                upkeep: 0.4, atk: 1.0, defF: 1.4, maxOrg: 60, speed: 1.0, militia: 0.8 },
+    kav: { name: 'Kavallerie', gold: 140, mp: 9,  pferde: 10,    upkeep: 1.0, atk: 1.6, defF: 0.7, maxOrg: 45, speed: 1.9, militia: 1.2 },
+    kan: { name: 'Kanonen',    gold: 180, mp: 7,  eisen: 12,     upkeep: 1.5, atk: 2.1, defF: 0.5, maxOrg: 40, speed: 0.6, militia: 2.5 },
   },
   rps: { inf: { kav: 1.35 }, kav: { kan: 1.5 }, kan: { inf: 1.35 } },
   maxStr: 100,
@@ -84,7 +84,7 @@ const BAL = {
   // NEUES EROBERN: Städte strahlen aus (freies Umland schließt sich an,
   // näher = schneller) — Truppen übernehmen nur noch das Feld, auf dem
   // sie STEHEN (langsam). Kein automatisches Nachbar-Erobern mehr.
-  influence: { radius: 4, perDay: 3 },
+  influence: { radius: 2, perDay: 3 },
   standingCapture: 0.8,   // Koeffizient der Steh-Eroberung (× Typ-Profil)
   militiaResist: 35,
   militiaResistStadt: 60,

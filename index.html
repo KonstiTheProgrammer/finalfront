@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=32">
+  <link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -163,7 +163,7 @@
       <ul class="help-list">
         <li><b>Auswahl:</b> <b>Links-Ziehen = Box-Auswahl</b> · Klick = einzeln · <b>Strg/Shift</b> = zur Auswahl hinzufügen (nochmal klicken = abwählen) · <b>Doppelklick = alle eigenen Truppen</b>. Ausgewählte Truppen erscheinen in der <b>Einheiten-Leiste unten</b> (Teilen, Vereinen, Front lösen, Auflösen).</li>
         <li><b>Teilen &amp; Vereinen:</b> <b>S</b> teilt ausgewählte Divisionen in zwei Hälften · <b>M</b> vereint ausgewählte Divisionen gleichen Typs</li>
-        <li><b>🏙️ Eroberung durch Städte:</b> Städte und die Hauptstadt <b>strahlen aus</b> — freies Umland im Radius 4 <b>schließt sich langsam von selbst an</b> (das Feld füllt sich mit deiner Farbe), je näher an der Stadt, desto schneller. Feindland wird davon NICHT beeinflusst.</li>
+        <li><b>🏙️ Eroberung durch Städte:</b> Städte und die Hauptstadt <b>strahlen aus</b> — freies Umland im <b>kleinen Radius (2 Felder)</b> schließt sich langsam von selbst an (das Feld füllt sich mit deiner Farbe), je näher an der Stadt, desto schneller. Feindland wird davon NICHT beeinflusst.</li>
         <li><b>Befehle:</b> <b>Rechtsklick = Marschbefehl</b> — Truppen können <b>überall hinlaufen</b>, auch durch unerobertes und fremdes Land (ohne Verbindung aber kein Nachschub!) · <b>Shift+Rechtsklick = Wegpunkte</b>. Bleibt eine Truppe auf einem fremden Feld <b>stehen, übernimmt sie genau dieses Feld</b> — langsam, stärkeabhängig, Nachbarfelder nicht mehr. 💥 Kanonen erobern stark · 🐎 Kavallerie mittel · 🛡 Krieger schwach. ⛰️ Berge und 🌊 Flussfelder sind zäher. Kämpfe gibt es nur noch gegen feindliche <b>Truppen</b>.</li>
         <li><b>⚔ Frontlinien:</b> <b>Strg+Klick auf die Grenze</b> zu einem Nachbarn = Front entlang des Grenzverlaufs (wächst mit) · <b>B</b> = eigene Linie über die Karte ziehen (hält Stellung). Zugewiesene Truppen <b>verteilen sich selbst</b> auf der Linie und kämpfen dort. <b>S</b> teilt Front-Truppen und verteilt sie neu. Front lösen: Truppen-Menü oder Einheiten-Leiste. <b>🎯 Vormarsch:</b> Front-Badge (Kreis mit Truppenzahl) anklicken, dann ein Ziel auf der Karte — die Front kämpft sich dorthin vor.</li>
         <li><b>Karte:</b> Zwei-Finger-Scroll (Trackpad), Rechts-/Mittel-Ziehen oder WASD = umsehen · Pinch oder Mausrad = Zoom · Minimap = springen · Pos1 = Hauptstadt</li>
@@ -197,11 +197,11 @@
     </div>
   </div>
 
-  <script src="js/mapdata.js?v=32"></script>
-  <script src="js/map.js?v=32"></script>
-  <script src="js/game.js?v=32"></script>
-  <script src="js/ui.js?v=32"></script>
-  <script src="js/net.js?v=32"></script>
-  <script src="js/main.js?v=32"></script>
+  <script src="js/mapdata.js?v=33"></script>
+  <script src="js/map.js?v=33"></script>
+  <script src="js/game.js?v=33"></script>
+  <script src="js/ui.js?v=33"></script>
+  <script src="js/net.js?v=33"></script>
+  <script src="js/main.js?v=33"></script>
 </body>
 </html>
