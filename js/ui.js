@@ -123,12 +123,14 @@ function fitZoom() {
 }
 
 function fitView() {
+  UI.zoomAnim = null;
   UI.cam.zoom = fitZoom();
   UI.cam.x = WORLD_W / 2 - (window.innerWidth + leftUIW()) / 2 / UI.cam.zoom;
   UI.cam.y = WORLD_H / 2 - (window.innerHeight + 44) / 2 / UI.cam.zoom;
 }
 
 function centerOn(c, r, zoom) {
+  UI.zoomAnim = null;
   const p = hexToPixel(c, r);
   if (zoom) UI.cam.zoom = zoom;
   UI.cam.x = p.x - (window.innerWidth + leftUIW()) / 2 / UI.cam.zoom;
@@ -748,9 +750,25 @@ function drawDivision(ctx, d, zoom) {
    ========================================================= */
 function render() {
   const ctx = UI.ctx;
+  const now = performance.now();
+  // Framerate-unabhängiges Easing: gleiche Glätte bei 60 und 120 Hz
+  const rdt = Math.min(0.1, (now - (UI._lastRenderT || now)) / 1000);
+  UI._lastRenderT = now;
+  const ease = 1 - Math.exp(-rdt * 12);
+
+  // Sanfter Zoom: animiert zum Ziel, Weltpunkt unterm Anker bleibt stehen
+  if (UI.zoomAnim) {
+    const za = UI.zoomAnim;
+    const nz = UI.cam.zoom + (za.target - UI.cam.zoom) * (1 - Math.exp(-rdt * 15));
+    const w = screenToWorld(za.ax, za.ay);
+    UI.cam.zoom = Math.abs(za.target - nz) < 0.002 ? za.target : nz;
+    UI.cam.x = w.x - za.ax / UI.cam.zoom;
+    UI.cam.y = w.y - za.ay / UI.cam.zoom;
+    if (UI.cam.zoom === za.target) UI.zoomAnim = null;
+  }
+
   const { zoom } = UI.cam;
   camClamp();
-  const now = performance.now();
 
   if (game.mapDirty && now - UI._lastMapRender > 400) {
     UI._lastMapRender = now;
@@ -995,12 +1013,15 @@ function render() {
       if (h.terrain === 'water' || !h._atkT || game.dayFloat - h._atkT > 1.5 || h.resist >= h.resistMax) continue;
       const by = h._atkBy && NATION_DEFS[h._atkBy] ? NATION_DEFS[h._atkBy].color : '#ffffff';
       const prog = Math.max(0.06, 1 - h.resist / h.resistMax);
+      // Anzeige-Füllstand gleitet dem Tick-Wert weich hinterher
+      if (h._dispProg === undefined || h._dispProg - prog > 0.3) h._dispProg = prog;
+      else h._dispProg += (prog - h._dispProg) * ease;
       const p = hexToPixel(c, r);
       ctx.save();
       hexPath(ctx, p.x, p.y, HEX_SIZE + 0.55);
       ctx.clip();
       ctx.fillStyle = colorA(by, 0.5 + 0.1 * Math.sin(now / 170));
-      const fh = 2 * HEX_SIZE * prog;
+      const fh = 2 * HEX_SIZE * h._dispProg;
       ctx.fillRect(p.x - HEX_SIZE - 1, p.y + HEX_SIZE - fh, HEX_SIZE * 2 + 2, fh + 1);
       // Wasserlinie obendrauf, damit der Füllstand klar lesbar ist
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
@@ -1018,9 +1039,19 @@ function render() {
   }
   for (const d of game.divisions) {
     if (d.dead) continue;
-    const target = hexToPixel(d.c, d.r);
-    d.x += (target.x - d.x) * 0.18;
-    d.y += (target.y - d.y) * 0.18;
+    // Zielposition: zwischen aktuellem Feld und nächstem Wegpunkt interpolieren
+    // (moveProgress) — Märsche gleiten statt Hex für Hex zu springen
+    const base = hexToPixel(d.c, d.r);
+    let tx = base.x, ty = base.y;
+    if (d.path && d.pathI < d.path.length && !d.attackTarget) {
+      const nx = hexToPixel(d.path[d.pathI][0], d.path[d.pathI][1]);
+      const f = Math.max(0, Math.min(1, d.moveProgress));
+      tx = base.x + (nx.x - base.x) * f;
+      ty = base.y + (nx.y - base.y) * f;
+    }
+    const ddx = tx - d.x, ddy = ty - d.y;
+    if (ddx * ddx + ddy * ddy > (HEX_SIZE * 5) ** 2) { d.x = tx; d.y = ty; }   // Teleport (Rückzug/Spawn): schnappen
+    else { d.x += ddx * ease; d.y += ddy * ease; }
     if (d.x < UI.cam.x - 40 || d.x > UI.cam.x + UI.canvas.width / zoom + 40
       || d.y < UI.cam.y - 40 || d.y > UI.cam.y + UI.canvas.height / zoom + 40) continue;
     const k = d.c + d.r * MAP_W;
@@ -1100,13 +1131,20 @@ function render() {
       if (e) { if (e.nation === a.nation) e.list.push(a); }
       else atkByDef.set(def, { nation: a.nation, list: [a] });
     }
+    UI._odds = UI._odds || new Map();
+    const oddsUsed = new Set();
     for (const [def, e] of atkByDef) {
       const share = battleOdds(e.list, def);
       const myShare = e.nation === game.player ? share : 1 - share;
+      const prev = UI._odds.get(def.id);
+      const disp = prev === undefined ? myShare : prev + (myShare - prev) * ease;
+      UI._odds.set(def.id, disp);
+      oddsUsed.add(def.id);
       const a = e.list[0];
       const p2 = hexToPixel(def.c, def.r);
-      drawOddsBubble(ctx, (a.x + p2.x) / 2, (a.y + p2.y) / 2 - 9, myShare, zoom, false);
+      drawOddsBubble(ctx, (a.x + p2.x) / 2, (a.y + p2.y) / 2 - 9, disp, zoom, false);
     }
+    for (const k of UI._odds.keys()) if (!oddsUsed.has(k)) UI._odds.delete(k);
   }
   // Hover-Prognose: gewinnt meine Auswahl gegen die Armee unterm Cursor?
   if (UI.hoverHex && UI.selectedDivs.size && !UI._overUI && !game.spawnPhase) {
@@ -1465,15 +1503,21 @@ function bindInput() {
       UI.cam.y = w.y - e.clientY / UI.cam.zoom;
     };
     if (e.ctrlKey) {
-      // Trackpad-Pinch (macOS meldet ctrlKey): sanft zoomen
+      // Trackpad-Pinch (macOS meldet ctrlKey): direkt — die Geste ist selbst kontinuierlich
+      UI.zoomAnim = null;
       zoomAt(Math.exp(-e.deltaY * 0.014));
     } else if (Math.abs(e.deltaX) > 0.01 || Math.abs(e.deltaY) < 40) {
       // Zwei-Finger-Scroll auf dem Trackpad: Karte schwenken (umsehen)
       UI.cam.x += e.deltaX / UI.cam.zoom;
       UI.cam.y += e.deltaY / UI.cam.zoom;
     } else {
-      // klassisches Mausrad (große Einzelschritte): zoomen
-      zoomAt(e.deltaY < 0 ? 1.16 : 1 / 1.16);
+      // klassisches Mausrad: animiert zoomen (fühlt sich weich an statt zu rasten)
+      const zmin = Math.min(0.3, fitZoom() * 0.9);
+      const base = UI.zoomAnim ? UI.zoomAnim.target : UI.cam.zoom;
+      UI.zoomAnim = {
+        target: Math.min(4.5, Math.max(zmin, base * (e.deltaY < 0 ? 1.16 : 1 / 1.16))),
+        ax: e.clientX, ay: e.clientY,
+      };
     }
   }, { passive: false });
 
@@ -1531,10 +1575,11 @@ function bindInput() {
 
 function zoomStep(f) {
   const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-  const w = screenToWorld(cx, cy);
-  UI.cam.zoom = Math.min(4.5, Math.max(Math.min(0.3, fitZoom() * 0.9), UI.cam.zoom * f));
-  UI.cam.x = w.x - cx / UI.cam.zoom;
-  UI.cam.y = w.y - cy / UI.cam.zoom;
+  const base = UI.zoomAnim ? UI.zoomAnim.target : UI.cam.zoom;
+  UI.zoomAnim = {
+    target: Math.min(4.5, Math.max(Math.min(0.3, fitZoom() * 0.9), base * f)),
+    ax: cx, ay: cy,
+  };
 }
 
 function keyboardPan(dt) {
