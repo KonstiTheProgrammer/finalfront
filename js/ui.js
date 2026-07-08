@@ -722,6 +722,140 @@ function computeLabels() {
 /* ---------- Divisions-Sprites ---------- */
 const TYPE_STRIPE = { inf: null, kav: '#7fa8d8', kan: '#d87f7f' };
 
+/* =========================================================
+   TRUPPEN-SPRITES — gefüllte Silhouetten statt Strichfiguren.
+   Gezeichnet in Weltkoordinaten (Kamera skaliert), zentriert
+   auf (cx, cy). Heller Körper + dunkle Kontur, damit sie auf
+   jeder Nationsfarbe knallen.
+   ========================================================= */
+function beginSprite(ctx) {
+  ctx.fillStyle = '#f3f7fc';
+  ctx.strokeStyle = 'rgba(9,13,22,0.92)';
+  ctx.lineWidth = 0.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+}
+function polySprite(ctx, cx, cy, pts) {
+  ctx.beginPath();
+  ctx.moveTo(cx + pts[0][0], cy + pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(cx + pts[i][0], cy + pts[i][1]);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+}
+
+/* Krieger: rundes Schild + gekreuzte Schwerter */
+function drawKriegerSprite(ctx, cx, cy) {
+  // Schild-Rückgrund (leicht durchscheinend)
+  ctx.beginPath();
+  ctx.arc(cx, cy + 0.2, 4.7, 0, 7);
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  // zwei gekreuzte Schwerter (Griffe unten, Klingen oben)
+  for (const ang of [0.6, -0.6]) {
+    ctx.save();
+    ctx.translate(cx, cy + 0.6);
+    ctx.rotate(ang);
+    beginSprite(ctx);
+    // Klinge (spitz zulaufend)
+    polySprite(ctx, 0, 0, [[0, -5.6], [-0.7, -4.3], [-0.62, 1.0], [0.62, 1.0], [0.7, -4.3]]);
+    // Parierstange
+    polySprite(ctx, 0, 0, [[-2.1, 1.1], [2.1, 1.1], [1.8, 2.0], [-1.8, 2.0]]);
+    // Griff
+    ctx.beginPath(); ctx.rect(-0.55, 2.0, 1.1, 2.1); ctx.fill(); ctx.stroke();
+    // Knauf
+    ctx.beginPath(); ctx.arc(0, 4.5, 0.95, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/* Kavallerie: Pferdekopf im Profil (Springer-Silhouette), nach rechts —
+   fließende Mähne entlang des Nackens, spitze Ohren, klares Maul */
+function drawKavallerieSprite(ctx, cx, cy) {
+  beginSprite(ctx);
+  polySprite(ctx, cx, cy, [
+    [-2.4, 4.4],   // Halsansatz hinten unten
+    [-3.3, 2.3],   // Mähne-Schwung 1 (ausgestellt)
+    [-2.5, 1.2],
+    [-3.4, -0.2],  // Mähne-Schwung 2
+    [-2.4, -1.2],
+    [-3.0, -2.4],  // Mähne-Spitze am Nacken
+    [-1.9, -2.6],
+    [-1.4, -3.7],  // hinteres Ohr Basis
+    [-1.2, -4.9],  // hinteres Ohr Spitze
+    [-0.2, -3.5],  // zwischen den Ohren
+    [0.6, -4.6],   // vorderes Ohr Spitze
+    [1.0, -3.1],   // Stirn
+    [2.8, -2.5],   // Braue
+    [4.6, -1.0],   // Nüster oben
+    [5.1, 0.3],    // Nase
+    [4.1, 1.0],    // Maul
+    [2.7, 0.6],    // Maulwinkel
+    [3.1, 2.0],    // Kiefer
+    [2.0, 3.2],    // Kehle
+    [0.5, 4.3],    // Halsfront unten
+  ]);
+  // Auge
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(9,13,22,0.9)';
+  ctx.arc(cx + 2.6, cy - 1.3, 0.55, 0, 7);
+  ctx.fill();
+  // Nüster
+  ctx.beginPath();
+  ctx.arc(cx + 4.3, cy - 0.1, 0.32, 0, 7);
+  ctx.fill();
+}
+
+/* Kanonen: Feldkanone im Profil — Rad, Rohr, Mündungsblitz */
+function drawKanonenSprite(ctx, cx, cy) {
+  beginSprite(ctx);
+  // Rohr (Lünse unten, Mündung nach oben-rechts)
+  ctx.save();
+  ctx.translate(cx - 1.6, cy + 0.7);
+  ctx.rotate(-0.46);
+  polySprite(ctx, 0, 0, [[-1.4, -1.5], [6.6, -0.8], [6.6, 0.8], [-1.4, 1.5]]);
+  // Mündungsring
+  ctx.beginPath(); ctx.rect(6.0, -1.0, 0.9, 2.0); ctx.fill(); ctx.stroke();
+  // Bodenstück
+  ctx.beginPath(); ctx.arc(-1.4, 0, 1.55, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  // Rad
+  ctx.beginPath();
+  ctx.arc(cx - 3.1, cy + 1.9, 2.7, 0, 7);
+  ctx.fillStyle = '#f3f7fc';
+  ctx.fill(); ctx.stroke();
+  // Nabe + Speichen (dunkel)
+  ctx.strokeStyle = 'rgba(9,13,22,0.6)';
+  ctx.lineWidth = 0.45;
+  for (let k = 0; k < 4; k++) {
+    const a = k * Math.PI / 4 + 0.35;
+    ctx.beginPath();
+    ctx.moveTo(cx - 3.1, cy + 1.9);
+    ctx.lineTo(cx - 3.1 + Math.cos(a) * 2.5, cy + 1.9 + Math.sin(a) * 2.5);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.fillStyle = 'rgba(9,13,22,0.9)';
+  ctx.arc(cx - 3.1, cy + 1.9, 0.75, 0, 7);
+  ctx.fill();
+  // Mündungsblitz (warme Spitze)
+  const mx = cx - 1.6 + Math.cos(-0.46) * 7.4, my = cy + 0.7 + Math.sin(-0.46) * 7.4;
+  ctx.fillStyle = '#ffd15a';
+  ctx.strokeStyle = 'rgba(120,70,10,0.7)';
+  ctx.lineWidth = 0.4;
+  polySprite(ctx, mx, my, [[0, -1.5], [0.5, -0.4], [1.6, 0], [0.5, 0.4], [0, 1.5], [-0.5, 0.4], [-1.4, 0], [-0.5, -0.4]]);
+}
+
+function drawUnitSprite(ctx, type, cx, cy) {
+  ctx.save();
+  if (type === 'inf') drawKriegerSprite(ctx, cx, cy);
+  else if (type === 'kav') drawKavallerieSprite(ctx, cx, cy);
+  else if (type === 'kan') drawKanonenSprite(ctx, cx, cy);
+  ctx.restore();
+}
+
 function drawDivision(ctx, d, zoom) {
   const t = BAL.divTypes[d.type];
   const isPlayer = d.nation === game.player;
@@ -757,31 +891,8 @@ function drawDivision(ctx, d, zoom) {
   ctx.strokeStyle = sel ? '#ffffff' : (isPlayer ? '#f2e7c8' : 'rgba(12,16,24,0.95)');
   ctx.lineWidth = sel ? 1.8 : 1;
   ctx.strokeRect(x, y, w, hh);
-  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
-  ctx.lineWidth = 1.05;
-  const ix = x + (TYPE_STRIPE[d.type] ? 3.1 : 1.9), iy = y + 1.9, iw = w - (TYPE_STRIPE[d.type] ? 5 : 3.8), ih = hh - 3.8;
-  if (d.type === 'inf') {
-    // Krieger: gekreuzte Klingen
-    ctx.beginPath();
-    ctx.moveTo(ix, iy); ctx.lineTo(ix + iw, iy + ih);
-    ctx.moveTo(ix + iw, iy); ctx.lineTo(ix, iy + ih);
-    ctx.stroke();
-  } else if (d.type === 'kav') {
-    // Kavallerie: Flanken-Schrägstrich mit Pfeilspitze
-    ctx.beginPath();
-    ctx.moveTo(ix, iy + ih); ctx.lineTo(ix + iw, iy);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(ix + iw - 3, iy); ctx.lineTo(ix + iw, iy); ctx.lineTo(ix + iw, iy + 3);
-    ctx.stroke();
-  } else if (d.type === 'kan') {
-    // Kanonen: Kugel + Rohr
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.beginPath(); ctx.arc(ix + iw / 2, iy + ih / 2 + 0.5, 1.6, 0, 7); ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(ix + iw / 2, iy + ih / 2); ctx.lineTo(ix + iw / 2 + 3, iy - 0.4);
-    ctx.stroke();
-  }
+  const stripeOff = TYPE_STRIPE[d.type] ? 1.1 : 0;
+  drawUnitSprite(ctx, d.type, x + w / 2 + stripeOff, y + hh / 2);
   ctx.fillStyle = 'rgba(10,14,20,0.85)';
   ctx.fillRect(x, y + hh + 1.1, w, 2.2);
   ctx.fillStyle = '#57c268';
