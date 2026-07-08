@@ -60,7 +60,9 @@ const BAL = {
   bunker: { def: [2, 2.5, 3], maxLevel: 3 },
   // Veteranen: Gefechtstage härten Truppen ab (goldene ▲ am Counter)
   vet: { steps: [12, 30, 60], bonus: 0.08 },
-  flank: 0.15,                        // je weiterem Angreifer aufs selbe Ziel (max +45 %)
+  flank: 0.18,                        // je weiterem GLEICHZEITIGEN Angreifer (bis Gefechtsbreite)
+  combatWidth: 4,                     // Kampf-System 2.0: so viele Divisionen je Seite kämpfen
+                                      // GLEICHZEITIG an einem Feld; der Rest ist Reserve
   loot: 0.35,                         // Beute: Anteil des Gebäudewerts bei Eroberung
   cityHeal: { str: 2.0, org: 1.3 },   // Lazarett: eigene Stadt heilt & sammelt schneller
   // Truppendreieck nach EU4-Vorbild:
@@ -1650,7 +1652,8 @@ class Game {
           || !this.hostile(div.nation, defDiv.nation) || this.day < BAL.graceDays) {
           div.attackTarget = null;
         } else {
-          this.resolveCombat(div, th, dt);
+          // Kampf-System 2.0: nur Absicht markieren, gebunden bleiben — der
+          // Schaden fällt gesammelt im Stapel-Schlacht-Pass (resolveBattles).
           continue;
         }
       }
@@ -1665,7 +1668,13 @@ class Game {
         }
       }
 
-      if (!div.path && div.station && !div.attackTarget) {
+      // Im Feindkontakt festgenagelt: nicht zur Station weglaufen, sonst
+      // zerfasern die Stapel-Schlachten. Die Front hält, bis eine Seite bricht.
+      const pinned = this.day >= BAL.graceDays && neighborsOf(div.c, div.r).some(([nc, nr]) => {
+        const e = this.divisionAt(nc, nr);
+        return e && !e.dead && this.hostile(div.nation, e.nation);
+      });
+      if (!pinned && !div.path && div.station && !div.attackTarget) {
         if ((div.c !== div.station[0] || div.r !== div.station[1])
           && (!div._pathRetryAt || this.dayFloat >= div._pathRetryAt)) {
           const p = this.findPath(div.nation, div.c, div.r, div.station[0], div.station[1], false);
@@ -1747,6 +1756,117 @@ class Game {
         }
       }
     }
+
+    // ---- Kampf-System 2.0: alle Stapel-Schlachten gesammelt auflösen ----
+    this.resolveBattles(dt);
+  }
+
+  /* Sammelt je umkämpftem Feld ALLE Verteidiger (drauf) und ALLE Angreifer
+     (daneben, Ziel = dieses Feld) und trägt eine Stapel-Schlacht aus. */
+  resolveBattles(dt) {
+    const battles = new Map();
+    for (const a of this.divisions) {
+      if (a.dead || !a.attackTarget) continue;
+      const [tc, tr] = a.attackTarget;
+      if (hexDist(a.c, a.r, tc, tr) > 1) continue;
+      const key = tc + tr * MAP_W;
+      let b = battles.get(key);
+      if (!b) {
+        const th = this.hexAt(tc, tr);
+        const defs = this.divisionsAt(tc, tr).filter(d => this.hostile(a.nation, d.nation));
+        if (!th || !defs.length) continue;   // kein Verteidiger → keine Schlacht (Angreifer rückt nach)
+        b = { hex: th, atk: [], def: defs };
+        battles.set(key, b);
+      }
+      b.atk.push(a);
+    }
+    this._atkCount = new Map();
+    for (const b of battles.values()) {
+      this._atkCount.set(b.hex.c + b.hex.r * MAP_W, Math.min(BAL.combatWidth, b.atk.length));
+      this.resolveBattle(b, dt);
+    }
+  }
+
+  /* Eine Stapel-Schlacht: nur die Gefechtsbreite kämpft je Seite, der Rest
+     ist Reserve (sammelt Org, rotiert nach). Bricht die ganze Verteidiger-
+     Front, zieht sie sich zurück (Rückzug statt Tod); der Angreifer nimmt
+     das Feld. Vernichtet wird nur, wer nicht zurück kann (Kessel) oder
+     dessen Stärke auf 0 zermürbt ist. */
+  resolveBattle(b, dt) {
+    const { hex, atk, def } = b;
+    const W = BAL.combatWidth;
+    const byOrg = (x, y) => (y.org - x.org) || (x.id - y.id);
+    atk.sort(byOrg); def.sort(byOrg);
+    const eAtk = atk.slice(0, W), eDef = def.slice(0, W);
+    const terr = TERRAIN[hex.terrain];
+    const bunker = (hex.building === 'turm' && hex.owner === def[0].nation)
+      ? BAL.bunker.def[Math.min((hex.level || 1), BAL.bunker.def.length) - 1] : 1;
+
+    // Angriffskraft (Summe der Front) mit Gelände-, Fluss-, See-Abschlägen + Flanke
+    let atkPow = 0;
+    for (const a of eAtk) {
+      let p = this.attackPower(a);
+      const fromHex = this.hexAt(a.c, a.r);
+      if (fromHex && fromHex.terrain === 'water') p *= BAL.seaAssaultMalus;
+      if (fromHex && fromHex.river) p *= BAL.river.attackFrom;
+      else if (hex.river) p *= BAL.river.attackInto;
+      atkPow += p;
+    }
+    atkPow *= (0.85 + this.rand() * 0.3) / terr.def;
+    atkPow *= 1 + BAL.flank * Math.min(W - 1, eAtk.length - 1);
+    let defPow = 0;
+    for (const d of eDef) defPow += this.attackPower(d) * BAL.divTypes[d.type].defF;
+    defPow *= (0.85 + this.rand() * 0.3) * terr.def * bunker;
+    // Truppendreieck: Leittypen der beiden Fronten
+    atkPow *= (BAL.rps[eAtk[0].type] && BAL.rps[eAtk[0].type][eDef[0].type]) || 1;
+    defPow *= (BAL.rps[eDef[0].type] && BAL.rps[eDef[0].type][eAtk[0].type]) || 1;
+
+    const lateAtk = 1 + 0.8 * this.lateFactor();
+    const pocket = hex._pocket ? 1.45 : 1;
+    // Gesamtschaden je Seite, gleichmäßig auf die Front verteilt
+    const toDef = atkPow * BAL.atkBase * lateAtk * pocket * dt;
+    const toAtk = defPow * BAL.atkBase * dt;
+    this._battleHit(eDef, toDef * BAL.orgDmg / bunker, toDef * BAL.strDmg / bunker);
+    this._battleHit(eAtk, toAtk * BAL.orgDmg * 0.7, toAtk * BAL.strDmg * 0.5);
+
+    for (const a of eAtk) { a.inCombat = true; a.xp = (a.xp || 0) + dt; }
+    for (const d of eDef) { d.inCombat = true; d.xp = (d.xp || 0) + dt; }
+    hex._atkT = this.dayFloat; hex._atkBy = eAtk[0].nation;
+    this.warHeat[[eAtk[0].nation, def[0].nation].sort().join('|')] = this.day;
+    this._checkBetrayal(eAtk[0].nation, def[0].nation);
+    const now = performance.now();
+    if (!hex._fxT || now - hex._fxT > 300) {
+      hex._fxT = now;
+      this.effects.push({ type: 'battle', c: hex.c, r: hex.r, fc: eAtk[0].c, fr: eAtk[0].r, t: now });
+      if (this.effects.length > 300) this.effects.splice(0, this.effects.length - 300);
+    }
+
+    // Vernichtung nur bei aufgeriebener Stärke (schwere Verluste)
+    for (const d of [...def, ...atk]) {
+      if (!d.dead && d.str <= 5) {
+        this.addLog(`💀 ${d.name} · ${this.nationName(d.nation)}`, d.nation === this.player);
+        this.destroyDivision(d, d.nation === def[0].nation ? eAtk[0].nation : def[0].nation);
+      }
+    }
+    const defLive = def.filter(d => !d.dead);
+    // Verteidiger-Front gebrochen? → geordneter Rückzug, Angreifer rückt nach
+    if (!defLive.length || defLive.every(d => d.org <= BAL.retreatOrg)) {
+      for (const d of defLive) this.retreatDivision(d, eAtk[0]);
+    } else if (atk.every(a => a.dead || a.org <= BAL.retreatOrg)) {
+      // Sturm erschöpft (auch alle Reserven leer) → abbrechen, sammeln
+      for (const a of atk) if (!a.dead) { a.attackTarget = null; a.moral = Math.max(BAL.moralMin, a.moral - BAL.moralRetreat); }
+    }
+  }
+
+  /* Schaden gleichmäßig auf die kämpfende Front verteilen (Org zuerst, dann
+     etwas Stärke); untergrenze Org bei 0 — der Bruch löst den Rückzug aus. */
+  _battleHit(units, orgTotal, strTotal) {
+    if (!units.length) return;
+    const per = 1 / units.length;
+    for (const u of units) {
+      u.org = Math.max(0, u.org - orgTotal * per);
+      u.str = Math.max(0, u.str - strTotal * per);
+    }
   }
 
   pickAttackTarget(div, army) {
@@ -1761,12 +1881,15 @@ class Game {
       if (!nh || nh.terrain === 'water' || !matchFn(nh)) continue;
       if (!this.attackable(div.nation, nh)) continue;
       const defDiv = this.divisionAt(nc, nr);
+      const already = this._atkCount ? (this._atkCount.get(nc + nr * MAP_W) || 0) : 0;
       let defense = nh.resist * 0.4;
       if (defDiv) {
         const t = BAL.divTypes[defDiv.type];
         const defPow = this.attackPower(defDiv) * t.defF
           * (0.25 + 0.75 * defDiv.org / t.maxOrg) * TERRAIN[nh.terrain].def;
-        if (myPow < defPow * 0.6) continue;
+        // Einzeln zu schwach? Nur meiden, wenn dort noch NICHT gestürmt wird —
+        // einen laufenden Sturm verstärkt man auch als Schwächerer (Masse zählt).
+        if (!already && myPow < defPow * 0.6) continue;
         defense += (defDiv.str / 100) * defDiv.org;
       }
       defense *= TERRAIN[nh.terrain].def;
@@ -1775,7 +1898,10 @@ class Game {
       if (nh.capital) score += 10;
       if (nh.vp) score += 12;   // Siegpunkt-Hauptstädte sind das Rundenziel
       if (nh.river) score -= 3; // Flussübergänge meiden, wenn es Alternativen gibt
-      if (this._atkCount && this._atkCount.get(nc + nr * MAP_W)) score += 6;
+      // FOKUSFEUER: ein angefangenes Feld ZUERST bis zur Gefechtsbreite füllen,
+      // bevor ein neues aufgemacht wird → gebündelter Sturm bricht durch.
+      if (already > 0 && already < BAL.combatWidth) score += 100;
+      else if (already >= BAL.combatWidth) score -= 8;
       if (biasFn) score += biasFn(nh);
       if (score > bestScore) { bestScore = score; best = nh; }
     }
