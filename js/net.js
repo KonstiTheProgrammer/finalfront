@@ -53,19 +53,19 @@ async function netFindServer() {
 }
 
 function netStatusText(info) {
-  if (!info) return '🌐❌';
-  const duel = info.duel ? ` · ⚔️${info.duel.players}/${info.duel.needed}` : '';
-  return `🌐✅ 🌍${info.lobby.players}/${info.lobby.needed}${duel}`;
+  if (!info) return ic('globe') + ic('close');
+  const duel = info.duel ? ` · ${ic('swords')}${info.duel.players}/${info.duel.needed}` : '';
+  return `${ic('globe')}${ic('check')} ${ic('people')}${info.lobby.players}/${info.lobby.needed}${duel}`;
 }
 
 /* Startbildschirm: Status anzeigen (wird beim Öffnen geprüft) */
 async function netProbeForStartScreen() {
   const el = document.getElementById('mp-status');
   if (!el) return;
-  el.textContent = '🌐⏳';
+  el.innerHTML = ic('globe') + ic('hourglass');
   const found = await netFindServer();
   NET._found = found;
-  el.textContent = netStatusText(found && found.info);
+  el.innerHTML = netStatusText(found && found.info);
   const btn = document.getElementById('btn-mp');
   if (btn) btn.disabled = !found;
   const btn2 = document.getElementById('btn-mp-duel');
@@ -79,7 +79,7 @@ function netJoin(mode) {
   const found = NET._found;
   if (!found) { pushToast('🌐❌'); return; }
   NET.state = 'connecting';
-  netShowLobby('⏳');
+  netShowLobby(ic('hourglass'));
   const ws = new WebSocket(found.url);
   NET.ws = ws;
   ws.onopen = () => {
@@ -252,16 +252,16 @@ function netRenderLobby() {
   netShowLobby();
   netDrawMapPreview(l.mapId);
   document.getElementById('mp-lobby-map').innerHTML =
-    `<b>${l.mode === 'duel' ? '⚔️' : '🌍'} ${l.players.length}/${l.needed} 👤</b>${l.rounds ? ` · ▶${l.rounds}` : ''}`;
+    `<b>${l.mode === 'duel' ? ic('swords') : ic('globe')} ${l.players.length}/${l.needed} ${ic('people')}</b>${l.rounds ? ` · ${ic('play')}${l.rounds}` : ''}`;
   const me = l.players.find(p => p.nation === NET.you);
   document.getElementById('mp-lobby-list').innerHTML = l.players.map(p => `
     <div class="mp-row ${p.nation === NET.you ? 'me' : ''}">
       <span class="chip" style="background:${NATION_DEFS[p.nation] ? NATION_DEFS[p.nation].color : '#888'}"></span>
-      <b>${(p.name || '').replace(/</g, '&lt;')}</b>${p.nation === NET.you ? ' 👈' : ''}
-      <span class="mp-ready">${p.ready ? '✔' : '⏳'}</span>
+      <b>${(p.name || '').replace(/</g, '&lt;')}</b>${p.nation === NET.you ? ' ' + ic('back') : ''}
+      <span class="mp-ready">${p.ready ? ic('check') : ic('hourglass')}</span>
     </div>`).join('');
   const btn = document.getElementById('mp-ready');
-  btn.textContent = me && me.ready ? '✔…' : '✔';
+  btn.innerHTML = me && me.ready ? ic('check') + '…' : ic('check');
   btn.dataset.ready = me && me.ready ? '1' : '0';
 }
 
@@ -322,7 +322,7 @@ function netBackToLobby() {
   document.getElementById('gameover').classList.add('hidden');
   if (NET.ws && NET.ws.readyState === 1) {
     NET.state = 'lobby';
-    netShowLobby('⏳');
+    netShowLobby(ic('hourglass'));
     NET.ws.send(JSON.stringify({ t: 'join', mode: NET.mode || 'ffa' }));
   } else {
     netProbeThenJoin();
@@ -330,7 +330,7 @@ function netBackToLobby() {
 }
 
 async function netProbeThenJoin() {
-  netShowLobby('⏳');
+  netShowLobby(ic('hourglass'));
   NET._found = await netFindServer();
   if (NET._found) netJoin();
   else { pushToast('🌐❌'); netLeave(); }
