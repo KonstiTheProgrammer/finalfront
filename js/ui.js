@@ -2805,6 +2805,71 @@ function updateLog() {
     `<div class="${l.important ? 'imp' : ''}"><span>${dateStr(l.day)}</span> ${l.msg}</div>`).join('');
 }
 
+/* Mini-Kartenvorschau: echte Landform des Maps als Sprite ins Menü zeichnen.
+   Wasser dunkelblau, Land nach Terrain, Flüsse hell, feiner Küstensaum. */
+const THUMB_COLS = { p: '#9aa38f', f: '#7f9a7e', h: '#a89e86', m: '#6f6b71' };
+function drawMapThumb(cv, m) {
+  const maxW = 88, maxH = 60;
+  const px = Math.max(1, Math.min(maxW / m.w, maxH / m.h));
+  cv.width = Math.ceil(m.w * px + px * 0.5);
+  cv.height = Math.ceil(m.h * px);
+  const ctx = cv.getContext('2d');
+  // Meerwasser-Grund mit sanftem Verlauf
+  const g = ctx.createLinearGradient(0, 0, 0, cv.height);
+  g.addColorStop(0, '#1b3a52'); g.addColorStop(1, '#122a3d');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height);
+  const cell = px + 0.6;   // leichte Überlappung → keine Lücken
+  for (let r = 0; r < m.h; r++) {
+    const row = m.rows[r] || '';
+    const riv = (m.rivers && m.rivers[r]) || '';
+    const off = (r & 1) ? px * 0.5 : 0;
+    for (let c = 0; c < m.w; c++) {
+      const ch = row[c];
+      if (!ch || ch === '.') continue;
+      ctx.fillStyle = riv[c] === 'r' ? '#5a9ed6' : (THUMB_COLS[ch] || '#9aa38f');
+      ctx.fillRect(c * px + off, r * px, cell, cell);
+    }
+  }
+}
+
+/* Nations-Wappen: kleines heraldisches Schild in der Nationsfarbe.
+   Verlauf für Volumen, dunkle Kontur, heller Glanzstreifen oben. */
+function drawNationShield(cv, color) {
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, cx = W / 2;
+  ctx.clearRect(0, 0, W, H);
+  ctx.beginPath();
+  ctx.moveTo(cx - 18, 5);
+  ctx.lineTo(cx + 18, 5);
+  ctx.lineTo(cx + 18, H * 0.48);
+  ctx.quadraticCurveTo(cx + 18, H - 12, cx, H - 3);
+  ctx.quadraticCurveTo(cx - 18, H - 12, cx - 18, H * 0.48);
+  ctx.closePath();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, shade(color, 1.22));
+  g.addColorStop(1, shade(color, 0.78));
+  ctx.fillStyle = g; ctx.fill();
+  ctx.save(); ctx.clip();
+  // Glanzstreifen oben
+  ctx.fillStyle = 'rgba(255,255,255,0.20)';
+  ctx.beginPath();
+  ctx.moveTo(cx - 18, 5); ctx.lineTo(cx + 18, 5);
+  ctx.lineTo(cx + 18, 14); ctx.lineTo(cx - 18, 20);
+  ctx.closePath(); ctx.fill();
+  // senkrechter Mittelgrat (Pfahl) — dezent
+  ctx.fillStyle = 'rgba(0,0,0,0.10)';
+  ctx.fillRect(cx - 1.2, 5, 2.4, H);
+  ctx.restore();
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(10,14,20,0.9)';
+  ctx.beginPath();
+  ctx.moveTo(cx - 18, 5);
+  ctx.lineTo(cx + 18, 5);
+  ctx.lineTo(cx + 18, H * 0.48);
+  ctx.quadraticCurveTo(cx + 18, H - 12, cx, H - 3);
+  ctx.quadraticCurveTo(cx - 18, H - 12, cx - 18, H * 0.48);
+  ctx.closePath(); ctx.stroke();
+}
+
 /* ---------- Start- und Endbildschirm ---------- */
 function showStartScreen() {
   if (typeof NET !== 'undefined' && (NET.ws || NET.driver)) netLeave(true);
@@ -2821,23 +2886,31 @@ function showStartScreen() {
       let land = 0;
       for (const row of m.rows) for (const ch of row) if (ch !== '.') land++;
       return `<button class="nation-card map-card ${UI.selectedMap === id ? 'sel' : ''}" data-map="${id}">
-        <b>${id === 'duell' ? '⚔️' : '🗺️'} ${m.name}</b>
-        <span class="small">⬡${land} · ${id === 'duell' ? '2' : '5'}👤</span>
+        <canvas class="map-thumb"></canvas>
+        <span class="map-card-txt">
+          <b>${id === 'duell' ? '⚔️ ' : ''}${m.name}</b>
+          <span class="small">⬡${land} · ${id === 'duell' ? '2' : '5'}👤</span>
+        </span>
       </button>`;
     }).join('');
-    mapGrid.querySelectorAll('.map-card').forEach(b =>
-      b.addEventListener('click', () => { UI.selectedMap = b.dataset.map; renderMaps(); }));
+    mapGrid.querySelectorAll('.map-card').forEach(b => {
+      const cv = b.querySelector('.map-thumb');
+      if (cv) drawMapThumb(cv, GENMAPS[b.dataset.map]);
+      b.addEventListener('click', () => { UI.selectedMap = b.dataset.map; renderMaps(); });
+    });
   };
   renderMaps();
 
   const grid = document.getElementById('nation-grid');
-  grid.innerHTML = Object.entries(NATION_DEFS).map(([id, def]) => {
-    return `<button class="nation-card" data-nation="${id}">
-      <span class="chip big" style="background:${def.color}"></span>
-    </button>`;
-  }).join('');
-  grid.querySelectorAll('.nation-card').forEach(b =>
-    b.addEventListener('click', () => startGame(b.dataset.nation)));
+  grid.innerHTML = Object.entries(NATION_DEFS).map(([id]) =>
+    `<button class="nation-card" data-nation="${id}">
+      <canvas class="nation-shield" width="42" height="50"></canvas>
+    </button>`).join('');
+  grid.querySelectorAll('.nation-card').forEach(b => {
+    const cv = b.querySelector('.nation-shield');
+    if (cv) drawNationShield(cv, NATION_DEFS[b.dataset.nation].color);
+    b.addEventListener('click', () => startGame(b.dataset.nation));
+  });
   const cont = document.getElementById('btn-continue');
   const has = readSlot('finalfront_save') || readSlot('finalfront_autosave');
   cont.classList.toggle('hidden', !has);

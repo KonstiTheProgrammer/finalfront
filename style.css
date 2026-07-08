@@ -500,10 +500,32 @@ button.peace:hover { background: #26512e; }
   gap: 10px;
   margin-bottom: 18px;
 }
+.map-card {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 9px 11px !important;
+  text-align: left;
+}
+.map-card .map-thumb {
+  width: 74px; height: 50px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  background: #122a3d;
+  image-rendering: auto;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08), 0 1px 3px rgba(0,0,0,0.4);
+}
+.map-card .map-card-txt {
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 0;
+}
 .map-card.sel {
   border: 1px solid #e0b04a !important;
   box-shadow: 0 0 10px rgba(224, 176, 74, 0.35);
   background: #2a2413 !important;
+}
+.map-card.sel .map-thumb {
+  box-shadow: inset 0 0 0 1px rgba(224,176,74,0.5), 0 1px 3px rgba(0,0,0,0.4);
 }
 
 /* ---------- Multiplayer-Lobby ---------- */
