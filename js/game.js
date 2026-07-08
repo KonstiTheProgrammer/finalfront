@@ -1310,6 +1310,52 @@ class Game {
     }
   }
 
+  /* Schwerpunkt einer Front: Punkt der Kraftbündelung. Vormarsch → Linien-Feld
+     am Ziel; sonst das am stärksten bedrohte eigene Feld. tight → konzentrieren. */
+  frontFocus(line, owner, push) {
+    if (!line.length) return { idx: 0, tight: false };
+    if (push) {
+      let bi = 0, bd = Infinity;
+      line.forEach((h, i) => { const d = hexDist(h.c, h.r, push[0], push[1]); if (d < bd) { bd = d; bi = i; } });
+      return { idx: bi, tight: true };
+    }
+    let bi = -1, bs = 0;
+    line.forEach((h, i) => {
+      let s = 0;
+      const own = this.divisionAt(h.c, h.r);
+      if (own && own.nation === owner && own.inCombat) s += 4;
+      for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+        const e = this.divisionAt(nc, nr);
+        if (e && !e.dead && this.hostile(owner, e.nation)) s += 1.5;
+      }
+      if (s > bs) { bs = s; bi = i; }
+    });
+    return bs > 0 ? { idx: bi, tight: true } : { idx: Math.floor(line.length / 2), tight: false };
+  }
+
+  /* Front-Truppen um den Schwerpunkt bündeln: Vormarsch als schmale Speerspitze
+     (der Rest stapelt als Reserve dahinter), sonst breiter Schirm. Wer schon im
+     Schwerpunkt steht, bleibt (kein Geschiebe). Das erzeugt die sichtbare Masse
+     für Großkämpfe — der Kampf selbst bleibt unverändert (jede Division schlägt
+     voll zu, der Flanken-Bonus belohnt die Bündelung). */
+  _massStations(divs, line, owner, push) {
+    if (!divs.length || !line.length) return;
+    const { idx, tight } = this.frontFocus(line, owner, push);
+    const fh = line[idx];
+    const order = line.map((h, i) => [Math.abs(i - idx), i]).sort((a, b) => a[0] - b[0]).map(x => line[x[1]]);
+    let frontage;
+    if (!tight) frontage = order.length;
+    else if (push) frontage = Math.max(2, Math.ceil(Math.sqrt(divs.length)));
+    else frontage = Math.max(3, Math.ceil(divs.length * 0.6));
+    frontage = Math.min(order.length, frontage);
+    const slots = order.slice(0, frontage);
+    const slotSet = new Set(slots.map(h => h.c + h.r * MAP_W));
+    const rest = divs.filter(d => !(d.station && slotSet.has(d.station[0] + d.station[1] * MAP_W)));
+    rest.sort((a, b) => hexDist(a.c, a.r, fh.c, fh.r) - hexDist(b.c, b.r, fh.c, fh.r));
+    let si = 0;
+    for (const d of rest) { const s = slots[si % slots.length]; d.station = [s.c, s.r]; si++; }
+  }
+
   distributeArmy(army) {
     const divs = this.armyDivisions(army).filter(d => !d.manual);
     const line = army.frontHexes;
@@ -1525,37 +1571,9 @@ class Game {
   }
 
   distributeFrontline(f) {
-    const divs = this.frontDivisions(f);
-    const line = f.hexes;
-    if (!divs.length || !line.length) return;
-    const sorted = divs.map(d => {
-      let bi = 0, bd = Infinity;
-      line.forEach((h, i) => {
-        const dd = hexDist(d.c, d.r, h.c, h.r);
-        if (dd < bd) { bd = dd; bi = i; }
-      });
-      return [bi, d];
-    }).sort((a, b) => a[0] - b[0]).map(x => x[1]);
-    const used = new Set();
-    // STICKY: Truppen nah an der Linie behalten ihre Station
-    const rest = [];
-    for (const d of sorted) {
-      if (d.station && line.some(h => hexDist(h.c, h.r, d.station[0], d.station[1]) <= 1)
-        && !used.has(d.station[0] + d.station[1] * MAP_W)) {
-        used.add(d.station[0] + d.station[1] * MAP_W);
-      } else rest.push(d);
-    }
-    rest.forEach((d, i) => {
-      const idx = rest.length === 1 ? Math.floor(line.length / 2)
-        : Math.round(i * (line.length - 1) / (rest.length - 1));
-      let h = line[Math.min(idx, line.length - 1)];
-      if (used.has(h.c + h.r * MAP_W)) {
-        const free = this.findFreeStation(f.owner, h, used);
-        if (free) h = free;
-      }
-      used.add(h.c + h.r * MAP_W);
-      d.station = [h.c, h.r];
-    });
+    // Am Vormarschziel (push) bzw. am bedrohten Abschnitt bündeln, Reserve
+    // stapelt dahinter — sichtbare Masse für Großkämpfe, Kampf unverändert.
+    this._massStations(this.frontDivisions(f), f.hexes, f.owner, f.push);
   }
 
   frontsDaily() {

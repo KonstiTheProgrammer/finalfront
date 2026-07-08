@@ -500,6 +500,24 @@ const out = vm.runInContext(`
     selectMap('europa');
   }
 
+  /* ===== Front-Bündelung: Schwerpunkt am Vormarschziel (Großkämpfe) ===== */
+  {
+    const gM = new Game('A', 88); gM.endSpawnPhase();
+    const line = [];
+    for (let i = 0; i < 10; i++) line.push(gM.hexAt(20 + i, 30) || { c: 20 + i, r: 30 });
+    const mk = () => Array.from({ length: 8 }, (_, i) => ({ id: 900 + i, c: 25, r: 35, station: null }));
+    // Mit Push aufs linke Ende → schmale Speerspitze, alle Stationen nah am Fokus
+    const d1 = mk();
+    gM._massStations(d1, line, 'A', [line[0].c, line[0].r]);
+    const maxDist = Math.max(...d1.map(d => Math.abs(d.station[0] - line[0].c)));
+    ok('Front-Push bündelt am Ziel', maxDist <= 3, 'maxDist=' + maxDist);
+    // Ohne Push → breiter Schirm über viele Felder verteilt
+    const d2 = mk();
+    gM._massStations(d2, line, 'A', null);
+    const genutzt = new Set(d2.map(d => d.station[0] + ',' + d.station[1])).size;
+    ok('Ohne Push breiter Schirm', genutzt >= 5, 'Felder=' + genutzt);
+  }
+
   /* ===== Ausbildung: Queue + Kaserne ===== */
   {
     const gT = new Game('A', 777); gT.endSpawnPhase();
