@@ -307,19 +307,46 @@ function drawBuilding(ctx, h, x, y, detailed) {
     tower(-1.8, 4.2, 10.5, '#dde3ec');
     tower(3, 3.7, 8.4, '#b8c0cc');
   } else if (h.building === 'mine') {
-    ctx.fillStyle = '#60564a'; ctx.strokeStyle = '#241f1a';
-    ctx.beginPath(); ctx.moveTo(-6, 4.8); ctx.lineTo(0, -4.8); ctx.lineTo(6, 4.8);
+    // Fels-Halde mit gezimmertem Stolleneingang + glänzendem Golderz
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(-6.2, 4.2, 12.6, 1.3);
+    // Felsmound (rund, nicht spitz — sonst wirkt es wie ein Zelt)
+    ctx.fillStyle = '#6b6154'; ctx.strokeStyle = '#241f1a';
+    ctx.beginPath();
+    ctx.moveTo(-6.4, 4.4);
+    ctx.quadraticCurveTo(-5.6, -2.6, -1.6, -3.9);
+    ctx.quadraticCurveTo(3.8, -4.6, 6.4, 4.4);
     ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#17120e';
-    ctx.beginPath(); ctx.moveTo(-2.3, 4.8); ctx.lineTo(0, 0.7); ctx.lineTo(2.3, 4.8);
-    ctx.closePath(); ctx.fill();
+    // Felskanten für Volumen
     if (detailed) {
-      ctx.strokeStyle = '#8a6f4a'; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(-2.3, 4.8); ctx.lineTo(-1.2, 1.9); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(2.3, 4.8); ctx.lineTo(1.2, 1.9); ctx.stroke();
+      ctx.strokeStyle = 'rgba(28,23,18,0.45)'; ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(-3.8, -1.4); ctx.lineTo(-2.2, 0.8);
+      ctx.moveTo(2.8, -2.4); ctx.lineTo(4.2, 0.2);
+      ctx.stroke();
     }
-    ctx.fillStyle = '#f5c542';
-    ctx.fillRect(-1, -4, 2, 1.9);
+    // Stolleneingang: dunkles Portal mit rundem Sturz
+    ctx.fillStyle = '#0f0b08';
+    ctx.beginPath();
+    ctx.moveTo(-2.5, 4.4);
+    ctx.lineTo(-2.5, 0.6);
+    ctx.quadraticCurveTo(0, -1.8, 2.5, 0.6);
+    ctx.lineTo(2.5, 4.4);
+    ctx.closePath(); ctx.fill();
+    // Holz-Grubenzimmerung (zwei Pfosten + Sturzbalken)
+    ctx.strokeStyle = '#8a5a2c'; ctx.lineWidth = 1.2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-2.9, 4.4); ctx.lineTo(-2.9, 0.7);
+    ctx.quadraticCurveTo(0, -1.7, 2.9, 0.7); ctx.lineTo(2.9, 4.4);
+    ctx.stroke();
+    // Golderz-Ader am Eingang (glänzt)
+    ctx.fillStyle = '#f5c542'; ctx.strokeStyle = '#b3861a'; ctx.lineWidth = 0.4;
+    ctx.beginPath(); ctx.arc(-4.3, 1.4, 0.85, 0, 7); ctx.fill(); ctx.stroke();
+    if (detailed) {
+      ctx.beginPath(); ctx.arc(4.5, 1.9, 0.7, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff2b0';
+      ctx.beginPath(); ctx.arc(-4.5, 1.1, 0.28, 0, 7); ctx.fill();
+    }
   } else if (h.building === 'fischerei') {
     // Boot
     ctx.fillStyle = '#8a6f4a'; ctx.strokeStyle = '#3a2c18';
@@ -394,33 +421,63 @@ function drawBuilding(ctx, h, x, y, detailed) {
     ctx.moveTo(4.9, 0); ctx.lineTo(4.9, 3.8);
     ctx.moveTo(7.2, 0); ctx.lineTo(7.2, 3.8);
     ctx.stroke();
-    // Pferdekopf-Tupfer
-    ctx.fillStyle = '#5a4632';
-    ctx.beginPath(); ctx.arc(3.8, 1.9, 1.1, 0, 7); ctx.fill();
-    ctx.fillRect(4.4, 0.9, 1.4, 0.8);
-  } else if (h.building === 'turm') {
-    // BUNKER: flache Betonkuppel mit Schießscharte und Sandsäcken
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
-    ctx.fillRect(-6, 3.6, 12.4, 1.3);
-    ctx.fillStyle = '#8d939c'; ctx.strokeStyle = '#2b313c';
+    // kleines Pferd in der Koppel (Seitenansicht, gesenkter Kopf beim Grasen)
+    ctx.fillStyle = '#6b4f34'; ctx.strokeStyle = '#33261a'; ctx.lineWidth = 0.4;
     ctx.beginPath();
-    ctx.moveTo(-6, 3.6);
-    ctx.quadraticCurveTo(-6.2, -2.6, 0, -3.4);
-    ctx.quadraticCurveTo(6.2, -2.6, 6, 3.6);
+    ctx.moveTo(3.3, 1.9);   // Kruppe
+    ctx.lineTo(4.6, 1.6);   // Rücken
+    ctx.lineTo(5.4, 1.5);   // Widerrist
+    ctx.lineTo(6.4, 2.6);   // Hals nach unten
+    ctx.lineTo(6.9, 3.0);   // Kopf/Maul (grasend)
+    ctx.lineTo(6.4, 3.2);
+    ctx.lineTo(5.7, 2.4);   // Kehle
+    ctx.lineTo(5.3, 3.4);   // Vorderbein
+    ctx.lineTo(4.9, 3.4);
+    ctx.lineTo(4.9, 2.3);
+    ctx.lineTo(3.9, 2.3);
+    ctx.lineTo(3.9, 3.4);   // Hinterbein
+    ctx.lineTo(3.5, 3.4);
+    ctx.lineTo(3.6, 2.2);
     ctx.closePath(); ctx.fill(); ctx.stroke();
-    // Schießscharte
-    ctx.fillStyle = '#181d26';
-    ctx.fillRect(-3.4, -0.6, 6.8, 1.7);
+    // Schweif
+    ctx.strokeStyle = '#33261a'; ctx.lineWidth = 0.7; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(3.3, 1.9); ctx.lineTo(2.7, 3.1); ctx.stroke();
+  } else if (h.building === 'turm') {
+    // WEHRTURM: stämmiger Steinturm mit auskragendem Zinnenkranz + Scharten.
+    // Hochkant + Zinnen = klar Festungswerk (passt zu Schwert/Kavallerie/Kanone)
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillRect(-4.4, 4.3, 9.0, 1.2);
+    // Turmschaft (leicht konisch, unten breiter → standfest)
+    ctx.fillStyle = '#9a938a'; ctx.strokeStyle = '#332f29';
+    ctx.beginPath();
+    ctx.moveTo(-3.6, 4.4); ctx.lineTo(-3.0, -2.8);
+    ctx.lineTo(3.0, -2.8); ctx.lineTo(3.6, 4.4);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // Schattenseite rechts für Volumen
+    ctx.fillStyle = 'rgba(50,46,40,0.20)';
+    ctx.beginPath();
+    ctx.moveTo(0.7, -2.8); ctx.lineTo(3.0, -2.8); ctx.lineTo(3.6, 4.4); ctx.lineTo(1.3, 4.4);
+    ctx.closePath(); ctx.fill();
+    // auskragender Zinnenkranz (Machicoulis, etwas breiter als der Schaft)
+    ctx.fillStyle = '#aca69c'; ctx.strokeStyle = '#332f29';
+    ctx.beginPath(); ctx.rect(-4.0, -4.2, 8.0, 1.5); ctx.fill(); ctx.stroke();
+    // Zinnen (Zähne)
+    for (let zx = -4.0; zx < 3.4; zx += 1.6) {
+      ctx.beginPath(); ctx.rect(zx, -5.5, 0.95, 1.4); ctx.fill(); ctx.stroke();
+    }
+    // Schießscharten: senkrechter Schlitz in der Mitte + zwei kleine
+    ctx.fillStyle = '#22262d';
+    ctx.fillRect(-0.55, -1.7, 1.1, 2.6);
+    ctx.fillRect(-2.5, -1.0, 0.75, 1.7);
+    ctx.fillRect(1.75, -1.0, 0.75, 1.7);
     if (detailed) {
-      // Betonfugen + Sandsäcke
-      ctx.strokeStyle = 'rgba(40,46,56,0.5)'; ctx.lineWidth = 0.6;
+      // Steinquader-Fugen
+      ctx.strokeStyle = 'rgba(50,46,40,0.4)'; ctx.lineWidth = 0.5;
       ctx.beginPath();
-      ctx.moveTo(-5.4, 1.8); ctx.quadraticCurveTo(0, 0.4, 5.4, 1.8);
+      ctx.moveTo(-3.2, 1.4); ctx.lineTo(3.2, 1.4);
+      ctx.moveTo(-3.4, 3.0); ctx.lineTo(3.4, 3.0);
+      ctx.moveTo(0, 1.4); ctx.lineTo(0, 4.4);
       ctx.stroke();
-      ctx.fillStyle = '#a89468'; ctx.strokeStyle = '#4a3f28';
-      for (const sx of [-5.6, -3.6, 3.6, 5.6]) {
-        ctx.beginPath(); ctx.arc(sx, 3.2, 1.2, 0, 7); ctx.fill(); ctx.stroke();
-      }
     }
   } else if (h.building === 'kaserne') {
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
