@@ -100,12 +100,12 @@ const BAL = {
   // NEUES EROBERN: Städte strahlen aus (freies Umland schließt sich an,
   // näher = schneller) — Truppen übernehmen nur noch das Feld, auf dem
   // sie STEHEN (langsam). Kein automatisches Nachbar-Erobern mehr.
-  influence: { radius: 2, perDay: 3 },
+  influence: { radius: 3, perDay: 5 },   // Städte greifen weiter aus → Reiche füllen die Karte
   standingCapture: 0.8,   // Koeffizient der Steh-Eroberung (× Typ-Profil)
   militiaResist: 35,
   militiaResistStadt: 60,
   militiaResistHauptstadt: 78,
-  militiaResistNeutral: 20,
+  militiaResistNeutral: 14,   // freies Land fällt zügiger → Nationen wachsen zu Reichen
   neutralDmgBonus: 1.35,
   neutralCounter: 0.5,
   militiaRegen: 1.1,
@@ -1383,36 +1383,16 @@ class Game {
       divs.forEach((d, i) => { d.station = spots[i % spots.length]; });
       return;
     }
-    const idxOf = d => {
-      let bi = 0, bd = Infinity;
-      line.forEach((h, i) => {
-        const dd = hexDist(d.c, d.r, h.c, h.r);
-        if (dd < bd) { bd = dd; bi = i; }
-      });
-      return bi;
-    };
-    const sorted = divs.map(d => [idxOf(d), d]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
-    const used = new Set();
-    // STICKY: wer schon nah an der Linie steht, behält seine Station —
-    // kein ewiges Hin-und-her-Geschiebe
-    const rest = [];
-    for (const d of sorted) {
-      if (d.station && line.some(h => hexDist(h.c, h.r, d.station[0], d.station[1]) <= 1)
-        && !used.has(d.station[0] + d.station[1] * MAP_W)) {
-        used.add(d.station[0] + d.station[1] * MAP_W);
-      } else rest.push(d);
+    // Kampf 2.0: Die KI bündelt ihren Schwerpunkt. Greift sie eine bestimmte
+    // Nation an, treibt sie eine Speerspitze auf deren Hauptstadt zu (Durchbruch
+    // → Rückzug des Gegners → echte Eroberung). Sonst am Feindkontakt bündeln.
+    let push = null;
+    const tgt = army.target;
+    if (army.mode === 'attack' && tgt && this.nations[tgt] && this.nations[tgt].alive
+      && this.nations[tgt].capital) {
+      push = this.nations[tgt].capital;
     }
-    rest.forEach((d, i) => {
-      const idx = rest.length === 1 ? Math.floor(line.length / 2)
-        : Math.round(i * (line.length - 1) / (rest.length - 1));
-      let h = line[Math.min(idx, line.length - 1)];
-      if (used.has(h.c + h.r * MAP_W)) {
-        const free = this.findFreeStation(army.nation, h, used);
-        if (free) h = free;
-      }
-      used.add(h.c + h.r * MAP_W);
-      d.station = [h.c, h.r];
-    });
+    this._massStations(divs, line, army.nation, push);
   }
 
   findFreeStation(nation, start, used) {
@@ -2666,9 +2646,11 @@ class Game {
     }
     const aggression = NATION_DEFS[id].aggression;
     const lf = this.lateFactor();   // Endphase: mutiger angreifen, die Runde entscheidet sich
-    // Wer selbst Hauptstädte sammelt, greift nach der Krone
-    if (victim && vRatio > 1.4 - 0.2 * lf && this.divisionsOf(id).length >= 5
-      && this.rand() < aggression + 0.25 + 0.2 * lf + 0.08 * ((nat.vp || 1) - 1)) {
+    // Kampf 2.0: die KI greift entschlossener an — gebündelt bricht sie durch,
+    // drängt den Gegner per Rückzug zurück und nimmt am Ende die Hauptstadt.
+    // Wer selbst Hauptstädte sammelt, greift nach der Krone.
+    if (victim && vRatio > 1.15 - 0.45 * lf && this.divisionsOf(id).length >= 4
+      && this.rand() < aggression + 0.4 + 0.5 * lf + 0.08 * ((nat.vp || 1) - 1)) {
       setTarget(victim, 'attack');
       return;
     }
@@ -2676,8 +2658,8 @@ class Game {
     if (!setTarget('EXPAND', 'attack')) return;
     this.computeFront(army);
     if (!army.frontHexes.length) {
-      // nichts Neutrales mehr erreichbar
-      if (victim && vRatio > 1.1) setTarget(victim, 'attack');
+      // nichts Neutrales mehr erreichbar → den lohnendsten Nachbarn angreifen
+      if (victim && vRatio > 0.9) setTarget(victim, 'attack');
       else setTarget('ALL', 'defend');
     }
   }
