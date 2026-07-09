@@ -137,7 +137,7 @@ const BAL = {
   maxAllies: 2,
   offerLifetime: 40,
   // Balance / Fairness (Multiplayer-tauglich)
-  graceDays: 40,              // Schonfrist: so lange keine Angriffe auf Spieler
+  graceDays: 8,               // Schonfrist: sehr kurz — schnell geht's zur Sache
   catchupMax: 0.30,           // Einkommensbonus kleiner Spieler (bis +30 %)
   leaderMalus: 0.25,          // Einkommensmalus des Spitzenreiters (bis -25 %)
   smallNationDefense: 1.5,    // Miliz-Bonus für Spieler unter 12 Provinzen
@@ -1470,8 +1470,12 @@ class Game {
     // erneuten Klicken auf dasselbe Ziel)
     const inflight = (div.path && div.pathI < div.path.length) ? div.path[div.pathI] : null;
     const prog = div.moveProgress;
+    const wasStationary = !div.path;   // stand die Truppe? dann kostet der Aufbruch Org
     const path = this.findPath(div.nation, div.c, div.r, c, r, false);
     if (path) {
+      // Verlegen kostet Ordnung: eine Truppe, die aufbricht, verliert 90 % ihrer
+      // Organisation — sie muss sich am Ziel erst wieder sammeln, bevor sie taugt.
+      if (wasStationary && (div.c !== c || div.r !== r)) div.org *= 0.1;
       div.path = path;
       div.pathI = 0;
       div.moveProgress = (inflight && path[0]
@@ -1821,19 +1825,17 @@ class Game {
       if (this.effects.length > 300) this.effects.splice(0, this.effects.length - 300);
     }
 
-    // Vernichtung nur bei aufgeriebener Stärke (schwere Verluste)
-    for (const d of [...def, ...atk]) {
-      if (!d.dead && d.str <= 5) {
+    // BESIEGT = VERNICHTET: wer in der Front keine Organisation ODER keine
+    // Stärke mehr hat, wird aufgerieben. Eine Truppe ohne Org ist wehrlos und
+    // stirbt sofort, sobald sie angegriffen wird — Ordnung ist Leben.
+    for (const d of [...eDef, ...eAtk]) {
+      if (!d.dead && (d.org <= 0.5 || d.str <= 2)) {
         this.addLog(`💀 ${d.name} · ${this.nationName(d.nation)}`, d.nation === this.player);
         this.destroyDivision(d, d.nation === def[0].nation ? eAtk[0].nation : def[0].nation);
       }
     }
-    const defLive = def.filter(d => !d.dead);
-    // Verteidiger-Front gebrochen? → geordneter Rückzug, Angreifer rückt nach
-    if (!defLive.length || defLive.every(d => d.org <= BAL.retreatOrg)) {
-      for (const d of defLive) this.retreatDivision(d, eAtk[0]);
-    } else if (atk.every(a => a.dead || a.org <= BAL.retreatOrg)) {
-      // Sturm erschöpft (auch alle Reserven leer) → abbrechen, sammeln
+    // Angriff erschöpft (auch alle Reserven leer) → abbrechen, sammeln
+    if (atk.every(a => a.dead || a.org <= BAL.retreatOrg)) {
       for (const a of atk) if (!a.dead) { a.attackTarget = null; a.moral = Math.max(BAL.moralMin, a.moral - BAL.moralRetreat); }
     }
   }
@@ -2050,6 +2052,7 @@ class Game {
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
     this._damagedHexes.add(h);
+    this.effects.push({ type: 'grow', c: h.c, r: h.r, by: div.nation, t: performance.now() });
     // Die Truppe bleibt STEHEN — das Land wird von der Position aus übernommen
     // (War-of-Dots). War das Feld das Marschziel, ist der Befehl erledigt;
     // führt der Pfad weiter, marschiert sie im nächsten Schritt normal durch.
@@ -2178,6 +2181,8 @@ class Game {
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
     this._damagedHexes.add(h);
+    this.effects.push({ type: 'grow', c: h.c, r: h.r, by: owner, t: performance.now() });
+    if (this.effects.length > 400) this.effects.splice(0, this.effects.length - 400);
     this._supplyDirtyIds.add(owner);
     this._frontsDirtyIds.add(owner);
     this._borderCache = null;

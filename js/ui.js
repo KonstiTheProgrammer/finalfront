@@ -1242,6 +1242,18 @@ function render() {
       hexPath(ctx, p.x, p.y, HEX_SIZE * (1 - age * 0.3));
       ctx.fillStyle = `rgba(255,255,255,${0.5 * (1 - age)})`;
       ctx.fill();
+    } else if (e.type === 'grow') {
+      // Annexions-„Wachstum": ein heller Ring platzt vom Feld nach außen,
+      // dazu ein kurzer Farbfüllblitz — kräftiger als das reine Füllen.
+      const col = e.by && NATION_DEFS[e.by] ? NATION_DEFS[e.by].color : '#ffffff';
+      const pop = 1 - Math.pow(1 - age, 2);          // schnell raus, sanft aus
+      hexPath(ctx, p.x, p.y, (HEX_SIZE + 0.55) * (0.5 + pop * 0.85));
+      ctx.strokeStyle = colorA(shade(col, 1.4), 0.9 * (1 - age));
+      ctx.lineWidth = 2.6 * (1 - age * 0.5);
+      ctx.stroke();
+      hexPath(ctx, p.x, p.y, (HEX_SIZE + 0.55) * (1 - age * 0.15));
+      ctx.fillStyle = colorA(shade(col, 1.3), 0.4 * (1 - age));
+      ctx.fill();
     } else if (e.type === 'death') {
       ctx.fillStyle = `rgba(25,20,20,${0.75 * (1 - age)})`;
       ctx.font = 'bold 12px sans-serif';
@@ -1263,13 +1275,21 @@ function render() {
       if (h._dispProg === undefined || h._dispProg - prog > 0.3) h._dispProg = prog;
       else h._dispProg += (prog - h._dispProg) * (1 - Math.exp(-rdt * 5));
       const p = hexToPixel(c, r);
-      // Die Farbe breitet sich vom ZENTRUM zum Rand aus (wachsendes Hexagon)
-      hexPath(ctx, p.x, p.y, (HEX_SIZE + 0.55) * Math.min(1, h._dispProg));
-      ctx.fillStyle = colorA(by, 0.52 + 0.08 * Math.sin(now / 200));
+      const t = Math.min(1, h._dispProg);
+      // Die Farbe WÄCHST pulsierend vom Zentrum nach außen (kein „Balken")
+      const grow = t * (1 + 0.05 * Math.sin(now / 150));
+      hexPath(ctx, p.x, p.y, (HEX_SIZE + 0.55) * grow);
+      ctx.fillStyle = colorA(by, 0.6 + 0.14 * Math.sin(now / 170));
       ctx.fill();
-      ctx.strokeStyle = colorA(by, 0.95);
-      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = colorA(shade(by, 1.3), 0.95);
+      ctx.lineWidth = 1.3 + 0.7 * (0.5 + 0.5 * Math.sin(now / 170));   // pulsierender Rand
       ctx.stroke();
+      // heller Kern wächst mit → lebendiges „Reinwachsen" statt starr
+      if (t > 0.2) {
+        hexPath(ctx, p.x, p.y, (HEX_SIZE + 0.55) * t * 0.55);
+        ctx.fillStyle = colorA(shade(by, 1.4), 0.28);
+        ctx.fill();
+      }
     }
   }
 

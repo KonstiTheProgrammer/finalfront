@@ -518,33 +518,29 @@ const out = vm.runInContext(`
     ok('Ohne Push breiter Schirm', genutzt >= 5, 'Felder=' + genutzt);
   }
 
-  /* ===== Kampf 2.0: Stapel-Schlacht + Rückzug statt Tod ===== */
+  /* ===== Kampf 2.0: Stapel-Schlacht — ohne Organisation = wehrlos, stirbt ===== */
   {
     const gB = new Game('B', 321); gB.endSpawnPhase();
     gB.day = BAL.graceDays + 5; gB.dayFloat = gB.day;
     const cap = gB.nations['B'].capital;
     const H = gB.hexAt(cap[0], cap[1]);
-    // freies eigenes Rückzugsfeld + Angreiferfeld unter den Nachbarn suchen
-    let R = null, aHex = null;
+    let aHex = null;
     for (const [nc, nr] of neighborsOf(H.c, H.r)) {
       const h = gB.hexAt(nc, nr);
-      if (!h || h.terrain === 'water') continue;
-      if (!R && h.owner === 'B' && !gB.divisionAt(nc, nr)) { R = h; continue; }
-      if (!aHex) aHex = h;
+      if (h && h.terrain !== 'water') { aHex = h; break; }
     }
     const def = gB.divisionsOf('B')[0];
-    gB._placeDiv(def, H.c, H.r); def.org = 3; def.str = 70; def.moral = 1;   // schon gebrochen
+    gB._placeDiv(def, H.c, H.r); def.org = 0.2; def.str = 70; def.moral = 1;   // ohne Organisation
     const atk = gB.divisionsOf('C')[0];
     let ran = false;
-    if (R && aHex && atk) {
+    if (aHex && atk) {
       gB._placeDiv(atk, aHex.c, aHex.r); atk.org = 55; atk.str = 100; atk.moral = 1;
       atk.attackTarget = [H.c, H.r];
       gB.resolveBattle({ hex: H, atk: [atk], def: [def] }, 0.25);
-      ok('Kampf 2.0: gebrochener Verteidiger weicht zurück (kein Tod)',
-        !def.dead && (def.c !== H.c || def.r !== H.r), 'pos ' + def.c + ',' + def.r + ' dead=' + def.dead);
+      ok('Kampf 2.0: Truppe ohne Organisation stirbt beim Angriff', def.dead === true, 'dead=' + def.dead);
       ran = true;
     }
-    if (!ran) ok('Kampf 2.0: Rückzugs-Setup', true, 'übersprungen (kein Feld frei)');
+    if (!ran) ok('Kampf 2.0: Angriffs-Setup', true, 'übersprungen (kein Feld frei)');
   }
 
   /* ===== Ausbildung: Queue + Kaserne ===== */
