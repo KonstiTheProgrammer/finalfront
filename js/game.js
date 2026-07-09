@@ -1810,7 +1810,13 @@ class Game {
     // Zahl wie die Bubble) die Schwelle erreicht. Darunter: Stellungs-Patt, keine
     // Verluste — es braucht mehr Masse. Spätphase: Schwelle sinkt (Runde endet).
     const floor = Math.max(0.3, BAL.attackFloor - 0.2 * this.lateFactor());
-    if (this.combatOdds(atk, def[0]) < floor) return;
+    const odds = this.combatOdds(atk, def[0]);
+    if (odds < floor) return;
+    // Durchbruchstempo skaliert mit dem Vorsprung über der Schwelle: ein Angriff
+    // knapp über der Schwelle ist zähes Ringen, klare Übermacht bricht schnell
+    // durch — die Bubble-% zählen jetzt, nicht nur die 50-%-Grenze. Basis hoch
+    // gehalten, damit klare Übermacht weiter entschlossen durchschlägt.
+    const push = 0.62 + 0.38 * ((odds - floor) / (1 - floor));
 
     const terr = TERRAIN[hex.terrain];
     const bunker = (hex.building === 'turm' && hex.owner === def[0].nation)
@@ -1838,7 +1844,7 @@ class Game {
     const lateAtk = 1 + 0.8 * this.lateFactor();
     const pocket = hex._pocket ? 1.45 : 1;
     // Gesamtschaden je Seite, gleichmäßig auf die Front verteilt
-    const toDef = atkPow * BAL.atkBase * lateAtk * pocket * dt;
+    const toDef = atkPow * BAL.atkBase * lateAtk * pocket * push * dt;
     const toAtk = defPow * BAL.atkBase * dt;
     this._battleHit(eDef, toDef * BAL.orgDmg / bunker, toDef * BAL.strDmg / bunker);
     this._battleHit(eAtk, toAtk * BAL.orgDmg * 0.7, toAtk * BAL.strDmg * 0.5);
@@ -2062,9 +2068,12 @@ class Game {
     }
     if (best) {
       this._placeDiv(div, best.c, best.r);
-      div.org = Math.max(2, div.org);
-      div.attackTarget = null; div.path = null;
+      // Am Rückzugsort sammelt sich die Truppe auf ~30 % Org — genug für einen
+      // Stand an der nächsten Linie (Tiefenverteidigung statt Rout quer über die Karte).
+      div.org = Math.max(div.org, BAL.divTypes[div.type].maxOrg * 0.3);
+      div.attackTarget = null; div.path = null; div.queue = [];
       div.moral = Math.max(BAL.moralMin, div.moral - BAL.moralLoss);
+      if (div.nation === this.player) this.addLog(`↩️ ${div.name}`, false);
       return;
     }
     for (const [nc, nr] of neighborsOf(div.c, div.r)) {
