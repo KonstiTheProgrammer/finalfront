@@ -937,7 +937,7 @@ function drawDivision(ctx, d, zoom) {
     ctx.lineWidth = sel ? 1.6 : 0.8;
     ctx.strokeRect(d.x - w / 2, d.y - hh / 2, w, hh);
     ctx.fillStyle = '#57c268';
-    ctx.fillRect(d.x - w / 2, d.y + hh / 2 + 0.8, w * Math.max(0, d.str / 100), 1.5);
+    ctx.fillRect(d.x - w / 2, d.y + hh / 2 + 0.8, w * Math.max(0, d.org / t.maxOrg), 1.5);
     return;
   }
   const w = 18, hh = 12;
@@ -960,14 +960,15 @@ function drawDivision(ctx, d, zoom) {
   ctx.strokeRect(x, y, w, hh);
   const stripeOff = TYPE_STRIPE[d.type] ? 1.1 : 0;
   drawUnitSprite(ctx, d.type, x + w / 2 + stripeOff, y + hh / 2);
+  // Oberer Balken = ORGANISATION (grün), unterer = Ressourcen/Stärke (bernstein)
   ctx.fillStyle = 'rgba(10,14,20,0.85)';
   ctx.fillRect(x, y + hh + 1.1, w, 2.2);
   ctx.fillStyle = '#57c268';
-  ctx.fillRect(x + 0.3, y + hh + 1.4, (w - 0.6) * Math.max(0, d.str / BAL.maxStr), 1.6);
+  ctx.fillRect(x + 0.3, y + hh + 1.4, (w - 0.6) * Math.max(0, d.org / t.maxOrg), 1.6);
   ctx.fillStyle = 'rgba(10,14,20,0.85)';
   ctx.fillRect(x, y + hh + 3.8, w, 2.2);
   ctx.fillStyle = '#e0b34a';
-  ctx.fillRect(x + 0.3, y + hh + 4.1, (w - 0.6) * Math.max(0, d.org / t.maxOrg), 1.6);
+  ctx.fillRect(x + 0.3, y + hh + 4.1, (w - 0.6) * Math.max(0, d.str / BAL.maxStr), 1.6);
   const vet = game.vetLevel(d);
   if (vet > 0) {
     // Veteranen: goldene Winkel überm Counter
@@ -1602,27 +1603,10 @@ function render() {
 
 /* Grobe Gefechtsprognose wie in HOI: Anteil der eigenen Schlagkraft.
    RPS-Dreieck, Gelände, Fluss, Org, Versorgung und Kessel fließen ein. */
+// Kanonische Prognose lebt in der Sim (game.combatOdds) — dieselbe Zahl treibt
+// die Bubble UND das ≥50 %-Tor der Kampfauflösung. Kein Auseinanderdriften.
 function battleOdds(attackers, def) {
-  const dt = BAL.divTypes[def.type];
-  const dh = game.hexAt(def.c, def.r);
-  const terr = TERRAIN[dh.terrain].def * (dh.river ? 1 / BAL.river.attackInto : 1);
-  let atk = 0;
-  const typeCount = {};
-  for (const a of attackers) {
-    let p = game.attackPower(a) * ((BAL.rps[a.type] && BAL.rps[a.type][def.type]) || 1);
-    const ah = game.hexAt(a.c, a.r);
-    if (ah && ah.river) p *= BAL.river.attackFrom;
-    p *= 0.35 + 0.65 * (a.org / BAL.divTypes[a.type].maxOrg);
-    atk += p;
-    typeCount[a.type] = (typeCount[a.type] || 0) + 1;
-  }
-  atk /= Math.max(0.4, terr);
-  const mainType = Object.keys(typeCount).sort((x, y) => typeCount[y] - typeCount[x])[0] || 'inf';
-  const defP = game.attackPower(def) * dt.defF
-    * ((BAL.rps[def.type] && BAL.rps[def.type][mainType]) || 1)
-    * (0.35 + 0.65 * def.org / dt.maxOrg)
-    + dh.resist * 0.02;   // die örtliche Miliz hilft dem Verteidiger etwas
-  return atk / Math.max(0.001, atk + defP);
+  return game.combatOdds(attackers, def);
 }
 
 /* Grün = du gewinnst, Gelb = knapp, Rot = Finger weg */

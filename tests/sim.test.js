@@ -608,29 +608,69 @@ const out = vm.runInContext(`
     ok('Ohne Push breiter Schirm', genutzt >= 5, 'Felder=' + genutzt);
   }
 
-  /* ===== Kampf 2.0: Stapel-Schlacht — ohne Organisation = wehrlos, stirbt ===== */
+  /* ===== Kampf HOI4: Rückzug statt Tod, Kessel = Tod, ≥50%-Tor ===== */
   {
+    // (1) Org gebrochen + Rückzugsfeld frei → Verteidiger weicht zurück, Angreifer nimmt das Feld
     const gB = new Game('B', 321); gB.endSpawnPhase();
     gB.day = BAL.graceDays + 5; gB.dayFloat = gB.day;
-    const cap = gB.nations['B'].capital;
-    const H = gB.hexAt(cap[0], cap[1]);
-    let aHex = null;
-    for (const [nc, nr] of neighborsOf(H.c, H.r)) {
-      const h = gB.hexAt(nc, nr);
-      if (h && h.terrain !== 'water') { aHex = h; break; }
+    // Binnen-Feld mit 6 Landnachbarn → garantiert freie Rückzugsfelder
+    let H = null;
+    for (const row of gB.hexes) for (const h of row) {
+      if (H || h.terrain === 'water' || h.terrain === 'mountain') continue;
+      const nbs = neighborsOf(h.c, h.r).map(([c, r]) => gB.hexAt(c, r));
+      if (nbs.length === 6 && nbs.every(n => n && n.terrain !== 'water' && n.terrain !== 'mountain')) H = h;
     }
     const def = gB.divisionsOf('B')[0];
-    gB._placeDiv(def, H.c, H.r); def.org = 0.2; def.str = 70; def.moral = 1;   // ohne Organisation
     const atk = gB.divisionsOf('C')[0];
-    let ran = false;
-    if (aHex && atk) {
+    if (H && atk) {
+      const aHex = gB.hexAt(...neighborsOf(H.c, H.r)[0]);
+      H.owner = 'B'; H.resist = 0;                                   // Feld ohne Miliz
+      gB._placeDiv(def, H.c, H.r); def.org = 0.2; def.str = 6; def.moral = 0.4;
       gB._placeDiv(atk, aHex.c, aHex.r); atk.org = 55; atk.str = 100; atk.moral = 1;
       atk.attackTarget = [H.c, H.r];
       gB.resolveBattle({ hex: H, atk: [atk], def: [def] }, 0.25);
-      ok('Kampf 2.0: Truppe ohne Organisation stirbt beim Angriff', def.dead === true, 'dead=' + def.dead);
-      ran = true;
+      ok('HOI4: org-loser Verteidiger weicht zurück (kein Sofort-Tod)',
+        def.dead === false && (def.c !== H.c || def.r !== H.r), 'dead=' + def.dead + ' pos=' + def.c + ',' + def.r);
+      ok('HOI4: Angreifer nimmt die geräumte Stellung', gB.hexAt(H.c, H.r).owner === 'C');
+    } else { ok('HOI4: Rückzug', true, 'übersprungen'); ok('HOI4: Feldnahme', true, 'übersprungen'); }
+
+    // (2) Kessel: alle Nachbarn Feindland → kein Rückzug möglich → Vernichtung
+    const gK = new Game('B', 55); gK.endSpawnPhase();
+    gK.day = BAL.graceDays + 5; gK.dayFloat = gK.day;
+    let center = null;
+    for (const row of gK.hexes) for (const h of row) {
+      if (center || h.terrain === 'water' || h.terrain === 'mountain') continue;
+      const nbs = neighborsOf(h.c, h.r).map(([c, r]) => gK.hexAt(c, r));
+      if (nbs.length === 6 && nbs.every(n => n && n.terrain !== 'water')) center = h;
     }
-    if (!ran) ok('Kampf 2.0: Angriffs-Setup', true, 'übersprungen (kein Feld frei)');
+    const dK = gK.divisionsOf('B')[0], aK = gK.divisionsOf('C')[0];
+    if (center && aK) {
+      gK._placeDiv(dK, center.c, center.r); dK.org = 0.2; dK.str = 6; dK.moral = 0.4; center.resist = 0;
+      const nbs = neighborsOf(center.c, center.r);
+      for (const [nc, nr] of nbs) { const n = gK.hexAt(nc, nr); if (n) n.owner = 'A'; }   // ringsum Feind
+      gK._placeDiv(aK, nbs[0][0], nbs[0][1]); aK.org = 55; aK.str = 100; aK.moral = 1; aK.attackTarget = [center.c, center.r];
+      gK.resolveBattle({ hex: center, atk: [aK], def: [dK] }, 0.25);
+      ok('HOI4: eingekesselter Verteidiger wird vernichtet', dK.dead === true, 'dead=' + dK.dead);
+    } else ok('HOI4: eingekesselter Verteidiger wird vernichtet', true, 'übersprungen');
+
+    // (3) ≥50%-Tor: aussichtsloser Angriff (<50%) richtet KEINEN Schaden an
+    const gT = new Game('B', 77); gT.endSpawnPhase();
+    gT.day = BAL.graceDays + 5; gT.dayFloat = gT.day;
+    let hh = null, ah2 = null;
+    for (const row of gT.hexes) { for (const h of row) {
+      if (hh || h.terrain === 'water' || h.terrain === 'mountain') continue;
+      for (const [nc, nr] of neighborsOf(h.c, h.r)) { const n = gT.hexAt(nc, nr); if (n && n.terrain !== 'water') { hh = h; ah2 = n; break; } }
+    } if (hh) break; }
+    const dT = gT.divisionsOf('B')[0], aT = gT.divisionsOf('C')[0];
+    if (hh && ah2 && aT) {
+      gT._placeDiv(dT, hh.c, hh.r); dT.org = BAL.divTypes[dT.type].maxOrg; dT.str = 100; dT.moral = 1;
+      gT._placeDiv(aT, ah2.c, ah2.r); aT.org = 6; aT.str = 12; aT.moral = 0.6; aT.attackTarget = [hh.c, hh.r];
+      const odds = gT.combatOdds([aT], dT);
+      const orgBefore = dT.org;
+      gT.resolveBattle({ hex: hh, atk: [aT], def: [dT] }, 0.25);
+      ok('HOI4: ≥50%-Tor — aussichtsloser Angriff macht keinen Schaden',
+        odds < 0.5 && dT.org === orgBefore, 'odds=' + odds.toFixed(2) + ' orgWeg=' + (orgBefore - dT.org).toFixed(2));
+    } else ok('HOI4: ≥50%-Tor', true, 'übersprungen');
   }
 
   /* ===== Ausbildung: Queue + Kaserne ===== */

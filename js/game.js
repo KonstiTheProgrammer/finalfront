@@ -63,6 +63,8 @@ const BAL = {
   flank: 0.18,                        // je weiterem GLEICHZEITIGEN Angreifer (bis Gefechtsbreite)
   combatWidth: 4,                     // Kampf-System 2.0: so viele Divisionen je Seite kämpfen
                                       // GLEICHZEITIG an einem Feld; der Rest ist Reserve
+  attackFloor: 0.5,                   // HOI4: ein Angriff bricht nur bei ≥50 % Prognose durch,
+                                      // sonst Stellungs-Patt. Spätphase: Schwelle sinkt (Durchbrüche).
   loot: 0.35,                         // Beute: Anteil des Gebäudewerts bei Eroberung
   cityHeal: { str: 2.0, org: 1.3 },   // Lazarett: eigene Stadt heilt & sammelt schneller
   // Truppendreieck nach EU4-Vorbild:
@@ -1474,12 +1476,10 @@ class Game {
     // erneuten Klicken auf dasselbe Ziel)
     const inflight = (div.path && div.pathI < div.path.length) ? div.path[div.pathI] : null;
     const prog = div.moveProgress;
-    const wasStationary = !div.path;   // stand die Truppe? dann kostet der Aufbruch Org
     const path = this.findPath(div.nation, div.c, div.r, c, r, false);
     if (path) {
-      // Verlegen kostet Ordnung: eine Truppe, die aufbricht, verliert 90 % ihrer
-      // Organisation — sie muss sich am Ziel erst wieder sammeln, bevor sie taugt.
-      if (wasStationary && (div.c !== c || div.r !== r)) div.org *= 0.1;
+      // Verlegen kostet KEINE Organisation mehr — Org ist reine Gefechtskraft
+      // (HOI4): sie wird nur im Kampf verbraucht und regeneriert außerhalb.
       div.path = path;
       div.pathI = 0;
       div.moveProgress = (inflight && path[0]
@@ -1792,6 +1792,26 @@ class Game {
     const byOrg = (x, y) => (y.org - x.org) || (x.id - y.id);
     atk.sort(byOrg); def.sort(byOrg);
     const eAtk = atk.slice(0, W), eDef = def.slice(0, W);
+
+    // Feindkontakt: beide Seiten sind gebunden (auch bei einem Patt), sammeln XP
+    for (const a of eAtk) { a.inCombat = true; a.xp = (a.xp || 0) + dt; }
+    for (const d of eDef) { d.inCombat = true; d.xp = (d.xp || 0) + dt; }
+    hex._atkT = this.dayFloat; hex._atkBy = eAtk[0].nation;
+    this.warHeat[[eAtk[0].nation, def[0].nation].sort().join('|')] = this.day;
+    this._checkBetrayal(eAtk[0].nation, def[0].nation);
+    const now = performance.now();
+    if (!hex._fxT || now - hex._fxT > 300) {
+      hex._fxT = now;
+      this.effects.push({ type: 'battle', c: hex.c, r: hex.r, fc: eAtk[0].c, fr: eAtk[0].r, t: now });
+      if (this.effects.length > 300) this.effects.splice(0, this.effects.length - 300);
+    }
+
+    // ≥50 %-TOR (HOI4): Ein Angriff bricht nur durch, wenn die Prognose (dieselbe
+    // Zahl wie die Bubble) die Schwelle erreicht. Darunter: Stellungs-Patt, keine
+    // Verluste — es braucht mehr Masse. Spätphase: Schwelle sinkt (Runde endet).
+    const floor = Math.max(0.3, BAL.attackFloor - 0.2 * this.lateFactor());
+    if (this.combatOdds(atk, def[0]) < floor) return;
+
     const terr = TERRAIN[hex.terrain];
     const bunker = (hex.building === 'turm' && hex.owner === def[0].nation)
       ? BAL.bunker.def[Math.min((hex.level || 1), BAL.bunker.def.length) - 1] : 1;
@@ -1823,30 +1843,27 @@ class Game {
     this._battleHit(eDef, toDef * BAL.orgDmg / bunker, toDef * BAL.strDmg / bunker);
     this._battleHit(eAtk, toAtk * BAL.orgDmg * 0.7, toAtk * BAL.strDmg * 0.5);
 
-    for (const a of eAtk) { a.inCombat = true; a.xp = (a.xp || 0) + dt; }
-    for (const d of eDef) { d.inCombat = true; d.xp = (d.xp || 0) + dt; }
-    hex._atkT = this.dayFloat; hex._atkBy = eAtk[0].nation;
-    this.warHeat[[eAtk[0].nation, def[0].nation].sort().join('|')] = this.day;
-    this._checkBetrayal(eAtk[0].nation, def[0].nation);
-    const now = performance.now();
-    if (!hex._fxT || now - hex._fxT > 300) {
-      hex._fxT = now;
-      this.effects.push({ type: 'battle', c: hex.c, r: hex.r, fc: eAtk[0].c, fr: eAtk[0].r, t: now });
-      if (this.effects.length > 300) this.effects.splice(0, this.effects.length - 300);
+    // RÜCKZUG STATT TOD (HOI4): bricht die Org eines VERTEIDIGERS (oder ist er
+    // stärkemäßig aufgerieben), weicht er ein Feld zurück — der Angreifer nimmt
+    // die Stellung. Wer nicht zurück kann (Kessel), wird vernichtet.
+    let pushed = false;
+    for (const d of eDef) {
+      if (d.dead) continue;
+      if (d.org <= BAL.retreatOrg || d.str <= 2) { this.retreatDivision(d, eAtk[0]); pushed = true; }
     }
-
-    // BESIEGT = VERNICHTET: wer in der Front keine Organisation ODER keine
-    // Stärke mehr hat, wird aufgerieben. Eine Truppe ohne Org ist wehrlos und
-    // stirbt sofort, sobald sie angegriffen wird — Ordnung ist Leben.
-    for (const d of [...eDef, ...eAtk]) {
-      if (!d.dead && (d.org <= 0.5 || d.str <= 2)) {
-        this.addLog(`💀 ${d.name} · ${this.nationName(d.nation)}`, d.nation === this.player);
-        this.destroyDivision(d, d.nation === def[0].nation ? eAtk[0].nation : def[0].nation);
+    if (pushed && !this.divisionsAt(hex.c, hex.r).some(x => !x.dead && this.hostile(eAtk[0].nation, x.nation))) {
+      const winner = eAtk.find(a => !a.dead);
+      if (winner && hex.owner !== winner.nation && this.attackable(winner.nation, hex)) {
+        this.captureHex(hex, winner);
+        for (const a of atk) if (!a.dead && a.attackTarget && a.attackTarget[0] === hex.c && a.attackTarget[1] === hex.r) a.attackTarget = null;
       }
     }
-    // Angriff erschöpft (auch alle Reserven leer) → abbrechen, sammeln
-    if (atk.every(a => a.dead || a.org <= BAL.retreatOrg)) {
-      for (const a of atk) if (!a.dead) { a.attackTarget = null; a.moral = Math.max(BAL.moralMin, a.moral - BAL.moralRetreat); }
+    // Erschöpfte ANGREIFER: str-mäßig am Ende → weichen ebenfalls zurück (Kessel =
+    // Tod), sonst brechen sie den Sturm ab und halten/sammeln neue Organisation.
+    for (const a of eAtk) {
+      if (a.dead) continue;
+      if (a.str <= 2) this.retreatDivision(a, def[0]);
+      else if (a.org <= BAL.retreatOrg) { a.attackTarget = null; a.moral = Math.max(BAL.moralMin, a.moral - BAL.moralRetreat); }
     }
   }
 
@@ -1913,6 +1930,36 @@ class Game {
     const pocket = h && h._pocket ? 0.55 : 1;   // eingekesselt: kaum Kampfkraft (HOI)
     const vet = 1 + BAL.vet.bonus * this.vetLevel(div);
     return (div.str / 100) * div.moral * sup.mod * t.atk * pocket * vet;
+  }
+
+  /* Deterministische Gefechtsprognose (0..1 = Siegchance der Angreifer) — GENAU
+     der Wert der HOI-Bubble im UI und zugleich das ≥50 %-Tor der Kampfauflösung.
+     Kein Zufall → MP-lockstep-sicher. */
+  combatOdds(attackers, def) {
+    if (!def) return 1;
+    const dt = BAL.divTypes[def.type];
+    const dh = this.hexAt(def.c, def.r);
+    const terr = TERRAIN[dh.terrain].def * (dh.river ? 1 / BAL.river.attackInto : 1);
+    let atk = 0;
+    const typeCount = {};
+    for (const a of attackers) {
+      if (a.dead) continue;
+      let p = this.attackPower(a) * ((BAL.rps[a.type] && BAL.rps[a.type][def.type]) || 1);
+      const ah = this.hexAt(a.c, a.r);
+      if (ah && ah.river) p *= BAL.river.attackFrom;
+      p *= 0.35 + 0.65 * (a.org / BAL.divTypes[a.type].maxOrg);
+      atk += p;
+      typeCount[a.type] = (typeCount[a.type] || 0) + 1;
+    }
+    atk /= Math.max(0.4, terr);
+    const mainType = Object.keys(typeCount).sort((x, y) => typeCount[y] - typeCount[x])[0] || 'inf';
+    const bunker = (dh.building === 'turm' && dh.owner === def.nation)
+      ? BAL.bunker.def[Math.min((dh.level || 1), BAL.bunker.def.length) - 1] : 1;
+    const defP = this.attackPower(def) * dt.defF * bunker
+      * ((BAL.rps[def.type] && BAL.rps[def.type][mainType]) || 1)
+      * (0.35 + 0.65 * def.org / dt.maxOrg)
+      + dh.resist * 0.02;
+    return atk / Math.max(0.001, atk + defP);
   }
 
   resolveCombat(atk, targetHex, dt) {
@@ -2002,9 +2049,11 @@ class Game {
     let best = null, bestScore = -Infinity;
     for (const [nc, nr] of neighborsOf(div.c, div.r)) {
       const nh = this.hexAt(nc, nr);
-      if (!nh || nh.owner !== div.nation || nh.terrain === 'water') continue;
+      if (!nh || nh.terrain === 'water') continue;
+      if (nh.owner && this.hostile(div.nation, nh.owner)) continue;   // nie ins Feindland zurück
       if (this.divisionAt(nc, nr)) continue;
-      let score = nh.supply * 2;
+      // Eigenes Land bevorzugt, neutrales als Ausweichweg erlaubt (weniger Kessel-Tode)
+      let score = (nh.owner === div.nation ? 8 : 0) + (nh.supply || 0) * 2;
       for (const [ec, er] of neighborsOf(nc, nr)) {
         const eh = this.hexAt(ec, er);
         if (eh && eh.owner && this.hostile(div.nation, eh.owner)) score -= 1;
