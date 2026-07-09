@@ -215,9 +215,11 @@ const out = vm.runInContext(`
     ok('Karte ' + mapId + ' spielbar', caps === 5 && !gM.over);
   }
 
-  /* ===== Stadt-Einfluss (Radius 2, näher = schneller) ===== */
+  /* ===== Stadt-Einfluss (Radius 3) + Grenz-Sog füllt darüber hinaus ===== */
   g = new Game('A', 99); g.endSpawnPhase();
   const startHex = g.nations['A'].hexCount;
+  // Reinen Stadt-Einfluss isolieren: Grenz-Sog aus → Einfluss muss am Radius enden
+  const creepSave = BAL.borderCreep; BAL.borderCreep = 0;
   runTicks(g, 80);
   const nach20 = g.nations['A'].hexCount;
   ok('Stadt-Einfluss übernimmt freies Umland', nach20 > startHex, startHex + ' -> ' + nach20);
@@ -226,7 +228,18 @@ const out = vm.runInContext(`
     const cap = g.nations['A'].capital;
     for (const row of g.hexes) for (const h of row)
       if (h.owner === 'A') maxDist = Math.max(maxDist, hexDist(h.c, h.r, cap[0], cap[1]));
-    ok('Einfluss endet am Radius', maxDist <= BAL.influence.radius, maxDist + '');
+    ok('Reiner Stadt-Einfluss endet am Radius', maxDist <= BAL.influence.radius, maxDist + '');
+  }
+  BAL.borderCreep = creepSave;
+  // Mit Grenz-Sog wächst das Gebiet über den Einflussradius hinaus (füllt die Karte)
+  {
+    const gC = new Game('A', 99); gC.endSpawnPhase();
+    runTicks(gC, 140);
+    let maxDist = 0;
+    const cap = gC.nations['A'].capital;
+    for (const row of gC.hexes) for (const h of row)
+      if (h.owner === 'A') maxDist = Math.max(maxDist, hexDist(h.c, h.r, cap[0], cap[1]));
+    ok('Grenz-Sog füllt über den Einflussradius hinaus', maxDist > BAL.influence.radius, 'maxR=' + maxDist);
   }
 
   /* ===== Dorf-Einfluss: Radius 2, per Straße zur Stadt Radius 3 ===== */

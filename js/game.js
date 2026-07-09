@@ -104,12 +104,16 @@ const BAL = {
   // sie STEHEN (langsam). Kein automatisches Nachbar-Erobern mehr.
   // Städte greifen weit aus (Radius 3), Dörfer schwächer (Radius 2). Ein Dorf,
   // das per Straße mit einer eigenen Stadt verbunden ist, wächst auf Stadt-Reichweite (3).
-  influence: { radius: 3, perDay: 5, dorf: 2, dorfRoad: 3 },
+  influence: { radius: 3, perDay: 9, dorf: 2, dorfRoad: 3 },
+  // Grenz-Sog: eigenes Land zieht angrenzendes FREIES Land langsam an sich (× Anzahl
+  // eigener Nachbarfelder). Füllt das Niemandsland, bis die Reiche aneinandergrenzen
+  // und echte Fronten entstehen — greift nie Feindland an, nur Neutrales.
+  borderCreep: 0.65,
   standingCapture: 0.8,   // Koeffizient der Steh-Eroberung (× Typ-Profil)
   militiaResist: 35,
   militiaResistStadt: 60,
   militiaResistHauptstadt: 78,
-  militiaResistNeutral: 14,   // freies Land fällt zügiger → Nationen wachsen zu Reichen
+  militiaResistNeutral: 9,   // freies Land fällt zügig → Reiche wachsen schnell zusammen
   neutralDmgBonus: 1.35,
   neutralCounter: 0.5,
   militiaRegen: 1.1,
@@ -2281,6 +2285,33 @@ class Game {
     return false;
   }
 
+  /* Grenz-Sog: FREIES Land wird von angrenzendem eigenem Land angezogen — je mehr
+     eigene Nachbarn, desto schneller. Füllt das Niemandsland, bis Reiche sich
+     berühren und Fronten entstehen. Rührt Feindland nie an (nur Neutrales). */
+  borderCreepDaily() {
+    const rate = BAL.borderCreep;
+    if (!rate) return;
+    for (const row of this.hexes) {
+      for (const h of row) {
+        if (h.owner || h.terrain === 'water') continue;   // nur freies Land
+        let by = null, votes = 0;
+        const tally = {};
+        for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+          const nb = this.hexAt(nc, nr);
+          if (!nb || !nb.owner || nb.terrain === 'water') continue;
+          if (!this.nations[nb.owner] || !this.nations[nb.owner].alive) continue;
+          tally[nb.owner] = (tally[nb.owner] || 0) + 1;
+          if (tally[nb.owner] > votes) { votes = tally[nb.owner]; by = nb.owner; }
+        }
+        if (!by) continue;
+        h.resist -= rate * votes;
+        h._atkT = this.dayFloat; h._atkBy = by;
+        this._damagedHexes.add(h);
+        if (h.resist <= 0) this.claimByInfluence(h, by);
+      }
+    }
+  }
+
   claimByInfluence(h, owner) {
     h.owner = owner;
     this.setResist(h);
@@ -2873,6 +2904,7 @@ class Game {
       this.supplyDaily();
       this.militiaDaily();
       this.influenceDaily();
+      this.borderCreepDaily();
       this.aiDaily();
       this.vpDaily();
       this.pocketsDaily();
