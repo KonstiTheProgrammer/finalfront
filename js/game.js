@@ -100,7 +100,9 @@ const BAL = {
   // NEUES EROBERN: Städte strahlen aus (freies Umland schließt sich an,
   // näher = schneller) — Truppen übernehmen nur noch das Feld, auf dem
   // sie STEHEN (langsam). Kein automatisches Nachbar-Erobern mehr.
-  influence: { radius: 3, perDay: 5 },   // Städte greifen weiter aus → Reiche füllen die Karte
+  // Städte greifen weit aus (Radius 3), Dörfer schwächer (Radius 2). Ein Dorf,
+  // das per Straße mit einer eigenen Stadt verbunden ist, wächst auf Stadt-Reichweite (3).
+  influence: { radius: 3, perDay: 5, dorf: 2, dorfRoad: 3 },
   standingCapture: 0.8,   // Koeffizient der Steh-Eroberung (× Typ-Profil)
   militiaResist: 35,
   militiaResistStadt: 60,
@@ -1025,11 +1027,13 @@ class Game {
     }
     this._kasernen = [];
     this._staedte = [];
+    this._dorfer = [];
     for (const row of this.hexes) for (const h of row) {
       if (!h.owner) continue;
       const nat = this.nations[h.owner];
       if (!nat) continue;
       if (h.capital || h.building === 'stadt') this._staedte.push(h);
+      else if (h.building === 'dorf') this._dorfer.push(h);
       if (h.terrain !== 'water') { nat.hexCount++; nat.popCap += BAL.pop.perHex; }
       const lvl = h.level || 1;
       if (BAL.pop[h.building]) nat.popCap += BAL.pop[h.building] * (h.building === 'stadt' ? 1 : lvl);
@@ -2161,25 +2165,62 @@ class Game {
   /* ---------- Stadt-Einfluss: freies Umland schließt sich langsam an ----------
      Je näher an der Stadt, desto schneller — nur NEUTRALE Felder. */
   influenceDaily() {
-    const R = BAL.influence.radius;
     for (const city of this._staedte || []) {
       const owner = city.owner;
       if (!owner || !this.nations[owner] || !this.nations[owner].alive) continue;
       if (!city.capital && city.building !== 'stadt') continue;   // Cache-Frische
-      for (let dr = -R; dr <= R; dr++) {
-        for (let dc = -R - 1; dc <= R + 1; dc++) {
-          const h = this.hexAt(city.c + dc, city.r + dr);
-          if (!h || h.owner !== null || h.terrain === 'water') continue;
-          const dist = hexDist(city.c, city.r, h.c, h.r);
-          if (dist < 1 || dist > R) continue;
-          h.resist -= BAL.influence.perDay / dist;
-          h._atkT = this.dayFloat;
-          h._atkBy = owner;
-          this._damagedHexes.add(h);
-          if (h.resist <= 0) this.claimByInfluence(h, owner);
-        }
+      this.spreadInfluence(city, owner, BAL.influence.radius);
+    }
+    for (const dorf of this._dorfer || []) {
+      const owner = dorf.owner;
+      if (!owner || !this.nations[owner] || !this.nations[owner].alive) continue;
+      if (dorf.building !== 'dorf') continue;                     // Cache-Frische
+      // Dorf greift Radius 2 aus — per Straße mit eigener Stadt verbunden: Radius 3
+      const R = this.roadConnectedToCity(dorf) ? BAL.influence.dorfRoad : BAL.influence.dorf;
+      this.spreadInfluence(dorf, owner, R);
+    }
+  }
+
+  /* Ein Einfluss-Quell (Stadt/Dorf) drückt NEUTRALE Felder im Umkreis R nieder;
+     je näher, desto schneller — bei resist<=0 fällt das Feld an den Besitzer. */
+  spreadInfluence(src, owner, R) {
+    for (let dr = -R; dr <= R; dr++) {
+      for (let dc = -R - 1; dc <= R + 1; dc++) {
+        const h = this.hexAt(src.c + dc, src.r + dr);
+        if (!h || h.owner !== null || h.terrain === 'water') continue;
+        const dist = hexDist(src.c, src.r, h.c, h.r);
+        if (dist < 1 || dist > R) continue;
+        h.resist -= BAL.influence.perDay / dist;
+        h._atkT = this.dayFloat;
+        h._atkBy = owner;
+        this._damagedHexes.add(h);
+        if (h.resist <= 0) this.claimByInfluence(h, owner);
       }
     }
+  }
+
+  /* Führt vom Dorf ein Straßennetz (eigene road-Felder) bis an eine eigene
+     Stadt/Hauptstadt? Dann zählt das Dorf als angebunden (größerer Radius). */
+  roadConnectedToCity(dorf) {
+    const owner = dorf.owner;
+    const seen = new Set();
+    const stack = [];
+    for (const [nc, nr] of neighborsOf(dorf.c, dorf.r)) {
+      const nb = this.hexAt(nc, nr);
+      if (nb && nb.owner === owner && nb.road) { seen.add(nb.c + ',' + nb.r); stack.push(nb); }
+    }
+    while (stack.length) {
+      const h = stack.pop();
+      if (h.capital || h.building === 'stadt') return true;       // Straße endet in einer Stadt
+      for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+        const nb = this.hexAt(nc, nr);
+        if (!nb || nb.owner !== owner) continue;
+        if (nb.capital || nb.building === 'stadt') return true;   // Straße grenzt an eine Stadt
+        const k = nb.c + ',' + nb.r;
+        if (nb.road && !seen.has(k)) { seen.add(k); stack.push(nb); }
+      }
+    }
+    return false;
   }
 
   claimByInfluence(h, owner) {

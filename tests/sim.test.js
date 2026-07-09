@@ -229,6 +229,49 @@ const out = vm.runInContext(`
     ok('Einfluss endet am Radius', maxDist <= BAL.influence.radius, maxDist + '');
   }
 
+  /* ===== Dorf-Einfluss: Radius 2, per Straße zur Stadt Radius 3 ===== */
+  {
+    const gD = new Game('A', 3); gD.endSpawnPhase();
+    const isLand = h => h && h.terrain !== 'water' && h.terrain !== 'mountain';
+    const caps = Object.values(gD.nations).map(n => n.capital).filter(Boolean);
+    let vc = null;
+    for (const row of gD.hexes) for (const h of row) {
+      if (vc || !isLand(h) || !caps.every(c => hexDist(h.c, h.r, c[0], c[1]) >= 8)) continue;
+      let okp = true;
+      for (let dr = -3; dr <= 3; dr++) for (let dc = -3; dc <= 3; dc++) {
+        const n = gD.hexAt(h.c + dc, h.r + dr);
+        if (hexDist(h.c, h.r, h.c + dc, h.r + dr) <= 3 && (!n || n.owner !== null || !isLand(n))) okp = false;
+      }
+      if (okp) vc = h;
+    }
+    if (vc) {
+      vc.owner = 'A'; vc.building = 'dorf'; vc.level = 1; vc.builtBy = 'A'; gD.setResist(vc);
+      gD.recalcEconomy();
+      ok('Dorf ohne Straße nicht angebunden', gD.roadConnectedToCity(vc) === false);
+      for (let i = 0; i < 25; i++) gD.influenceDaily();
+      let maxD = 0, cnt = 0;
+      for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) {
+        const n = gD.hexAt(vc.c + dc, vc.r + dr);
+        if (n && n.owner === 'A' && n !== vc) { maxD = Math.max(maxD, hexDist(vc.c, vc.r, n.c, n.r)); cnt++; }
+      }
+      ok('Dorf nimmt Umland bis Radius 2 ein', maxD === 2 && cnt > 0, 'maxR=' + maxD + ' felder=' + cnt);
+    } else ok('Dorf nimmt Umland bis Radius 2 ein', true, 'kein isoliertes Fleck');
+
+    // Straßen-Anbindung: Dorf neben Hauptstadt, Zwischenfeld als Straße
+    const gR = new Game('A', 3); gR.endSpawnPhase();
+    const cap = gR.hexAt(...gR.nations['A'].capital);
+    let dv = null;
+    for (let d = 3; d <= 5 && !dv; d++) { const h = gR.hexAt(cap.c + d, cap.r); if (isLand(h)) dv = h; }
+    if (dv) {
+      dv.owner = 'A'; dv.building = 'dorf'; dv.level = 1; dv.builtBy = 'A'; gR.setResist(dv);
+      for (let x = cap.c; x <= dv.c; x++) { const h = gR.hexAt(x, cap.r); if (h) { h.owner = 'A'; if (isLand(h)) h.road = true; } }
+      gR.recalcEconomy();
+      ok('Dorf mit Straße zur Stadt ist angebunden', gR.roadConnectedToCity(dv) === true);
+      for (let x = cap.c; x <= dv.c; x++) { const h = gR.hexAt(x, cap.r); if (h) h.road = false; }
+      ok('Ohne Straße wieder abgeschnitten', gR.roadConnectedToCity(dv) === false);
+    } else { ok('Dorf mit Straße zur Stadt ist angebunden', true, 'kein Platz'); ok('Ohne Straße wieder abgeschnitten', true, 'kein Platz'); }
+  }
+
   /* ===== Frei laufen + Steh-Eroberung ===== */
   g = new Game('A', 66); g.endSpawnPhase();
   const dEr = g.divisionsOf('A')[0];
