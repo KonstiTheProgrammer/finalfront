@@ -256,6 +256,53 @@ const out = vm.runInContext(`
     } else ok('Steh-Eroberung skaliert mit Stärke', true, 'übersprungen');
   }
 
+  /* ===== Sofort-Einnahme beim Drüberlaufen + Schutzzonen (Stadt r2 / Dorf r1) ===== */
+  {
+    const gP = new Game('A', 91); gP.endSpawnPhase();
+    const bCap = gP.hexAt(...gP.nations['B'].capital);
+    const r2 = gP.hexAt(bCap.c + 2, bCap.r);
+    ok('Schutzzone: Feld im Stadt-Umkreis 2 ist geschützt', !!r2 && gP.hexProtected(r2, 'A') === true);
+    let farO = null;
+    for (const row of gP.hexes) for (const h of row)
+      if (h.terrain !== 'water' && h.terrain !== 'mountain' && !h.owner && !gP.hexProtected(h, 'A') && !farO) farO = h;
+    ok('Schutzzone: freies Feld fern jeder Stadt ist ungeschützt', !!farO && gP.hexProtected(farO, 'A') === false);
+
+    let tOpen = null, fOpen = null;
+    outerT: for (const row of gP.hexes) for (const h of row) {
+      if (h.terrain === 'water' || h.terrain === 'mountain' || h.owner || gP.hexProtected(h, 'A')) continue;
+      for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+        const n = gP.hexAt(nc, nr);
+        if (n && n.terrain !== 'water' && n.terrain !== 'mountain' && !n.owner) { tOpen = h; fOpen = n; break outerT; }
+      }
+    }
+    if (tOpen) {
+      const dP = gP.divisionsOf('A')[0];
+      gP._placeDiv(dP, fOpen.c, fOpen.r); gP.captureHex(fOpen, dP); dP.org = 1; dP.str = 20; dP.path = null;
+      gP.moveOrder(dP, tOpen.c, tOpen.r);
+      for (let i = 0; i < 200 && (dP.c !== tOpen.c || dP.r !== tOpen.r); i++) gP.subTick(0.25);
+      ok('Drüberlaufen nimmt offenes Land sofort ein', gP.hexAt(tOpen.c, tOpen.r).owner === 'A',
+        'endOwner=' + gP.hexAt(tOpen.c, tOpen.r).owner);
+    } else ok('Drüberlaufen nimmt offenes Land sofort ein', true, 'übersprungen');
+
+    let tProt = null, fProt = null;
+    outerG: for (const row of gP.hexes) for (const h of row) {
+      if (h.terrain === 'water' || h.terrain === 'mountain' || h.owner || !gP.hexProtected(h, 'A')) continue;
+      for (const [nc, nr] of neighborsOf(h.c, h.r)) {
+        const n = gP.hexAt(nc, nr);
+        if (n && n.terrain !== 'water' && n.terrain !== 'mountain' && (!n.owner || n.owner === 'A')) { tProt = h; fProt = n; break outerG; }
+      }
+    }
+    if (tProt) {
+      const dG = gP.divisionsOf('A')[0];
+      gP._placeDiv(dG, fProt.c, fProt.r); gP.captureHex(fProt, dG); dG.org = 1; dG.str = 20; dG.path = null;
+      gP.moveOrder(dG, tProt.c, tProt.r);
+      let arr = false;
+      for (let i = 0; i < 200 && !arr; i++) { gP.subTick(0.25); if (dG.c === tProt.c && dG.r === tProt.r) arr = true; }
+      ok('Geschütztes Feld wird beim Drüberlaufen NICHT sofort erobert', gP.hexAt(tProt.c, tProt.r).owner !== 'A',
+        'owner=' + gP.hexAt(tProt.c, tProt.r).owner);
+    } else ok('Geschütztes Feld wird beim Drüberlaufen NICHT sofort erobert', true, 'übersprungen');
+  }
+
   /* ===== Move-Fix: Doppelklick wirft Fortschritt nicht weg ===== */
   {
     const gM = new Game('A', 357); gM.endSpawnPhase();

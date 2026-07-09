@@ -1416,8 +1416,22 @@ function render() {
   if (zoom >= 0.5) {
     for (const a of game.divisions) {
       if (a.dead || !a.attackTarget) continue;
+      // Vom ANGREIFER-FELD aufs Zielfeld — Hex-Mitten statt der animierten
+      // Sprite-Position, damit der Pfeil immer korrekt in Angriffsrichtung zeigt.
+      // Nebeneinander stehende Sprites überlappen sich → der Pfeil wird über die
+      // Counter gehoben (Normale nach oben) und leicht verlängert, sonst unsichtbar.
+      const ap = hexToPixel(a.c, a.r);
       const tp = hexToPixel(a.attackTarget[0], a.attackTarget[1]);
-      drawArrow(ctx, a.x, a.y, tp.x, tp.y, colorA(NATION_DEFS[a.nation].color, 0.85));
+      const dx = tp.x - ap.x, dy = tp.y - ap.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      let px = -uy, py = ux;                 // Normale
+      if (py > 0) { px = -px; py = -py; }    // immer nach oben heben
+      const lift = HEX_SIZE * 0.9;
+      drawArrow(ctx,
+        ap.x + px * lift - ux * HEX_SIZE * 0.55, ap.y + py * lift - uy * HEX_SIZE * 0.55,
+        tp.x + px * lift, tp.y + py * lift,
+        colorA(NATION_DEFS[a.nation].color, 0.92));
     }
   }
 
@@ -1445,7 +1459,8 @@ function render() {
       oddsUsed.add(def.id);
       const a = e.list[0];
       const p2 = hexToPixel(def.c, def.r);
-      drawOddsBubble(ctx, (a.x + p2.x) / 2, (a.y + p2.y) / 2 - 9, disp, zoom, false);
+      // Bubble über den gehobenen Angriffspfeil stapeln, damit beide lesbar bleiben
+      drawOddsBubble(ctx, (a.x + p2.x) / 2, (a.y + p2.y) / 2 - 9 - HEX_SIZE, disp, zoom, false);
     }
     for (const k of UI._odds.keys()) if (!oddsUsed.has(k)) UI._odds.delete(k);
   }

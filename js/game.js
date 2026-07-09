@@ -1700,16 +1700,22 @@ class Game {
           this._placeDiv(div, nc, nr);
           div.pathI++;
           if (div.pathI >= div.path.length) { div.path = null; if (div.manual) div.station = [div.c, div.r]; }
+          // Beim Drüberlaufen offenes Land sofort einnehmen — nur von Städten
+          // (Umkreis 2) oder Dörfern (Umkreis 1) gedecktes Land bleibt zäh.
+          if (nh.owner !== div.nation && nh.terrain !== 'water'
+            && this.attackable(div.nation, nh) && !this.hexProtected(nh, div.nation)) {
+            this.captureHex(nh, div);
+          }
         }
       }
 
       if (!div.path && !div.attackTarget) {
         const t = BAL.divTypes[div.type];
         const here = this.hexAt(div.c, div.r);
-        // STEHEN = genau dieses Feld langsam übernehmen (Nachbarn nicht mehr!)
+        // STEHEN = dieses Feld übernehmen — offen sofort, gedeckt langsam erobern
         if (here && here.terrain !== 'water' && here.owner !== div.nation
           && this.attackable(div.nation, here)) {
-          this.standingCapture(div, here, dt);
+          this.takeHex(div, here, dt);
         }
         // Front-/Bot-Truppen rücken vor, sobald ihr Standfeld gesichert ist:
         // freie/feindliche Felder werden BETRETEN, Verteidiger bekämpft
@@ -2189,6 +2195,29 @@ class Game {
     this.economyDirty = true;
     this.labelsDirty = true;
     this.markDirty(h.c, h.r);
+  }
+
+  /* Ist ein Feld durch ein feindliches Bollwerk gedeckt? Städte (inkl. Haupt-
+     stadt) decken den Umkreis 2, Dörfer den Umkreis 1. Gedeckte Felder muss man
+     EROBERN; offenes Land nimmt man beim Drüberlaufen sofort ein. */
+  hexProtected(h, byNation) {
+    for (let dr = -2; dr <= 2; dr++) {
+      for (let dc = -3; dc <= 3; dc++) {
+        const nb = this.hexAt(h.c + dc, h.r + dr);
+        if (!nb || !nb.owner || !this.hostile(byNation, nb.owner)) continue;
+        const dist = hexDist(h.c, h.r, nb.c, nb.r);
+        if (dist > 2) continue;
+        if ((nb.capital || nb.building === 'stadt') && dist <= 2) return true;
+        if (nb.building === 'dorf' && dist <= 1) return true;
+      }
+    }
+    return false;
+  }
+
+  /* Feld übernehmen: gedeckt → langsam erobern, offen → sofort einnehmen */
+  takeHex(div, h, dt) {
+    if (this.hexProtected(h, div.nation)) this.standingCapture(div, h, dt);
+    else this.captureHex(h, div);
   }
 
   /* Steh-Eroberung: eine Truppe übernimmt langsam GENAU ihr Standfeld */
