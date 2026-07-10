@@ -1428,6 +1428,26 @@ function render() {
     ctx.stroke();
     ctx.restore();
   }
+  // DER RING (Akt III): die Siegpunkt-Hauptstädte leuchten als Ziele —
+  // alle müssen an denselben Tisch, die Konvergenz erzwingt die Entscheidung
+  if (game.akt === 3 && game.vpHexes) {
+    for (const v of game.vpHexes) {
+      const p = hexToPixel(v.c, v.r);
+      const pulse = 0.4 + 0.3 * Math.sin(now / 340);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,215,94,${pulse.toFixed(3)})`;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HEX_SIZE * 1.7 + Math.sin(now / 340) * 1.8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = pulse * 0.55;
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HEX_SIZE * 2.5 + Math.sin(now / 340 + 1.3) * 2.4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
   // Schild-Schimmer: steht eine eigene Division auf gedecktem Land (Stadt-/
   // Dorf-Schutzzone), zeigt ein pulsierendes Schild: hier musst du EROBERN
   if (zoom >= 0.9 && !game.spawnPhase) {
@@ -2861,7 +2881,7 @@ function advisorTick() {
 /* ---------- Akt-Uhr: Übergangs-Banner (rein kosmetisch, UI-seitig) ---------- */
 const AKT_INFO = {
   2: { ey: 'Akt Ⅱ', title: 'Der Krieg', sub: 'Die Reiche stehen — jetzt entscheidet der Schwerpunkt' },
-  3: { ey: 'Akt Ⅲ', title: 'Der Ring', sub: 'Totaler Krieg: Angriffe schlagen härter durch, Milizen ermüden' },
+  3: { ey: 'Akt Ⅲ', title: 'Der Ring', sub: 'Eroberungen zählen doppelt · Angriffe schlagen härter durch · die Kronen leuchten' },
 };
 
 function aktTick() {
