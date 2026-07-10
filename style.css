@@ -592,3 +592,70 @@ button.peace:hover { background: #26512e; }
 /* Ausgegraute Optionen (zu teuer / Rohstoff fehlt) */
 .icon-btn.locked { opacity: 0.45; filter: grayscale(0.7); cursor: not-allowed; }
 .icon-btn .missing { color: #ff7a64; font-weight: 800; }
+
+/* ---------- Akt-Uhr: Topbar-Chip + Übergangs-Banner ---------- */
+#tb-akt {
+  font-weight: 800; font-size: 13px; line-height: 1;
+  padding: 3px 7px; border-radius: 5px;
+  border: 1px solid rgba(255,255,255,0.14);
+  cursor: help; user-select: none;
+}
+#tb-akt.a1 { color: #6fcf82; background: rgba(87,194,104,0.12); }
+#tb-akt.a2 { color: #ecc25d; background: rgba(230,184,78,0.12); }
+#tb-akt.a3 { color: #ff8a76; background: rgba(215,80,59,0.14); }
+
+#akt-banner {
+  position: fixed; top: 24%; left: 50%;
+  transform: translateX(-50%);
+  z-index: 40; text-align: center;
+  pointer-events: none; opacity: 0;
+  padding: 18px 44px;
+  background: rgba(9, 13, 22, 0.82);
+  border: 1px solid rgba(230,184,78,0.35);
+  border-left: none; border-right: none;
+  box-shadow: 0 12px 44px rgba(0,0,0,0.5);
+}
+#akt-banner .ab-ey {
+  font-size: 12px; letter-spacing: 0.34em; text-transform: uppercase;
+  color: #e6b84e; font-weight: 700; margin-bottom: 4px;
+}
+#akt-banner .ab-title {
+  font-size: 42px; font-weight: 850; letter-spacing: 0.06em;
+  text-transform: uppercase; line-height: 1.05; color: #f2ead6;
+  text-shadow: 0 2px 18px rgba(0,0,0,0.6);
+}
+#akt-banner .ab-sub { font-size: 14px; color: #b9c2d0; margin-top: 6px; }
+#akt-banner.show { animation: aktBanner 4s ease forwards; }
+@keyframes aktBanner {
+  0%   { opacity: 0; transform: translateX(-50%) scale(0.96); }
+  8%   { opacity: 1; transform: translateX(-50%) scale(1); }
+  82%  { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) scale(1.015); }
+}
+@media (prefers-reduced-motion: reduce) {
+  #akt-banner.show { animation: none; opacity: 0; }
+}
+
+/* ---------- Der Flüsterer: ein Satz zur richtigen Zeit ---------- */
+#whisper {
+  position: fixed; bottom: 86px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex; align-items: center; gap: 9px;
+  max-width: min(92vw, 520px);
+  padding: 9px 12px 9px 14px;
+  border-radius: 9px;
+  background: rgba(14, 30, 44, 0.96);
+  border: 1px solid rgba(87,194,104,0.55);
+  box-shadow: 0 8px 26px rgba(0,0,0,0.55);
+  font-size: 13.5px; color: #dfe7f0;
+  animation: whisperIn 0.35s ease;
+}
+#whisper .ic { width: 15px; height: 15px; color: #6fcf82; flex: none; }
+#whisper.hidden { display: none; }
+#whisper button {
+  background: none; border: none; color: #8b95a6;
+  font-size: 13px; cursor: pointer; padding: 2px 4px; line-height: 1;
+}
+#whisper button:hover { color: #fff; }
+@keyframes whisperIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }

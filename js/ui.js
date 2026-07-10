@@ -1414,6 +1414,31 @@ function render() {
       }
     }
   }
+  // Spawn-Glow: die eigene Hauptstadt pulsiert golden, solange der Startplatz
+  // wählbar ist — der Flüsterer verweist darauf („dein Vorschlag glüht")
+  if (game.spawnPhase && game.nations[game.player] && game.nations[game.player].capital) {
+    const cap = game.nations[game.player].capital;
+    const p = hexToPixel(cap[0], cap[1]);
+    const pulse = 0.5 + 0.35 * Math.sin(now / 280);
+    ctx.save();
+    ctx.strokeStyle = `rgba(230,184,78,${pulse.toFixed(3)})`;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, HEX_SIZE * 1.45 + Math.sin(now / 280) * 1.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Schild-Schimmer: steht eine eigene Division auf gedecktem Land (Stadt-/
+  // Dorf-Schutzzone), zeigt ein pulsierendes Schild: hier musst du EROBERN
+  if (zoom >= 0.9 && !game.spawnPhase) {
+    for (const d of game.divisionsOf(game.player)) {
+      if (d.dead) continue;
+      const h = game.hexAt(d.c, d.r);
+      if (!h || h.owner === game.player || h.terrain === 'water') continue;
+      if (!game.hexProtected(h, game.player)) continue;
+      drawShieldHint(ctx, d.x, d.y - 13.5, now);
+    }
+  }
   if (zoom >= 0.5) {
     for (const a of game.divisions) {
       if (a.dead || !a.attackTarget) continue;
@@ -1634,6 +1659,30 @@ function drawOddsBubble(ctx, x, y, share, zoom, big) {
   ctx.textBaseline = 'middle';
   ctx.fillText(pct + '%', x, y + 0.5);
   ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+/* Kleines pulsierendes Schild überm Counter: „gedecktes Land — stehend erobern" */
+function drawShieldHint(ctx, x, y, now) {
+  const a = 0.55 + 0.3 * Math.sin(now / 260);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(16,22,34,0.9)';
+  ctx.strokeStyle = '#e6b84e';
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(x - 4.4, y - 4);
+  ctx.lineTo(x + 4.4, y - 4);
+  ctx.lineTo(x + 4.4, y + 0.6);
+  ctx.quadraticCurveTo(x + 4.4, y + 4.6, x, y + 6.4);
+  ctx.quadraticCurveTo(x - 4.4, y + 4.6, x - 4.4, y + 0.6);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // Kreuz-Kerbe im Schild
+  ctx.beginPath();
+  ctx.moveTo(x, y - 2.2); ctx.lineTo(x, y + 3.6);
+  ctx.moveTo(x - 2.4, y + 0.4); ctx.lineTo(x + 2.4, y + 0.4);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -2316,6 +2365,14 @@ function updateTopbar() {
   document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${game.vpNeed || BAL.round.vpToWin}`;
   document.getElementById('tb-day').innerHTML = `${ic('calendar')} ${game.day}`;
   document.getElementById('tb-round').innerHTML = `${ic('hourglass')}${Math.max(0, BAL.round.days - game.day)}`;
+  // Akt-Uhr-Chip: Ⅰ Landnahme (grün) · Ⅱ Der Krieg (bernstein) · Ⅲ Der Ring (rot)
+  const aktEl = document.getElementById('tb-akt');
+  if (aktEl && aktEl._akt !== game.akt) {
+    aktEl._akt = game.akt;
+    aktEl.textContent = ['', 'Ⅰ', 'Ⅱ', 'Ⅲ'][game.akt] || 'Ⅰ';
+    aktEl.className = 'a' + game.akt;
+    aktEl.title = ['', 'Akt Ⅰ — Landnahme', 'Akt Ⅱ — Der Krieg', 'Akt Ⅲ — Der Ring (Endphase)'][game.akt] || '';
+  }
 
   document.getElementById('replay-badge').classList.toggle('hidden', !game._replayCmds);
 
@@ -2791,6 +2848,90 @@ function advisorTick() {
       pushToast(c.msg);
       break;   // höchstens eine Warnung auf einmal
     }
+  }
+}
+
+/* ---------- Akt-Uhr: Übergangs-Banner (rein kosmetisch, UI-seitig) ---------- */
+const AKT_INFO = {
+  2: { ey: 'Akt Ⅱ', title: 'Der Krieg', sub: 'Die Reiche stehen — jetzt entscheidet der Schwerpunkt' },
+  3: { ey: 'Akt Ⅲ', title: 'Der Ring', sub: 'Totaler Krieg: Angriffe schlagen härter durch, Milizen ermüden' },
+};
+
+function aktTick() {
+  if (!game) return;
+  // Neues Spiel / Ladevorgang: still synchronisieren, kein Banner nachfeuern
+  if (UI._aktGame !== game) { UI._aktGame = game; UI._lastAkt = game.akt; return; }
+  if (game.akt === UI._lastAkt) return;
+  UI._lastAkt = game.akt;
+  const info = AKT_INFO[game.akt];
+  if (info && !game._replayCmds && !game.over) showAktBanner(info);
+}
+
+function showAktBanner(info) {
+  const el = document.getElementById('akt-banner');
+  if (!el) return;
+  el.querySelector('.ab-ey').textContent = info.ey;
+  el.querySelector('.ab-title').textContent = info.title;
+  el.querySelector('.ab-sub').textContent = info.sub;
+  el.classList.remove('hidden', 'show');
+  void el.offsetWidth;   // Reflow: Animation zuverlässig neu starten
+  el.classList.add('show');
+}
+
+/* ---------- Der Flüsterer: ein Satz zur richtigen Zeit, je einmal ----------
+   Kein Tutorial-Modus — die Runde ist das Tutorial. Jeder Hinweis feuert
+   genau einmal (localStorage), einer zur Zeit, ✕ blendet sofort aus. */
+const WHISPERS = [
+  { key: 'spawn', when: g => g.spawnPhase,
+    text: 'Wähle deinen Startplatz — deine Hauptstadt glüht golden. Bleiben ist okay.' },
+  { key: 'sperre', when: g => !g.spawnPhase
+      && g.divisionsOf(g.player).some(d => d.inCombat && !d.attackTarget),
+    text: 'Wer angegriffen wird, steht fest — bis der Kampf entschieden ist.' },
+  { key: 'ampel', when: g => {
+      if (g.spawnPhase) return false;
+      const mine = g.divisionsOf(g.player);
+      if (!mine.length) return false;
+      return g.divisions.some(e => !e.dead && e.nation !== g.player
+        && g.hostile(g.player, e.nation)
+        && mine.some(d => hexDist(d.c, d.r, e.c, e.r) <= 2));
+    },
+    text: 'Die Bubble ist eine Ampel: Grün = greif an · Rot = sammel erst Masse.' },
+  { key: 'land', when: g => !g.spawnPhase && g.day >= 1.5,
+    text: 'Lauf auf freies Land — es wird deins.' },
+];
+
+function whisperSeen() {
+  try { return JSON.parse(localStorage.getItem('ff_whisper') || '{}'); } catch (e) { return {}; }
+}
+
+function whisperTick() {
+  const el = document.getElementById('whisper');
+  if (!el) return;
+  if (!UI._whisperBound) {
+    UI._whisperBound = true;
+    document.getElementById('whisper-x').addEventListener('click', () => {
+      el.classList.add('hidden'); UI._whisperUntil = 0; UI._whisperGapT = performance.now();
+    });
+  }
+  if (!game || game.over || game._replayCmds) { el.classList.add('hidden'); UI._whisperUntil = 0; return; }
+  const now = performance.now();
+  if (UI._whisperUntil) {
+    if (now < UI._whisperUntil) return;                       // Hinweis läuft noch
+    el.classList.add('hidden'); UI._whisperUntil = 0; UI._whisperGapT = now;
+  }
+  if (now - (UI._whisperGapT || 0) < 3000) return;            // Luft zwischen Hinweisen
+  const seen = whisperSeen();
+  for (const w of WHISPERS) {
+    if (seen[w.key]) continue;
+    let fire = false;
+    try { fire = w.when(game); } catch (e) { fire = false; }
+    if (!fire) continue;
+    seen[w.key] = 1;
+    try { localStorage.setItem('ff_whisper', JSON.stringify(seen)); } catch (e) { /* egal */ }
+    document.getElementById('whisper-text').textContent = w.text;
+    el.classList.remove('hidden');
+    UI._whisperUntil = now + 6500;
+    break;                                                    // höchstens einer gleichzeitig
   }
 }
 

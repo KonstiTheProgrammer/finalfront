@@ -285,6 +285,25 @@ const out = vm.runInContext(`
     } else { ok('Dorf mit Straße zur Stadt ist angebunden', true, 'kein Platz'); ok('Ohne Straße wieder abgeschnitten', true, 'kein Platz'); }
   }
 
+  /* ===== Akt-Uhr: Prozent-Anker, Übergänge, abgeleitet beim Laden ===== */
+  {
+    const gAkt = new Game('A', 12);
+    const D = BAL.round.days;
+    ok('Akt I am Start', gAkt.akt === 1 && gAkt.aktOf(0) === 1);
+    ok('Akt II ab 20 %', gAkt.aktOf(D * BAL.round.akt2) === 2 && gAkt.aktOf(D * BAL.round.akt2 - 1) === 1);
+    ok('Akt III fällt exakt auf lateStart', gAkt.aktOf(D * BAL.round.lateStart) === 3
+      && gAkt.aktOf(D * BAL.round.lateStart - 1) === 2);
+    gAkt.endSpawnPhase();
+    gAkt.day = Math.floor(D * BAL.round.akt2) - 1; gAkt.dayFloat = gAkt.day;
+    const logLen = gAkt.log.length;
+    for (let i = 0; i < 12 && gAkt.akt < 2; i++) gAkt.runTick();
+    ok('Tick über die 20 %-Grenze setzt Akt II', gAkt.akt === 2, 'akt=' + gAkt.akt);
+    ok('Akt-Wechsel schreibt Log', gAkt.log.length > logLen);
+    gAkt.day = Math.floor(D * BAL.round.lateStart) + 3; gAkt.dayFloat = gAkt.day;
+    const g2 = Game.deserialize(gAkt.serialize());
+    ok('Akt wird beim Laden aus dem Tag abgeleitet', g2.akt === 3, 'akt=' + g2.akt);
+  }
+
   /* ===== Frei laufen + Steh-Eroberung ===== */
   g = new Game('A', 66); g.endSpawnPhase();
   const dEr = g.divisionsOf('A')[0];

@@ -23,6 +23,8 @@ function loop(now) {
       updateUnitbar();   // Balken/Status der ausgewählten Divisionen live halten
       updateTutorial();
       updateSpawnPhase();
+      aktTick();         // Akt-Uhr: Banner bei Ⅰ→Ⅱ→Ⅲ (rein kosmetisch)
+      whisperTick();     // Der Flüsterer: ein Lern-Satz zur richtigen Zeit
       if (now - (UI._lastRankT || 0) > 2000) {
         UI._lastRankT = now;
         renderRanking();

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Final Front — Europa in Flammen</title>
-  <link rel="stylesheet" href="style.css?v=52">
+  <link rel="stylesheet" href="style.css?v=53">
 </head>
 <body>
   <canvas id="map"></canvas>
@@ -334,6 +334,7 @@
     </div>
     <div class="tb-group" id="tb-datebox">
       <span id="tb-live" class="hidden"></span>
+      <span id="tb-akt" class="a1" title="Akt Ⅰ — Landnahme">Ⅰ</span>
       <span id="tb-day">1. Januar 1936</span>
       <span id="tb-round" class="small"></span>
       <span class="speed">
@@ -376,6 +377,20 @@
 
   <!-- Sieg-Countdown-Banner -->
   <div id="vp-banner" class="hidden"></div>
+
+  <!-- Akt-Uhr: Übergangs-Banner (rein kosmetisch, blendet sich selbst aus) -->
+  <div id="akt-banner" class="hidden" aria-hidden="true">
+    <div class="ab-ey"></div>
+    <div class="ab-title"></div>
+    <div class="ab-sub"></div>
+  </div>
+
+  <!-- Der Flüsterer: kontextuelle Einzeiler statt Tutorial-Modus -->
+  <div id="whisper" class="hidden">
+    <svg class="ic"><use href="#i-info"/></svg>
+    <span id="whisper-text"></span>
+    <button id="whisper-x" title="Ausblenden">✕</button>
+  </div>
 
   <!-- Geführtes erstes Match -->
   <div id="tutorial" class="hidden"></div>
@@ -447,11 +462,11 @@
   </div>
 
 
-  <script src="js/mapdata.js?v=52"></script>
-  <script src="js/map.js?v=52"></script>
-  <script src="js/game.js?v=52"></script>
-  <script src="js/ui.js?v=52"></script>
-  <script src="js/net.js?v=52"></script>
-  <script src="js/main.js?v=52"></script>
+  <script src="js/mapdata.js?v=53"></script>
+  <script src="js/map.js?v=53"></script>
+  <script src="js/game.js?v=53"></script>
+  <script src="js/ui.js?v=53"></script>
+  <script src="js/net.js?v=53"></script>
+  <script src="js/main.js?v=53"></script>
 </body>
 </html>

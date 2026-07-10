@@ -159,7 +159,8 @@ const BAL = {
     days: 600,                // Rundenlänge in Spieltagen (≈ 10–20 min je nach Tempo)
     vpToWin: 3,               // gehaltene Hauptstädte starten den Sieg-Countdown
     countdownDays: 50,        // Länge des Countdowns — Zeit für die Gegenkoalition
-    lateStart: 0.6,           // ab 60 % der Runde: Endphase (Miliz ermüdet, Aufholbonus schwindet)
+    akt2: 0.2,                // Akt-Uhr: ab 20 % der Runde beginnt Akt II (Der Krieg)
+    lateStart: 0.6,           // ab 60 %: Akt III (Der Ring) = Endphase — Miliz ermüdet, Angriffe härter
     domination: 0.8,          // 80 % der Landfläche = sofortiger Sieg
   },
 };
@@ -198,6 +199,7 @@ class Game {
     this.hexes = buildMap();
     this.day = 0;
     this.dayFloat = 0;
+    this.akt = 1;              // Akt-Uhr: 1 Landnahme · 2 Der Krieg · 3 Der Ring (Endphase)
     this.speed = 1;
     this.paused = false;
     this.player = playerNationId;
@@ -2500,6 +2502,13 @@ class Game {
     return Math.max(0, Math.min(1, (this.day - start) / (BAL.round.days - start)));
   }
 
+  /* Akt-Uhr: Prozent-Anker statt Minuten — funktioniert in jedem Tempo-Preset.
+     Akt III fällt exakt auf lateStart: die Endphasen-Mechanik bekommt Bühne. */
+  aktOf(day) {
+    const p = day / BAL.round.days;
+    return p >= BAL.round.lateStart ? 3 : p >= BAL.round.akt2 ? 2 : 1;
+  }
+
   vpRecount() {
     for (const nat of Object.values(this.nations)) nat.vp = 0;
     for (const v of this.vpHexes) {
@@ -2895,9 +2904,13 @@ class Game {
       }
       if (prevDay < BAL.graceDays && this.day >= BAL.graceDays)
         this.addLog('🕊️✖ ⚔️', true);
-      const lateDay = Math.floor(BAL.round.days * BAL.round.lateStart);
-      if (prevDay < lateDay && this.day >= lateDay)
-        this.addLog('🔥');
+      // Akt-Uhr: Übergang erkennen — die UI zeigt das Banner (rein kosmetisch,
+      // deterministisch aus dem Tag abgeleitet → MP-lockstep-sicher)
+      const nowAkt = this.aktOf(this.day);
+      if (nowAkt !== this.akt) {
+        this.akt = nowAkt;
+        this.addLog(nowAkt === 2 ? '⚔️Ⅱ' : '🔥Ⅲ', true);
+      }
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
       this.frontsDaily();
@@ -2964,6 +2977,7 @@ class Game {
     const g = new Game(s.player, s.seed !== undefined ? s.seed : 1, s.mapId || 'europa', undefined, s.slots || 5);
     g.divisions = [];
     g.day = s.day; g.dayFloat = s.dayFloat;
+    g.akt = g.aktOf(g.day);   // abgeleitet, nicht persistiert
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
     // Zufallsstrom & Kommando-Log exakt fortsetzen (Determinismus über Save/Load)
     if (s.rngState !== undefined) g._rngState = s.rngState;
