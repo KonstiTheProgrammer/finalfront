@@ -167,6 +167,16 @@ const BAL = {
   // + Kronen (je Anteil der Landfläche) + Kessel-Vernichtungen + Ring-Eroberungen.
   // Sitzen gewinnt nicht: Wer im Ring (Akt III) erobert, überholt den Besitzer.
   score: { krone: 0.10, kessel: 12, ring: 1 },
+  // Doktrinen: EINE Wahl ab Akt II prägt den ganzen Run — vier Archetypen,
+  // die jeder Stratege kennt (Rush/Turtle/Boom/Swarm). Reine Multiplikatoren
+  // auf bestehende Werte (Gesetz 2: Zahlen, nie Verben), per Bench tunebar.
+  doctrines: {
+    blitz:      { name: 'Blitzkrieg',      push: 1.35, speed: 1.25, defF: 0.85, orgRegen: 0.85 },
+    festung:    { name: 'Festung',         defF: 1.35, orgRegen: 1.35, push: 0.85, speed: 0.95 },
+    wirtschaft: { name: 'Kriegswirtschaft', econ: 1.4, buildCost: 0.75, atk: 0.9 },
+    masse:      { name: 'Massenheer',      mp: 0.7, popCap: 1.3, atk: 0.92 },
+  },
+  doctrineGraceDays: 8,   // Wahlfenster ab Akt II — danach Default Massenheer (kein Grübelzwang)
 };
 
 /* Fester Simulationstakt: alle Maschinen rechnen identische Schritte —
@@ -493,6 +503,7 @@ class Game {
       divNameSeq: 1,
       hexCount: 1,
       traitorUntil: -999,
+      doctrine: null,     // Doktrin (ab Akt II): blitz | festung | wirtschaft | masse
       kesselKills: 0,     // Sieg-Leiste: im Kessel vernichtete Feind-Divisionen
       ringCaptures: 0,    // Sieg-Leiste: aktive Eroberungen in Akt III (zählen doppelt)
       incomePerDay: 0, leutePerDay: 0, eisenPerDay: 0, pferdePerDay: 0,
@@ -755,10 +766,12 @@ class Game {
     const t = BAL.divTypes[type];
     if (!t) return '⚠';
     const nat = this.nations[nation];
-    if (nat.leute < t.mp) return '⚠👥 ' + t.mp;
+    // Doktrin Massenheer: Truppen rekrutieren billiger (weniger Leute je Division)
+    const mpCost = Math.round(t.mp * this.dMult(nat, 'mp') * 10) / 10;
+    if (nat.leute < mpCost) return '⚠👥 ' + mpCost;
     if (t.eisen && nat.eisen < t.eisen) return '⚠🔩 ' + t.eisen;
     if (t.pferde && nat.pferde < t.pferde) return '⚠🐎 ' + t.pferde;
-    nat.leute -= t.mp;
+    nat.leute -= mpCost;
     if (t.eisen) nat.eisen -= t.eisen;
     if (t.pferde) nat.pferde -= t.pferde;
     const dauer = BAL.trainTime[type] * (h.building === 'kaserne' ? BAL.kaserneTrainFactor : 1);
@@ -953,12 +966,13 @@ class Game {
   }
 
   buildCost(nation, h, what) {
-    if (what === 'strasse') return BAL.cost.strasse;   // Infrastruktur: keine Staffel
+    const dk = this.dMult(nation, 'buildCost');   // Doktrin Kriegswirtschaft: baut billiger
+    if (what === 'strasse') return Math.round(BAL.cost.strasse * dk);   // Infrastruktur: keine Staffel
     const up = h && h.building === what;
-    if (up) return BAL.cost[what] * 3 * (h.level || 1);   // Ausbau: x3, dann x6
+    if (up) return Math.round(BAL.cost[what] * 3 * (h.level || 1) * dk);   // Ausbau: x3, dann x6
     // Preis-Staffel: jedes weitere selbst gebaute Gebäude dieses Typs
     // VERDOPPELT den Preis — nach 4 Stufen bleibt er konstant.
-    return BAL.cost[what] * Math.pow(2, Math.min(this.builtCount(nation, what), 4));
+    return Math.round(BAL.cost[what] * Math.pow(2, Math.min(this.builtCount(nation, what), 4)) * dk);
   }
 
   canBuild(nation, h, what) {
@@ -1081,6 +1095,10 @@ class Game {
       if (!dh || dh.owner !== d.nation) up *= BAL.upkeepAbroad;                      // Feldzug kostet extra
       this.nations[d.nation].incomePerDay -= up;
     }
+    // Doktrin Massenheer: höheres Bevölkerungslimit (nach allen Gebäude-Beiträgen)
+    for (const nat of Object.values(this.nations)) {
+      if (nat.alive) nat.popCap = Math.round(nat.popCap * this.dMult(nat, 'popCap'));
+    }
     this.economyDirty = false;
   }
 
@@ -1099,7 +1117,10 @@ class Game {
       else mult = 1 - Math.min(BAL.leaderMalus, (rel - 1) * 0.1);
       mult = 1 + (mult - 1) * (1 - lf);
       nat.econMult = nat.incomePerDay > 0 ? mult : 1;
-      nat.gold = Math.max(0, nat.gold + nat.incomePerDay * nat.econMult * dt);
+      // Doktrin Kriegswirtschaft: nur der POSITIVE Ertrag wächst (Unterhalt nicht)
+      const dEcon = this.dMult(nat, 'econ');
+      const inc = nat.incomePerDay > 0 ? nat.incomePerDay * dEcon : nat.incomePerDay;
+      nat.gold = Math.max(0, nat.gold + inc * nat.econMult * dt);
       // Pleite: Kasse leer UND laufendes Minus — der Sold bleibt aus
       const brokeNow = nat.gold <= 0.01 && nat.incomePerDay < 0;
       if (brokeNow && !nat._broke && nat.id === this.player)
@@ -1702,7 +1723,7 @@ class Game {
           : TERRAIN[nh.terrain].move * (nh.road && nh.owner === div.nation
             ? BAL.roadCostFactor : (nh.river ? BAL.river.moveFactor : 1));
         const t = BAL.divTypes[div.type];
-        div.moveProgress += (BAL.moveSpeed * t.speed / step) * dt;
+        div.moveProgress += (BAL.moveSpeed * t.speed * this.dMult(div.nation, 'speed') / step) * dt;
         if (div.moveProgress >= 1) {
           div.moveProgress = 0;
           const isFinal = div.pathI >= div.path.length - 1;
@@ -1828,7 +1849,9 @@ class Game {
     // knapp über der Schwelle ist zähes Ringen, klare Übermacht bricht schnell
     // durch — die Bubble-% zählen jetzt, nicht nur die 50-%-Grenze. Basis hoch
     // gehalten, damit klare Übermacht weiter entschlossen durchschlägt.
-    const push = 0.62 + 0.38 * ((odds - floor) / (1 - floor));
+    // Doktrin: Blitzkrieg bricht schneller durch, Festung hält länger.
+    const push = (0.62 + 0.38 * ((odds - floor) / (1 - floor)))
+      * this.dMult(eAtk[0].nation, 'push');
 
     const terr = TERRAIN[hex.terrain];
     const bunker = (hex.building === 'turm' && hex.owner === def[0].nation)
@@ -1848,7 +1871,8 @@ class Game {
     atkPow *= 1 + BAL.flank * Math.min(W - 1, eAtk.length - 1);
     let defPow = 0;
     for (const d of eDef) defPow += this.attackPower(d) * BAL.divTypes[d.type].defF;
-    defPow *= (0.85 + this.rand() * 0.3) * terr.def * bunker;
+    defPow *= (0.85 + this.rand() * 0.3) * terr.def * bunker
+      * this.dMult(def[0].nation, 'defF');   // Doktrin: Festung verteidigt zäher
     // Truppendreieck: Leittypen der beiden Fronten
     atkPow *= (BAL.rps[eAtk[0].type] && BAL.rps[eAtk[0].type][eDef[0].type]) || 1;
     defPow *= (BAL.rps[eDef[0].type] && BAL.rps[eDef[0].type][eAtk[0].type]) || 1;
@@ -1947,7 +1971,8 @@ class Game {
     const h = this.hexAt(div.c, div.r);
     const pocket = h && h._pocket ? 0.55 : 1;   // eingekesselt: kaum Kampfkraft (HOI)
     const vet = 1 + BAL.vet.bonus * this.vetLevel(div);
-    return (div.str / 100) * div.moral * sup.mod * t.atk * pocket * vet;
+    return (div.str / 100) * div.moral * sup.mod * t.atk * pocket * vet
+      * this.dMult(div.nation, 'atk');
   }
 
   /* Deterministische Gefechtsprognose (0..1 = Siegchance der Angreifer) — GENAU
@@ -1974,6 +1999,7 @@ class Game {
     const bunker = (dh.building === 'turm' && dh.owner === def.nation)
       ? BAL.bunker.def[Math.min((dh.level || 1), BAL.bunker.def.length) - 1] : 1;
     const defP = this.attackPower(def) * dt.defF * bunker
+      * this.dMult(def.nation, 'defF')   // Doktrin fließt in die Ampel ein — Bubble bleibt ehrlich
       * ((BAL.rps[def.type] && BAL.rps[def.type][mainType]) || 1)
       * (0.35 + 0.65 * def.org / dt.maxOrg)
       + dh.resist * 0.02;
@@ -2537,6 +2563,14 @@ class Game {
       + (n.ringCaptures || 0) * BAL.score.ring;
   }
 
+  /* Doktrin-Multiplikator: 1, solange keine Doktrin gewählt ist oder sie den
+     Wert nicht anfasst. Nimmt Nation-Id ODER Nation-Objekt (heiße Schleifen). */
+  dMult(nation, key) {
+    const n = typeof nation === 'string' ? this.nations[nation] : nation;
+    const d = n && n.doctrine ? BAL.doctrines[n.doctrine] : null;
+    return (d && d[key]) || 1;
+  }
+
   vpRecount() {
     for (const nat of Object.values(this.nations)) nat.vp = 0;
     for (const v of this.vpHexes) {
@@ -2629,7 +2663,7 @@ class Game {
         // Lazarett: auf eigener Stadt/Hauptstadt sammelt und heilt es sich schneller
         const heimH = this.hexAt(div.c, div.r);
         const heim = heimH && heimH.owner === div.nation && (heimH.capital || heimH.building === 'stadt');
-        div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * sup.mod * div.moral * (heim ? BAL.cityHeal.org : 1) * dt);
+        div.org = Math.min(t.maxOrg, div.org + BAL.orgRegen * this.dMult(nat, 'orgRegen') * sup.mod * div.moral * (heim ? BAL.cityHeal.org : 1) * dt);
         // Verstärkung rekrutiert immer normale Leute
         if (div.str < BAL.maxStr && sup.level > 0.4 && nat.leute > 0.5) {
           const pts = Math.min(BAL.reinforceRate * (heim ? BAL.cityHeal.str : 1) * dt, BAL.maxStr - div.str, nat.leute / BAL.reinforceMpCost);
@@ -2803,6 +2837,25 @@ class Game {
     }
   }
 
+  /* Doktrin-Wahl der KI: lagebasiert statt zufällig — Überlegene hämmern
+     (Blitz), Bedrängte mauern (Festung), Ungestörte boomen (Wirtschaft),
+     der Rest schwärmt (Masse). rand() aus dem Seed-Strom → deterministisch. */
+  aiPickDoctrine(id) {
+    const nat = this.nations[id];
+    const myPow = this.nationPower(id);
+    const borders = this.borderNationsOf(id).filter(b => this.hostile(id, b));
+    let strongest = 0;
+    for (const b of borders) strongest = Math.max(strongest, this.nationPower(b));
+    let pick;
+    if (borders.length && myPow > strongest * 1.15) pick = 'blitz';
+    else if (borders.length >= 2 && myPow < strongest * 0.85) pick = 'festung';
+    else if (!borders.length) pick = 'wirtschaft';
+    else pick = this.rand() < 0.5 ? 'masse' : 'wirtschaft';
+    nat.doctrine = pick;
+    this.economyDirty = true;
+    this.addLog(`📜 ${this.nationName(id)} → ${BAL.doctrines[pick].name}`, true);
+  }
+
   aiMilitary(id) {
     const nat = this.nations[id];
     const army = nat.armies[0];
@@ -2942,6 +2995,20 @@ class Game {
         this.akt = nowAkt;
         this.addLog(nowAkt === 2 ? '⚔️Ⅱ' : '🔥Ⅲ', true);
       }
+      // Doktrinen (ab Akt II): KI wählt lagebasiert; Menschen haben ein
+      // Wahlfenster, danach Default Massenheer — deterministisch für alle.
+      if (this.akt >= 2) {
+        const deadline = Math.floor(BAL.round.days * BAL.round.akt2) + BAL.doctrineGraceDays;
+        for (const [nid, nat] of Object.entries(this.nations)) {
+          if (!nat.alive || nat.doctrine) continue;
+          if (nat.ai) this.aiPickDoctrine(nid);
+          else if (this.day >= deadline) {
+            nat.doctrine = 'masse';
+            this.economyDirty = true;
+            this.addLog(`📜 ${this.nationName(nid)} → ${BAL.doctrines.masse.name}`, nid === this.player);
+          }
+        }
+      }
       if (this.economyDirty) this.recalcEconomy();
       this.frontsTick();
       this.frontsDaily();
@@ -2988,6 +3055,7 @@ class Game {
         alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), eisen: +n.eisen.toFixed(1), pferde: +n.pferde.toFixed(1),
         traitorUntil: n.traitorUntil,
         kesselKills: n.kesselKills || 0, ringCaptures: n.ringCaptures || 0,
+        doctrine: n.doctrine || null,
         allies: [...n.allies], capital: n.capital, divNameSeq: n.divNameSeq,
         armies: n.armies.map(a => ({ id: a.id, name: a.name, target: a.target, mode: a.mode })),
       }])),
@@ -3042,6 +3110,7 @@ class Game {
       n.traitorUntil = ns.traitorUntil !== undefined ? ns.traitorUntil : -999;
       n.kesselKills = ns.kesselKills || 0;
       n.ringCaptures = ns.ringCaptures || 0;
+      n.doctrine = ns.doctrine && BAL.doctrines[ns.doctrine] ? ns.doctrine : null;
       n.allies = new Set(ns.allies); n.capital = ns.capital; n.divNameSeq = ns.divNameSeq;
       n.armies = ns.armies.map(a => ({ ...a, nation: id, frontHexes: [] }));
     }
@@ -3182,6 +3251,18 @@ Game.prototype._commands = {
   trainAt(c, r, type) {
     const me = this._actor || this.player;
     return this.queueTraining(me, c, r, type);
+  },
+  doctrine(key) {
+    // Doktrin wählen: einmalig, ab Akt II, nur gültige Archetypen —
+    // läuft als Kommando durch den Lockstep (MP/Replay-sicher)
+    const me = this._actor || this.player;
+    const nat = this.nations[me];
+    if (!nat || !nat.alive || nat.doctrine || !BAL.doctrines[key]) return '⚠';
+    if (this.akt < 2) return '⚠⏳';
+    nat.doctrine = key;
+    this.economyDirty = true;   // popCap/Erträge neu bewerten
+    this.addLog(`📜 ${this.nationName(me)} → ${BAL.doctrines[key].name}`, true);
+    return true;
   },
   split(divIds) {
     const me = this._actor || this.player;

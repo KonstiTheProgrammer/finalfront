@@ -25,6 +25,7 @@ function loop(now) {
       updateSpawnPhase();
       aktTick();         // Akt-Uhr: Banner bei Ⅰ→Ⅱ→Ⅲ (rein kosmetisch)
       whisperTick();     // Der Flüsterer: ein Lern-Satz zur richtigen Zeit
+      doctrineTick();    // Doktrin-Wahl ab Akt II (SP pausiert, MP läuft weiter)
       if (now - (UI._lastRankT || 0) > 2000) {
         UI._lastRankT = now;
         renderRanking();

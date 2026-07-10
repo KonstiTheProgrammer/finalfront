@@ -344,6 +344,52 @@ const out = vm.runInContext(`
       gS.over ? gS.over.text : 'kein over');
   }
 
+  /* ===== Doktrinen: Wahl-Regeln, Multiplikatoren, KI + Default, Save/Load ===== */
+  {
+    const gD = new Game('A', 33); gD.endSpawnPhase();
+    const nA = gD.nations['A'];
+    ok('Doktrin vor Akt II abgelehnt', gD.issue('doctrine', 'blitz') !== true && !nA.doctrine);
+    gD.akt = 2;
+    ok('Doktrin-Wahl ab Akt II', gD.issue('doctrine', 'blitz') === true && nA.doctrine === 'blitz');
+    ok('Doktrin nur einmal wählbar', gD.issue('doctrine', 'festung') !== true && nA.doctrine === 'blitz');
+
+    const d = gD.divisionsOf('A')[0]; d.str = 100; d.org = 50; d.moral = 1;
+    const pNorm = gD.attackPower(d);                    // blitz hat keinen atk-Mult
+    nA.doctrine = 'wirtschaft';
+    ok('Doktrin-Multiplikator wirkt auf Angriffskraft',
+      Math.abs(gD.attackPower(d) / pNorm - BAL.doctrines.wirtschaft.atk) < 0.01);
+
+    const cW = gD.buildCost('A', null, 'dorf');         // wirtschaft: ×0,75
+    nA.doctrine = null;
+    const c0 = gD.buildCost('A', null, 'dorf');
+    ok('Kriegswirtschaft baut billiger', cW === Math.round(c0 * BAL.doctrines.wirtschaft.buildCost),
+      cW + ' vs ' + c0);
+
+    nA.doctrine = 'masse'; gD.economyDirty = true; gD.recalcEconomy();
+    const capMasse = nA.popCap;
+    nA.doctrine = null; gD.economyDirty = true; gD.recalcEconomy();
+    ok('Massenheer hebt das Bevölkerungslimit', capMasse > nA.popCap, capMasse + ' > ' + nA.popCap);
+
+    nA.doctrine = 'masse'; nA.leute = 50;
+    const capH = gD.hexAt(...nA.capital);
+    const vorher = nA.leute;
+    const rT = gD.queueTraining('A', capH.c, capH.r, 'inf');
+    ok('Massenheer rekrutiert billiger', rT === true
+      && Math.abs((vorher - nA.leute) - BAL.divTypes.inf.mp * BAL.doctrines.masse.mp) < 0.11,
+      'kosten=' + (vorher - nA.leute).toFixed(1));
+
+    // KI wählt lagebasiert, der Mensch bekommt nach der Frist das Massenheer
+    const gK = new Game('A', 34); gK.endSpawnPhase();
+    gK.day = Math.floor(BAL.round.days * BAL.round.akt2) - 1; gK.dayFloat = gK.day;
+    for (let i = 0; i < 60; i++) gK.runTick();
+    const alleHaben = Object.values(gK.nations).every(n => !n.alive || n.doctrine);
+    ok('KI wählt, Mensch bekommt Default nach Frist',
+      alleHaben && gK.nations['A'].doctrine === 'masse',
+      Object.entries(gK.nations).map(([i, n]) => i + ':' + (n.doctrine || '-')).join(' '));
+    const gL2 = Game.deserialize(gK.serialize());
+    ok('Doktrin überlebt Save/Load', gL2.nations['A'].doctrine === 'masse');
+  }
+
   /* ===== Frei laufen + Steh-Eroberung ===== */
   g = new Game('A', 66); g.endSpawnPhase();
   const dEr = g.divisionsOf('A')[0];

@@ -665,3 +665,49 @@ button.peace:hover { background: #26512e; }
 }
 #whisper button:hover { color: #fff; }
 @keyframes whisperIn { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ---------- Doktrin-Wahl: vier Archetypen, ein Entscheid ---------- */
+#doctrine-dialog {
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  width: min(94vw, 760px);
+  padding: 20px 22px 22px;
+  border-radius: 12px;
+  background: rgba(11, 17, 27, 0.97);
+  border: 1px solid rgba(230,184,78,0.4);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.65);
+  animation: whisperIn 0.3s ease;
+}
+#doctrine-dialog.hidden { display: none; }
+#doctrine-dialog .dd-ey {
+  font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase;
+  color: #e6b84e; font-weight: 700; text-align: center;
+}
+#doctrine-dialog .dd-sub { text-align: center; color: #8b95a6; font-size: 12.5px; margin: 4px 0 16px; }
+.dd-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+.dd-card {
+  display: flex; flex-direction: column; gap: 4px; text-align: left;
+  padding: 13px 13px 12px;
+  background: rgba(20, 28, 42, 0.9);
+  border: 1px solid #2c3444; border-top: 3px solid var(--dc, #e6b84e);
+  border-radius: 0 0 9px 9px;
+  color: #dfe7f0; cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.dd-card:hover { transform: translateY(-2px); background: rgba(28, 38, 56, 0.95); border-color: var(--dc, #e6b84e); }
+.dd-card.dd-blitz { --dc: #d7503b; }
+.dd-card.dd-festung { --dc: #5b8fd6; }
+.dd-card.dd-wirtschaft { --dc: #e6b84e; }
+.dd-card.dd-masse { --dc: #57c268; }
+.dd-card .dd-name { font-weight: 800; font-size: 15.5px; text-transform: uppercase; letter-spacing: 0.02em; color: var(--dc, #e6b84e); }
+.dd-card .dd-tag { font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #7c8698; }
+.dd-card .dd-one { font-size: 13.5px; font-weight: 650; margin: 3px 0 5px; }
+.dd-card .dd-up { font-size: 12px; color: #6fcf82; }
+.dd-card .dd-down { font-size: 12px; color: #ff8a76; }
+.dd-card .dd-def {
+  margin-top: 6px; align-self: flex-start;
+  font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: #6fcf82; border: 1px solid rgba(87,194,104,0.45);
+  border-radius: 999px; padding: 2px 7px;
+}

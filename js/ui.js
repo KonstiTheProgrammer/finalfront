@@ -2942,6 +2942,77 @@ function whisperTick() {
   }
 }
 
+/* ---------- Doktrin-Wahl (Akt II): vier Archetypen, ein Entscheid ----------
+   Ein-Satz-Identitäten, Zahlen nur im Tooltip. Massenheer ist Default bei
+   Nichtwahl. Läuft als issue('doctrine') durch den Lockstep (MP-sicher). */
+const DOCTRINE_CARDS = [
+  { key: 'blitz', tag: 'Rush · der Hammer', one: '„Schnell rein, schnell durch."',
+    up: 'Durchbruch & Marschtempo', down: 'Zäh im Halten',
+    tip: 'Durchbruch ×1,35 · Tempo ×1,25 · Verteidigung ×0,85 · Org-Regen ×0,85' },
+  { key: 'festung', tag: 'Turtle · der Amboss', one: '„Komm doch."',
+    up: 'Halten & Regenerieren', down: 'Langsamer Angriff',
+    tip: 'Verteidigung ×1,35 · Org-Regen ×1,35 · Durchbruch ×0,85 · Tempo ×0,95' },
+  { key: 'wirtschaft', tag: 'Boom · der Spätzünder', one: '„Erst reich, dann Krieg."',
+    up: 'Ertrag & billige Bauten', down: 'Schwächerer Angriff',
+    tip: 'Gold-Ertrag ×1,4 · Baukosten ×0,75 · Angriff ×0,9' },
+  { key: 'masse', tag: 'Swarm · die Welle', one: '„Viele sind ein Argument."',
+    up: 'Billige Truppen & mehr Volk', down: 'Dünn pro Division',
+    tip: 'Truppenkosten ×0,7 · Bevölkerungslimit ×1,3 · Angriff ×0,92', def: true },
+];
+
+function doctrineTick() {
+  const el = document.getElementById('doctrine-dialog');
+  if (!el) return;
+  const show = game && !game.over && !game._replayCmds && !game.spawnPhase
+    && game.akt >= 2 && game.nations[game.player] && game.nations[game.player].alive
+    && !game.nations[game.player].doctrine;
+  if (!show) {
+    if (!el.classList.contains('hidden')) {
+      el.classList.add('hidden');
+      // Einzelspieler: die Wahl hat pausiert — vorherigen Zustand wiederherstellen
+      if (UI._ddPaused && game && !game._net) game.paused = !!UI._ddPausedPrev;
+      UI._ddPaused = false;
+    }
+    return;
+  }
+  const deadline = Math.floor(BAL.round.days * BAL.round.akt2) + BAL.doctrineGraceDays;
+  const rest = Math.max(0, deadline - game.day);
+  const t = document.getElementById('dd-timer');
+  if (t) t.textContent = game._net
+    ? (rest > 0 ? `in ${rest} Tagen wählt das Massenheer für dich` : 'Massenheer übernimmt')
+    : 'das Spiel wartet auf dich';
+  if (el.classList.contains('hidden')) {
+    el.classList.remove('hidden');
+    renderDoctrineCards();
+    if (!game._net) { UI._ddPausedPrev = game.paused; game.paused = true; UI._ddPaused = true; }
+  }
+}
+
+function renderDoctrineCards() {
+  const box = document.getElementById('dd-cards');
+  if (!box) return;
+  box.innerHTML = DOCTRINE_CARDS.map(c => `
+    <button class="dd-card dd-${c.key}" data-doc="${c.key}" title="${c.tip}">
+      <span class="dd-name">${BAL.doctrines[c.key].name}</span>
+      <span class="dd-tag">${c.tag}</span>
+      <span class="dd-one">${c.one}</span>
+      <span class="dd-up">▲ ${c.up}</span>
+      <span class="dd-down">▼ ${c.down}</span>
+      ${c.def ? '<span class="dd-def">Default bei Nichtwahl</span>' : ''}
+    </button>`).join('');
+  box.querySelectorAll('.dd-card').forEach(b => b.addEventListener('click', () => {
+    const key = b.dataset.doc;
+    const res = game.issue('doctrine', key);
+    if (res === true || game._net) {
+      const c = DOCTRINE_CARDS.find(x => x.key === key);
+      showAktBanner({ ey: 'Doktrin gewählt', title: BAL.doctrines[key].name,
+        sub: c ? c.one.replace(/[„"]/g, '') : '' });
+    } else if (typeof res === 'string') {
+      pushToast(res);
+    }
+  }));
+}
+
 /* ---------- Spawn-Phase: Startplatz wählen ---------- */
 function updateSpawnPhase() {
   const el = document.getElementById('spawn-banner');
