@@ -214,6 +214,9 @@ const out = vm.runInContext(`
     for (let i = 0; i < 20; i++) gM.runTick();
     ok('Karte ' + mapId + ' spielbar', caps === 5 && !gM.over);
   }
+  // selectMap ist modul-global und bleibt sonst auf 'steppe' kleben —
+  // alle Folgetests sollen auf der Standard-Karte laufen
+  selectMap('europa');
 
   /* ===== Stadt-Einfluss (Radius 3) + Grenz-Sog füllt darüber hinaus ===== */
   g = new Game('A', 99); g.endSpawnPhase();
@@ -249,7 +252,8 @@ const out = vm.runInContext(`
     const caps = Object.values(gD.nations).map(n => n.capital).filter(Boolean);
     let vc = null;
     for (const row of gD.hexes) for (const h of row) {
-      if (vc || !isLand(h) || !caps.every(c => hexDist(h.c, h.r, c[0], c[1]) >= 8)) continue;
+      // ≥11: Hauptstadt-Einfluss (Radius 3) darf nicht ins ±4-Zählfenster reichen
+      if (vc || !isLand(h) || !caps.every(c => hexDist(h.c, h.r, c[0], c[1]) >= 11)) continue;
       let okp = true;
       for (let dr = -3; dr <= 3; dr++) for (let dc = -3; dc <= 3; dc++) {
         const n = gD.hexAt(h.c + dc, h.r + dr);
@@ -265,7 +269,8 @@ const out = vm.runInContext(`
       let maxD = 0, cnt = 0;
       for (let dr = -4; dr <= 4; dr++) for (let dc = -4; dc <= 4; dc++) {
         const n = gD.hexAt(vc.c + dc, vc.r + dr);
-        if (n && n.owner === 'A' && n !== vc) { maxD = Math.max(maxD, hexDist(vc.c, vc.r, n.c, n.r)); cnt++; }
+        if (!n || hexDist(vc.c, vc.r, n.c, n.r) > 4) continue;   // Offset-Box ≠ Hex-Distanz
+        if (n.owner === 'A' && n !== vc) { maxD = Math.max(maxD, hexDist(vc.c, vc.r, n.c, n.r)); cnt++; }
       }
       ok('Dorf nimmt Umland bis Radius 2 ein', maxD === 2 && cnt > 0, 'maxR=' + maxD + ' felder=' + cnt);
     } else ok('Dorf nimmt Umland bis Radius 2 ein', true, 'kein isoliertes Fleck');
@@ -421,7 +426,13 @@ const out = vm.runInContext(`
   {
     const gP = new Game('A', 91); gP.endSpawnPhase();
     const bCap = gP.hexAt(...gP.nations['B'].capital);
-    const r2 = gP.hexAt(bCap.c + 2, bCap.r);
+    // irgendein Landfeld im 2er-Umkreis der B-Stadt (fester +2-Offset kann je
+    // nach Karte Wasser/Kartenrand treffen)
+    let r2 = null;
+    for (let dr = -2; dr <= 2 && !r2; dr++) for (let dc = -3; dc <= 3 && !r2; dc++) {
+      const h = gP.hexAt(bCap.c + dc, bCap.r + dr);
+      if (h && h !== bCap && h.terrain !== 'water' && hexDist(bCap.c, bCap.r, h.c, h.r) <= 2) r2 = h;
+    }
     ok('Schutzzone: Feld im Stadt-Umkreis 2 ist geschützt', !!r2 && gP.hexProtected(r2, 'A') === true);
     let farO = null;
     for (const row of gP.hexes) for (const h of row)
@@ -651,6 +662,16 @@ const out = vm.runInContext(`
   }
   {
     const gC = new Game('A', 555); gC.endSpawnPhase();
+    // Übrige Nationen vollständig entwaffnen: weder KI noch das Armee-System
+    // (Ziel EXPAND läuft auch für Menschen automatisch) darf die Krone per
+    // Steh-Eroberung zurückholen — der Test prüft den Countdown selbst.
+    for (const [nid, n] of Object.entries(gC.nations)) {
+      if (nid === 'A') continue;
+      n.ai = false;
+      for (const a of n.armies) { a.target = null; a.mode = 'defend'; }
+      for (const d of gC.divisionsOf(nid)) d.dead = true;
+    }
+    gC._hasDead = true;
     for (const v of gC.vpHexes.filter(v => v.id !== 'A').slice(0, 2)) gC.hexAt(v.c, v.r).owner = 'A';
     runTicks(gC, 4);
     ok('Countdown bei 3 Hauptstädten', gC.vpLeader === 'A');

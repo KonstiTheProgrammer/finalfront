@@ -1729,6 +1729,26 @@ function drawMinimap() {
   const mctx = m.getContext('2d');
   mctx.drawImage(UI.minimapBase, 0, 0);
   const sx = m.width / WORLD_W, sy = m.height / WORLD_H;
+  // Überblick: rote Puls-Blips an laufenden Kämpfen, Gold-Punkt = eigene Hauptstadt
+  const blink = 0.5 + 0.5 * Math.sin(performance.now() / 200);
+  mctx.fillStyle = `rgba(255,84,60,${(0.5 + 0.5 * blink).toFixed(3)})`;
+  for (const d of game.divisions) {
+    if (d.dead || !d.attackTarget) continue;
+    const p = hexToPixel(d.attackTarget[0], d.attackTarget[1]);
+    mctx.beginPath();
+    mctx.arc(p.x * sx, p.y * sy, 2 + blink * 1.3, 0, Math.PI * 2);
+    mctx.fill();
+  }
+  const nat = game.nations[game.player];
+  if (nat && nat.capital && nat.alive) {
+    const p = hexToPixel(nat.capital[0], nat.capital[1]);
+    mctx.fillStyle = '#ffd75e';
+    mctx.strokeStyle = 'rgba(10,14,20,0.9)';
+    mctx.lineWidth = 1;
+    mctx.beginPath();
+    mctx.arc(p.x * sx, p.y * sy, 2.4, 0, Math.PI * 2);
+    mctx.fill(); mctx.stroke();
+  }
   mctx.strokeStyle = 'rgba(255,255,255,0.9)';
   mctx.lineWidth = 1.4;
   mctx.strokeRect(UI.cam.x * sx, UI.cam.y * sy,

@@ -3,9 +3,11 @@
    Erzeugt drei PROZEDURALE Karten (offline, seeded, deterministisch)
    und mischt sie in js/mapdata.js (GENMAPS) — bestehende Karten
    bleiben unangetastet:
-   - kontinent  „Kontinent"  64×72 — ein großer Erdteil, Gebirgszüge, Ströme
-   - inselmeer  „Inselmeer"  44×44 — Archipel, Seewege entscheiden
-   - steppe     „Steppe"     48×36 — offenes Land, Flüsse als einzige Linien
+   - kontinent  „Kontinent"  44×48 — ein Erdteil, Gebirgszüge, Ströme
+   - inselmeer  „Inselmeer"  36×36 — Archipel, Seewege entscheiden
+   - steppe     „Steppe"     38×30 — offenes Land, Flüsse als einzige Linien
+   Kompakt ausgelegt: 5 Reiche füllen die Karte in Akt I — Fronten statt
+   Niemandsland, der Überblick bleibt (≤30-min-Runden).
    Ausführen:  node tools/genmore.js
    ========================================================= */
 
@@ -205,10 +207,10 @@ function toMap(id, name, t, riv, W, H) {
   };
 }
 
-/* ========== Karte 1: Kontinent (64×72) — ein großer Erdteil ========== */
+/* ========== Karte 1: Kontinent (44×48) — ein Erdteil, kompakt ========== */
 function genKontinent() {
-  const W = 64, H = 72;
-  const rand = mulberry32(64072);
+  const W = 44, H = 48;
+  const rand = mulberry32(44048);
   const noise = makeNoise(rand);
   const landmask = blankGrid(W, H, false);
   const elev = blankGrid(W, H, 0);
@@ -232,30 +234,30 @@ function genKontinent() {
   // Mini-Inseln versenken (unter 10 Hexe)
   for (const comp of components(t, W, H)) if (comp.length < 10) for (const [c, r] of comp) t[r][c] = '.';
   chainMountains(t, W, H);
-  const riv = carveRivers(t, elev, W, H, rand, 9);
+  const riv = carveRivers(t, elev, W, H, rand, 6);
   thinRivers(riv, W, H);
   return toMap('kontinent', 'Kontinent', t, riv, W, H);
 }
 
-/* ========== Karte 2: Inselmeer (44×44) — Archipel ========== */
+/* ========== Karte 2: Inselmeer (36×36) — Archipel ========== */
 function genInselmeer() {
-  const W = 44, H = 44;
-  const rand = mulberry32(44044);
+  const W = 36, H = 36;
+  const rand = mulberry32(36036);
   const noise = makeNoise(rand);
   const t = blankGrid(W, H, '.');
   const owner = blankGrid(W, H, 0);
   // Insel-Saatpunkte mit Mindestabstand streuen
   const seeds = [];
-  for (let tries = 0; tries < 6000 && seeds.length < 11; tries++) {
+  for (let tries = 0; tries < 6000 && seeds.length < 9; tries++) {
     const c = 3 + Math.floor(rand() * (W - 6));
     const r = 3 + Math.floor(rand() * (H - 6));
-    if (seeds.some(([sc, sr]) => Math.hypot(hx(c, r) - hx(sc, sr), hy(r) - hy(sr)) < 9.5)) continue;
+    if (seeds.some(([sc, sr]) => Math.hypot(hx(c, r) - hx(sc, sr), hy(r) - hy(sr)) < 8.2)) continue;
     seeds.push([c, r]);
   }
   // Jede Insel wächst per Zufalls-Flutung — fremde Inseln dürfen sich NIE berühren
   seeds.forEach(([sc, sr], idx) => {
     const id = idx + 1;
-    const size = 18 + Math.floor(rand() * 31);
+    const size = 14 + Math.floor(rand() * 23);
     const frontier = [[sc, sr]];
     t[sr][sc] = 'p'; owner[sr][sc] = id;
     let grown = 1;
@@ -289,10 +291,10 @@ function genInselmeer() {
   return toMap('inselmeer', 'Inselmeer', t, riv, W, H);
 }
 
-/* ========== Karte 3: Steppe (48×36) — offenes Land ========== */
+/* ========== Karte 3: Steppe (38×30) — offenes Land ========== */
 function genSteppe() {
-  const W = 48, H = 36;
-  const rand = mulberry32(48036);
+  const W = 38, H = 30;
+  const rand = mulberry32(38030);
   const noise = makeNoise(rand);
   const landmask = blankGrid(W, H, false);
   const elev = blankGrid(W, H, 0);
