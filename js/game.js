@@ -2886,28 +2886,43 @@ class Game {
       army.mode = ratio > 0.85 ? 'attack' : 'defend';
       return;
     }
+    // AKT I IST LANDNAHME: Vor Akt II jagt niemand Opfer — es wird expandiert.
+    // (Zurückschlagen oben bleibt erlaubt.) Der Spieler bekommt Luft zum Bauen,
+    // die Kriege konzentrieren sich in „Akt II — Der Krieg", wie das Konzept will.
+    if (this.akt < 2) {
+      army.target = 'EXPAND';
+      army.mode = 'attack';
+      return;
+    }
     // 2) Lohnendes Opfer in Reichweite? Große Ziele bevorzugen —
     //    das bremst Spitzenreiter und verhindert Dogpiling auf Sterbende.
     //    Hauptstadt-Sammler sind besonders attraktive Ziele (Countdown stoppen!).
     const borders = this.borderNationsOf(id).filter(b => this.hostile(id, b));
+    // Durchschnittsgröße für den Schwachen-Schutz (Anti-Dogpile)
+    let landSum = 0, landCnt = 0;
+    for (const n2 of Object.values(this.nations)) if (n2.alive) { landSum += n2.hexCount; landCnt++; }
+    const landAvg = Math.max(1, landSum / Math.max(1, landCnt));
+    const lf = this.lateFactor();   // Endphase: mutiger angreifen, die Runde entscheidet sich
     let victim = null, vRatio = 0, vScore = -Infinity;
     for (const b of borders) {
       const r = myPow / Math.max(0.1, this.nationPower(b));
       const size = Math.sqrt(this.nations[b].hexCount / Math.max(1, nat.hexCount));
       let score = r * Math.min(2, Math.max(0.5, size));
       score *= 1 + (this.nations[b].vp || 0) * 0.1;
+      // SCHWACHEN-SCHUTZ: Wer weit unterm Schnitt liegt, ist keine attraktive
+      // Beute — schützt den lernenden Spieler UND bremst Dogpiling auf
+      // Sterbende. Schwindet in der Endphase (Runden enden trotzdem).
+      if (this.nations[b].hexCount < landAvg * 0.5) score *= 0.35 + 0.65 * lf;
       if (this.isTraitor(b)) score *= 1.35;                           // Verräter sind Freiwild
       if (this.vpLeader === b) score *= 1.6;                          // Countdown stoppen!
       else if ((this.nations[b].vp || 0) >= BAL.round.vpToWin - 1) score *= 1.8;  // Beinahe-Sieger bremsen
       if (score > vScore) { vScore = score; vRatio = r; victim = b; }
     }
     const aggression = NATION_DEFS[id].aggression;
-    const lf = this.lateFactor();   // Endphase: mutiger angreifen, die Runde entscheidet sich
-    // Kampf 2.0: die KI greift entschlossener an — gebündelt bricht sie durch,
-    // drängt den Gegner per Rückzug zurück und nimmt am Ende die Hauptstadt.
-    // Wer selbst Hauptstädte sammelt, greift nach der Krone.
-    if (victim && vRatio > 1.15 - 0.45 * lf && this.divisionsOf(id).length >= 4
-      && this.rand() < aggression + 0.4 + 0.5 * lf + 0.08 * ((nat.vp || 1) - 1)) {
+    // Kriegseintritt gedrosselt: Früh in Akt II ist ein Angriff die Ausnahme,
+    // zur Endphase hin die Regel — die Eskalationskurve aus dem Konzept.
+    if (victim && vRatio > 1.25 - 0.55 * lf && this.divisionsOf(id).length >= 4
+      && this.rand() < aggression * 0.6 + 0.15 + 0.6 * lf + 0.08 * ((nat.vp || 1) - 1)) {
       setTarget(victim, 'attack');
       return;
     }

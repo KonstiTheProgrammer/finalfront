@@ -2925,6 +2925,14 @@ const WHISPERS = [
     text: 'Die Bubble ist eine Ampel: Grün = greif an · Rot = sammel erst Masse.' },
   { key: 'land', when: g => !g.spawnPhase && g.day >= 1.5,
     text: 'Lauf auf freies Land — es wird deins.' },
+  // Überlebens-Hinweise: wer nicht baut und ausbildet, wird in Akt II überrannt
+  { key: 'ausbilden', when: g => !g.spawnPhase && g.day >= 12
+      && g.divisionsOf(g.player).length < 3
+      && g.nations[g.player].leute >= BAL.divTypes.inf.mp,
+    text: 'Zeit für Nachschub: Klick deine Hauptstadt an und bilde Krieger aus.' },
+  { key: 'wirtschaft', when: g => !g.spawnPhase && g.day >= 20
+      && g.nations[g.player].gold > 180 && g.builtCount(g.player, 'dorf') < 1,
+    text: 'Volle Kasse: Bau Dörfer und Forstereien — Akt Ⅱ gewinnt, wer jetzt wirtschaftet.' },
 ];
 
 function whisperSeen() {
