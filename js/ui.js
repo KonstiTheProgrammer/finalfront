@@ -2410,26 +2410,32 @@ function updateTopbar() {
 const PANEL_TITLES = { bauen: ic('build'), armeen: ic('soldier'), nationen: ic('globe'), info: ic('info') };
 
 /* ---------- Live-Rangliste (Rundenmodus) ---------- */
+/* Sieg-Leiste: „die Leiste entscheidet" — Rangfolge = Score (Land + Kronen +
+   Kessel + Ring-Eroberungen), live als Balken. Beim Abpfiff gewinnt der längste. */
 function rankedNations() {
   return Object.keys(game.nations)
     .filter(id => game.nations[id].alive)
-    .sort((a, b) => ((game.nations[b].vp || 0) - (game.nations[a].vp || 0))
+    .sort((a, b) => (game.score(b) - game.score(a))
+      || ((game.nations[b].vp || 0) - (game.nations[a].vp || 0))
       || (game.nations[b].hexCount - game.nations[a].hexCount));
 }
 
-function rankRowHtml(place, id) {
+function rankRowHtml(place, id, maxScore) {
   const n = game.nations[id];
   let who = '';
   if (game._names) {   // Multiplayer: wer ist Mensch, wer Bot?
     const nm = !n.ai && game._names[id] ? String(game._names[id]).replace(/</g, '&lt;') : null;
     who = nm ? ` <span class="rank-who">${ic('people')} ${nm}</span>` : ` <span class="rank-who">${ic('bot')}</span>`;
   }
+  const sc = game.score(id);
+  const w = Math.max(3, Math.round(sc / Math.max(1, maxScore) * 100));
   return `<div class="rank-row ${id === game.player ? 'me' : ''}">
     <span class="rank-pl">${place}.</span>
     <span class="chip" style="background:${game.nationColor(id)}"></span>
     <span class="rank-name">${game.nationName(id)}${game.isTraitor(id) ? ' ' + ic('snake') : ''}${who}</span>
     <span class="rank-vp">${ic('capital')} ${n.vp || 0}</span>
-    <span class="rank-hex">${n.hexCount}</span>
+    <span class="rank-hex">${Math.round(sc)}</span>
+    <span class="rank-bar"><i style="width:${w}%;background:${game.nationColor(id)}"></i></span>
   </div>`;
 }
 
@@ -2438,9 +2444,10 @@ function renderRanking() {
   if (!game || game.over) { el.innerHTML = ''; return; }
   if (!UI.hud.rank) return;
   const ids = rankedNations();
+  const maxScore = ids.length ? game.score(ids[0]) : 1;
   let html = `<div class="rank-head">${ic('trophy')} · ${ic('capital')} · ${ic('hex')}</div>`;
   ids.forEach((id, i) => {
-    if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id);
+    if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id, maxScore);
   });
   if (!game.nations[game.player].alive) html += `<div class="rank-row me"><span class="rank-pl">☠</span></div>`;
   el.innerHTML = html;
@@ -3151,12 +3158,13 @@ function checkGameOver() {
     lbtn.classList.toggle('hidden', !game._net);
     lbtn.onclick = () => netBackToLobby();
   }
-  // Endstand: Top 5 + Spieler
+  // Endstand: Top 5 + Spieler — mit finaler Sieg-Leiste
   game.vpRecount();
   const ids = rankedNations();
+  const maxScore = ids.length ? game.score(ids[0]) : 1;
   let html = `<div class="rank-head">📅${game.day} · 🏛️ · ⬡</div>`;
   ids.forEach((id, i) => {
-    if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id);
+    if (i < 5 || id === game.player) html += rankRowHtml(i + 1, id, maxScore);
   });
   if (!game.nations[game.player].alive)
     html += `<div class="rank-row me"><span class="rank-pl">☠</span></div>`;

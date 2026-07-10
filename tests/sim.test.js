@@ -304,6 +304,46 @@ const out = vm.runInContext(`
     ok('Akt wird beim Laden aus dem Tag abgeleitet', g2.akt === 3, 'akt=' + g2.akt);
   }
 
+  /* ===== Sieg-Leiste: Score = Land + Kronen + Kessel + Ring-Eroberungen ===== */
+  {
+    const gS = new Game('A', 21); gS.endSpawnPhase();
+    const nA = gS.nations['A'];
+    const base = gS.score('A');
+    // Start: eigenes Land + die EIGENE Krone (jede Nation hält ihre Hauptstadt)
+    const erwartet = nA.hexCount + (nA.vp || 0) * gS.totalLand * BAL.score.krone;
+    ok('Score = Land + Kronen am Start', Math.abs(base - erwartet) < 0.001,
+      base.toFixed(1) + ' vs ' + erwartet.toFixed(1) + ' (vp=' + nA.vp + ')');
+    nA.kesselKills = 2;
+    ok('Kessel-Vernichtungen zählen auf die Leiste',
+      Math.abs(gS.score('A') - (base + 2 * BAL.score.kessel)) < 0.001);
+    nA.kesselKills = 0; nA.ringCaptures = 5;
+    ok('Ring-Eroberungen zählen auf die Leiste',
+      Math.abs(gS.score('A') - (base + 5 * BAL.score.ring)) < 0.001);
+    nA.ringCaptures = 0;
+
+    // Akt III: aktive Eroberung erhöht ringCaptures (doppelt zählen)
+    gS.akt = 3;
+    let freeH = null;
+    for (const row of gS.hexes) for (const h of row)
+      if (!freeH && !h.owner && h.terrain !== 'water' && h.terrain !== 'mountain') freeH = h;
+    gS.captureHex(freeH, gS.divisionsOf('A')[0]);
+    ok('Akt-III-Eroberung erhöht ringCaptures', nA.ringCaptures === 1, 'ring=' + nA.ringCaptures);
+    gS.akt = 1;
+
+    // Save/Load: Leisten-Zähler überleben
+    nA.kesselKills = 3;
+    const gL = Game.deserialize(gS.serialize());
+    ok('Leisten-Zähler überleben Save/Load',
+      gL.nations['A'].kesselKills === 3 && gL.nations['A'].ringCaptures === 1);
+
+    // Abpfiff: die Leiste entscheidet (Ring-Punkte überholen reinen Besitz)
+    gS.nations['B'].ringCaptures = 5000;
+    gS.day = BAL.round.days; gS.dayFloat = gS.day;
+    gS.vpDaily();
+    ok('Abpfiff: die Leiste entscheidet', !!gS.over && gS.over.text.includes(gS.nationName('B')),
+      gS.over ? gS.over.text : 'kein over');
+  }
+
   /* ===== Frei laufen + Steh-Eroberung ===== */
   g = new Game('A', 66); g.endSpawnPhase();
   const dEr = g.divisionsOf('A')[0];

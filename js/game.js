@@ -163,6 +163,10 @@ const BAL = {
     lateStart: 0.6,           // ab 60 %: Akt III (Der Ring) = Endphase — Miliz ermüdet, Angriffe härter
     domination: 0.8,          // 80 % der Landfläche = sofortiger Sieg
   },
+  // Sieg-Leiste: „die Leiste entscheidet" beim Abpfiff. Score = Land
+  // + Kronen (je Anteil der Landfläche) + Kessel-Vernichtungen + Ring-Eroberungen.
+  // Sitzen gewinnt nicht: Wer im Ring (Akt III) erobert, überholt den Besitzer.
+  score: { krone: 0.10, kessel: 12, ring: 1 },
 };
 
 /* Fester Simulationstakt: alle Maschinen rechnen identische Schritte —
@@ -489,6 +493,8 @@ class Game {
       divNameSeq: 1,
       hexCount: 1,
       traitorUntil: -999,
+      kesselKills: 0,     // Sieg-Leiste: im Kessel vernichtete Feind-Divisionen
+      ringCaptures: 0,    // Sieg-Leiste: aktive Eroberungen in Akt III (zählen doppelt)
       incomePerDay: 0, leutePerDay: 0, eisenPerDay: 0, pferdePerDay: 0,
       _lastAttacker: null, _lastAttackedDay: -99, _atkToastDay: -99,
     };
@@ -2095,6 +2101,7 @@ class Game {
       }
     }
     this.addLog(`💀🔒 ${div.name} · ${this.nationName(div.nation)}`, div.nation === this.player);
+    div._kesselTod = true;   // kein Rückzugsweg = Kessel — zählt auf die Sieg-Leiste
     this.destroyDivision(div, attacker ? attacker.nation : null);
   }
 
@@ -2103,6 +2110,11 @@ class Game {
     div.dead = true;
     this._hasDead = true;
     this.economyDirty = true;
+    // Sieg-Leiste: Vernichtung im Kessel (Pocket-Feld oder kein Rückzugsweg)
+    if (byNation && this.nations[byNation] && byNation !== div.nation) {
+      const h = this.hexAt(div.c, div.r);
+      if (div._kesselTod || (h && h._pocket)) this.nations[byNation].kesselKills++;
+    }
     if (byNation && this.nations[byNation]) {
       for (const d of this.divisionsOf(byNation)) {
         if (hexDist(d.c, d.r, div.c, div.r) <= 3) d.moral = Math.min(BAL.moralMax, d.moral + 0.02);
@@ -2123,6 +2135,9 @@ class Game {
       }
     }
     h.owner = div.nation;
+    // Sieg-Leiste: aktive Eroberung im Ring (Akt III) zählt doppelt —
+    // wer erobert, überholt den, der nur besitzt (Anti-Turtle per Formel)
+    if (this.akt === 3 && this.nations[div.nation]) this.nations[div.nation].ringCaptures++;
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
     this._damagedHexes.add(h);
@@ -2509,6 +2524,19 @@ class Game {
     return p >= BAL.round.lateStart ? 3 : p >= BAL.round.akt2 ? 2 : 1;
   }
 
+  /* Sieg-Leiste: EIN Wert pro Reich, live im HUD — beim Abpfiff gewinnt der
+     längste Balken. Land + Kronen (je 10 % der Landfläche wert) + Kessel-
+     Vernichtungen + Ring-Eroberungen (Akt III zählt doppelt: 1× als Besitz
+     im hexCount + 1× als Bonus). Deterministisch → MP-sicher. */
+  score(id) {
+    const n = this.nations[id];
+    if (!n || !n.alive) return 0;
+    return n.hexCount
+      + (n.vp || 0) * this.totalLand * BAL.score.krone
+      + (n.kesselKills || 0) * BAL.score.kessel
+      + (n.ringCaptures || 0) * BAL.score.ring;
+  }
+
   vpRecount() {
     for (const nat of Object.values(this.nations)) nat.vp = 0;
     for (const v of this.vpHexes) {
@@ -2573,15 +2601,18 @@ class Game {
       }
     }
 
-    // Rundenende per Timer: stärkste Macht gewinnt
+    // Rundenende per Timer: DIE LEISTE ENTSCHEIDET — höchster Score gewinnt
+    // (Land + Kronen + Kessel + Ring-Eroberungen; Sitzen gewinnt nicht)
     if (this.day >= BAL.round.days) {
       const ranked = [...alive].sort((a, b) =>
-        (this.nations[b].vp - this.nations[a].vp) || (this.nations[b].hexCount - this.nations[a].hexCount));
+        (this.score(b) - this.score(a))
+        || (this.nations[b].vp - this.nations[a].vp)
+        || (this.nations[b].hexCount - this.nations[a].hexCount));
       const winner = ranked[0];
       const place = ranked.indexOf(this.player) + 1;
       this.over = {
         win: winner === this.player,
-        text: `⏰👑 ${this.nationName(winner)} · 🏛${this.nations[winner].vp}${place > 0 ? ` · #${place}` : ''}`,
+        text: `⏰👑 ${this.nationName(winner)} · ${Math.round(this.score(winner))}${place > 0 ? ` · #${place}` : ''}`,
       };
     }
   }
@@ -2956,6 +2987,7 @@ class Game {
       nations: Object.fromEntries(Object.entries(this.nations).map(([id, n]) => [id, {
         alive: n.alive, gold: Math.round(n.gold), leute: +n.leute.toFixed(2), eisen: +n.eisen.toFixed(1), pferde: +n.pferde.toFixed(1),
         traitorUntil: n.traitorUntil,
+        kesselKills: n.kesselKills || 0, ringCaptures: n.ringCaptures || 0,
         allies: [...n.allies], capital: n.capital, divNameSeq: n.divNameSeq,
         armies: n.armies.map(a => ({ id: a.id, name: a.name, target: a.target, mode: a.mode })),
       }])),
@@ -3008,6 +3040,8 @@ class Game {
       n.eisen = ns.eisen !== undefined ? ns.eisen : 10;
       n.pferde = ns.pferde !== undefined ? ns.pferde : 8;
       n.traitorUntil = ns.traitorUntil !== undefined ? ns.traitorUntil : -999;
+      n.kesselKills = ns.kesselKills || 0;
+      n.ringCaptures = ns.ringCaptures || 0;
       n.allies = new Set(ns.allies); n.capital = ns.capital; n.divNameSeq = ns.divNameSeq;
       n.armies = ns.armies.map(a => ({ ...a, nation: id, frontHexes: [] }));
     }
