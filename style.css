@@ -644,6 +644,20 @@ button.peace:hover { background: #26512e; }
 /* Operations-Knopf: gesperrt (läuft/Cooldown) gedimmt */
 #btn-op.locked { opacity: 0.45; }
 
+/* ---------- Kriegsbilanz im Endstand ---------- */
+.bilanz-head {
+  margin: 16px 0 6px; padding-top: 12px;
+  border-top: 1px solid #2c3444;
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: #e6b84e; font-weight: 700;
+}
+.bilanz-row { display: flex; gap: 10px; align-items: baseline; padding: 2px 0; font-size: 13px; color: #b9c2d0; }
+.bilanz-row .bilanz-day { flex: none; width: 64px; font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: #6a7385; }
+.bilanz-row .chip { width: 9px; height: 9px; display: inline-block; border-radius: 2px; margin-right: 3px; vertical-align: baseline; }
+.bilanz-sup { margin-top: 10px; padding-top: 8px; border-top: 1px dashed #2c3444; font-size: 13px; color: #9aa2b1; }
+.bilanz-sup b { color: #e9e3d5; }
+.bilanz-coach { margin-top: 8px; font-size: 13px; color: #6fcf82; }
+
 /* Drama-Töne: rot = Gefahr, gold = Triumph */
 #akt-banner.rot { border-color: rgba(215,80,59,0.5); }
 #akt-banner.rot .ab-ey { color: #ff8a76; }

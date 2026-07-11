@@ -3522,6 +3522,50 @@ function checkGameOver() {
   });
   if (!game.nations[game.player].alive)
     html += `<div class="rank-row me"><span class="rank-pl">☠</span></div>`;
+  html += kriegsbilanzHtml();
   document.getElementById('gameover-stats').innerHTML = html;
   document.getElementById('ranking').innerHTML = '';
+}
+
+/* ---------- Kriegsbilanz: die Geschichte der Runde ----------
+   Timeline der Momente + Superlative + Coach-Zeile — aus game.chronicle.
+   Das Produkt einer Runde ist die Geschichte, die man danach erzählt. */
+function kriegsbilanzHtml() {
+  const ch = game.chronicle || [];
+  if (!ch.length) return '';
+  const me = game.player;
+  const N = id => game.nationName(id || '') || '—';
+  const chip = id => `<span class="chip" style="background:${game.nationColor(id)}"></span>`;
+  const zeile = e => {
+    if (e.type === 'krone') return `${chip(e.by)} ${e.name || 'Krone'} fällt an ${N(e.by)}`;
+    if (e.type === 'kessel') return `${chip(e.owner)} Kessel: ${e.count} Division${e.count > 1 ? 'en' : ''} von ${N(e.owner)} eingeschlossen`;
+    if (e.type === 'verrat') return `${chip(e.traitor)} ${N(e.traitor)} verrät ${N(e.victim)}`;
+    if (e.type === 'operation') return `${chip(e.by)} ${e.name}: ${e.gewinn >= 0 ? '+' : ''}${e.gewinn} Felder (${N(e.by)})`;
+    if (e.type === 'untergang') return `${chip(e.loser)} ${N(e.loser)} geht unter`;
+    return '';
+  };
+  // Timeline: die letzten ~8 erzählenswerten Momente
+  const wichtig = ch.filter(e => zeile(e));
+  const zeigen = wichtig.slice(-8);
+  let html = `<div class="bilanz-head">Kriegsbilanz</div>`;
+  html += zeigen.map(e => `<div class="bilanz-row"><span class="bilanz-day">Tag ${e.day}</span><span>${zeile(e)}</span></div>`).join('');
+  // Superlative
+  const sup = [];
+  const kessel = ch.filter(e => e.type === 'kessel').sort((a, b) => b.count - a.count)[0];
+  if (kessel) sup.push(`Größter Kessel: <b>${kessel.count} Divisionen</b> (${N(kessel.owner)}, Tag ${kessel.day})`);
+  const ops = ch.filter(e => e.type === 'operation' && e.gewinn > 0).sort((a, b) => b.gewinn - a.gewinn)[0];
+  if (ops) sup.push(`Beste Operation: <b>${ops.name}</b> — +${ops.gewinn} Felder (${N(ops.by)})`);
+  const verrat = ch.filter(e => e.type === 'verrat')[0];
+  if (verrat) sup.push(`Erster Dolchstoß: <b>${N(verrat.traitor)}</b> gegen ${N(verrat.victim)} (Tag ${verrat.day})`);
+  if (sup.length) html += `<div class="bilanz-sup">${sup.map(s => `<div>${s}</div>`).join('')}</div>`;
+  // Coach-Zeile: bester Moment / teuerster Fehler des Spielers
+  const besteOwn = ch.filter(e => (e.type === 'operation' && e.by === me && e.gewinn > 0)
+    || (e.type === 'krone' && e.by === me)).sort((a, b) => (b.gewinn || 9) - (a.gewinn || 9))[0];
+  const fehler = ch.filter(e => (e.type === 'kessel' && e.owner === me)
+    || (e.type === 'krone' && e.loser === me)).sort((a, b) => (b.count || 9) - (a.count || 9))[0];
+  const coach = [];
+  if (besteOwn) coach.push(`Dein Moment: ${zeile(besteOwn)} (Tag ${besteOwn.day})`);
+  if (fehler) coach.push(`Teuerster Fehler: ${zeile(fehler)} (Tag ${fehler.day})`);
+  if (coach.length) html += `<div class="bilanz-coach">${coach.map(c => `<div>${c}</div>`).join('')}</div>`;
+  return html;
 }

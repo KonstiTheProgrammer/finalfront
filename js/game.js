@@ -225,6 +225,7 @@ class Game {
     this.akt = 1;              // Akt-Uhr: 1 Landnahme · 2 Der Krieg · 3 Der Ring (Endphase)
     this._drama = [];          // große Momente für die UI (Banner/Sound) — nicht serialisiert
     this._opSeq = 0;           // Operations-Namen: deterministisch aus dem Pool rotieren
+    this.chronicle = [];       // die Geschichte der Runde — Futter für die Kriegsbilanz
     this.speed = 1;
     this.paused = false;
     this.player = playerNationId;
@@ -445,6 +446,7 @@ class Game {
     this.nations[attacker].traitorUntil = this.day + BAL.traitor.duration;
     delete this._exAllies[attacker + '>' + victim];
     this._dramaPush('verrat', { traitor: attacker, victim });
+    this._chron('verrat', { traitor: attacker, victim });
     this.addLog(`🐍 ${this.nationName(attacker)} ⚔ ${this.nationName(victim)}`, true);
   }
 
@@ -2182,8 +2184,10 @@ class Game {
     // wer erobert, überholt den, der nur besitzt (Anti-Turtle per Formel)
     if (this.akt === 3 && this.nations[div.nation]) this.nations[div.nation].ringCaptures++;
     // Drama: Kronenfall + Durchbruch-/Einbruch-Zähler (Reset im Tageswechsel)
-    if (h.capital || h.vp)
+    if (h.capital || h.vp) {
       this._dramaPush('krone', { by: div.nation, loser, name: h.cityName || '' });
+      this._chron('krone', { by: div.nation, loser, name: h.cityName || '' });
+    }
     const natW = this.nations[div.nation];
     if (natW && ++natW._caps24 === 4) this._dramaPush('durchbruch', { by: div.nation });
     if (loser && this.nations[loser] && ++this.nations[loser]._loss24 === 4)
@@ -2260,6 +2264,7 @@ class Game {
     const nat = this.nations[loser];
     if (!nat.alive) return;
     nat.alive = false;
+    this._chron('untergang', { loser, winner });
     for (const a of [...nat.allies]) this.dissolveAlliance(loser, a);
     this.allianceOffers = this.allianceOffers.filter(o => o.from !== loser);
     this._offersChanged = true;
@@ -2480,6 +2485,10 @@ class Game {
     for (const p of pockets) {
       if (this._pocketKeys.has(p.key)) continue;
       if (p.divCount > 0) this._dramaPush('kessel', { owner: p.owner, count: p.divCount });
+      // Chronik nur, wenn wirklich Truppen im Kessel stecken — leere Land-
+      // Kessel sind keine Geschichte (und würden die Bilanz zuspammen)
+      if (p.divCount >= 2 || (p.owner === this.player && p.divCount >= 1))
+        this._chron('kessel', { owner: p.owner, count: p.divCount });
       if (p.owner === this.player && p.divCount > 0)
         this.addLog(`❗🔒 ${p.divCount}🪖`, true);
       else if (p.divCount >= 2)
@@ -2633,6 +2642,7 @@ class Game {
       } else if (op.phase === 'sturm' && this.dayFloat >= op.bis) {
         const gewinn = nat.hexCount - op.startHex;
         this._dramaPush('operationEnde', { by: id, name: op.name, gewinn });
+        this._chron('operation', { by: id, name: op.name, gewinn });
         this.addLog(`⚡✔ ${op.name} ${gewinn >= 0 ? '+' : ''}${gewinn}⬡`, id === this.player);
         nat.op = null;
         nat.opCooldownUntil = this.day + (this.akt === 3 ? BAL.operation.cooldownRing : BAL.operation.cooldown);
@@ -2654,6 +2664,13 @@ class Game {
   _dramaPush(type, data) {
     this._drama.push(Object.assign({ type }, data));
     if (this._drama.length > 12) this._drama.splice(0, this._drama.length - 12);
+  }
+
+  /* Chronik: die erzählenswerten Momente der Runde — persistiert, gedeckelt.
+     Aus ihr speist sich die Kriegsbilanz (Timeline, Superlative, Coach-Zeile). */
+  _chron(type, data) {
+    this.chronicle.push(Object.assign({ day: this.day, type }, data));
+    if (this.chronicle.length > 80) this.chronicle.splice(0, this.chronicle.length - 80);
   }
 
   /* Doktrin-Multiplikator: 1, solange keine Doktrin gewählt ist oder sie den
@@ -3166,6 +3183,7 @@ class Game {
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
       opSeq: this._opSeq,
+      chronicle: this.chronicle,
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
       cmds: this._replayCapable ? this.cmdLog : undefined,
       warHeat: this.warHeat,
@@ -3203,6 +3221,7 @@ class Game {
     g.day = s.day; g.dayFloat = s.dayFloat;
     g.akt = g.aktOf(g.day);   // abgeleitet, nicht persistiert
     g._opSeq = s.opSeq || 0;
+    g.chronicle = Array.isArray(s.chronicle) ? s.chronicle : [];
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
     // Zufallsstrom & Kommando-Log exakt fortsetzen (Determinismus über Save/Load)
     if (s.rngState !== undefined) g._rngState = s.rngState;

@@ -445,6 +445,26 @@ const out = vm.runInContext(`
         && gA2.nations['A'].opCooldownUntil === gA2.day + Math.ceil(BAL.operation.cooldown / 2));
     }
 
+    // Chronik: die Runde schreibt ihre Geschichte mit (Kriegsbilanz-Futter)
+    {
+      const gC2 = new Game('A', 44); gC2.endSpawnPhase();
+      gC2.chronicle.length = 0;
+      const dC = gC2.divisionsOf('A')[0];
+      const kroneH = gC2.hexAt(...gC2.nations['B'].capital);
+      for (const d of gC2.divisionsAt(kroneH.c, kroneH.r)) d.dead = true;
+      gC2._hasDead = true;
+      gC2.captureHex(kroneH, dC);
+      ok('Chronik: Kronenfall notiert', gC2.chronicle.some(e => e.type === 'krone' && e.by === 'A'));
+      gC2._exAllies['A>C'] = gC2.day; gC2._checkBetrayal('A', 'C');
+      ok('Chronik: Verrat notiert', gC2.chronicle.some(e => e.type === 'verrat'));
+      ok('Chronik: Einträge tragen den Tag', gC2.chronicle.every(e => typeof e.day === 'number'));
+      const gC3 = Game.deserialize(gC2.serialize());
+      ok('Chronik überlebt Save/Load', gC3.chronicle.length === gC2.chronicle.length
+        && gC3.chronicle.some(e => e.type === 'krone'));
+      for (let i = 0; i < 120; i++) gC2._chron('kessel', { owner: 'B', count: 2 });
+      ok('Chronik ist gedeckelt', gC2.chronicle.length <= 80);
+    }
+
     // KI wählt lagebasiert, der Mensch bekommt nach der Frist das Massenheer
     const gK = new Game('A', 34); gK.endSpawnPhase();
     gK.day = Math.floor(BAL.round.days * BAL.round.akt2) - 1; gK.dayFloat = gK.day;
