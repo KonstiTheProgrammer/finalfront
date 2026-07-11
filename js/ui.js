@@ -2337,6 +2337,16 @@ function bindPanels() {
     const b = document.getElementById(id);
     if (b) b.addEventListener('click', () => { UI.hud[k] = !UI.hud[k]; applyHud(); });
   }
+  const sndBtn = document.getElementById('btn-sound');
+  if (sndBtn) {
+    sndBtn.classList.toggle('active', UI.sound);
+    sndBtn.addEventListener('click', () => {
+      UI.sound = !UI.sound;
+      try { localStorage.setItem('ff_sound', UI.sound ? '1' : '0'); } catch (e) { /* egal */ }
+      sndBtn.classList.toggle('active', UI.sound);
+      if (UI.sound) SFX.play('durchbruch');   // hörbares Feedback beim Einschalten
+    });
+  }
   document.getElementById('btn-save').addEventListener('click', () => {
     if (game && game._net) { pushToast('🌐🚫💾'); return; }
     try {
@@ -2907,22 +2917,127 @@ const AKT_INFO = {
 function aktTick() {
   if (!game) return;
   // Neues Spiel / Ladevorgang: still synchronisieren, kein Banner nachfeuern
-  if (UI._aktGame !== game) { UI._aktGame = game; UI._lastAkt = game.akt; return; }
+  if (UI._aktGame !== game) { UI._aktGame = game; UI._lastAkt = game.akt; UI._gongDone = false; UI._dramaT = 0; return; }
   if (game.akt === UI._lastAkt) return;
   UI._lastAkt = game.akt;
   const info = AKT_INFO[game.akt];
   if (info && !game._replayCmds && !game.over) showAktBanner(info);
 }
 
-function showAktBanner(info) {
+function showAktBanner(info, tone) {
   const el = document.getElementById('akt-banner');
   if (!el) return;
   el.querySelector('.ab-ey').textContent = info.ey;
   el.querySelector('.ab-title').textContent = info.title;
   el.querySelector('.ab-sub').textContent = info.sub;
-  el.classList.remove('hidden', 'show');
+  el.classList.remove('hidden', 'show', 'rot', 'gold');
+  if (tone) el.classList.add(tone);   // 'rot' = Gefahr, 'gold' = Triumph
   void el.offsetWidth;   // Reflow: Animation zuverlässig neu starten
   el.classList.add('show');
+}
+
+/* ---------- Juice: WebAudio-Synth (keine Assets), Shake, Drama-Regie ----------
+   Anti-Spam: höchstens ein Sound alle 5 s (Kronenfall darf immer), Banner im
+   2,2-s-Abstand. Alles abschaltbar (Lautsprecher-Knopf, localStorage). */
+UI.sound = (() => { try { return localStorage.getItem('ff_sound') !== '0'; } catch (e) { return true; } })();
+
+const SFX = {
+  ctx: null, last: 0,
+  ensure() {
+    if (!this.ctx) { try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { /* egal */ } }
+    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    return this.ctx;
+  },
+  tone(freq, dur, type, vol, delay, slideTo) {
+    const ctx = this.ensure();
+    if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    const t = ctx.currentTime + (delay || 0);
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(t); o.stop(t + dur + 0.05);
+  },
+  play(kind) {
+    if (!UI.sound) return;
+    const now = performance.now();
+    if (kind !== 'krone' && kind !== 'gong' && now - this.last < 5000) return;
+    this.last = now;
+    if (kind === 'durchbruch') { this.tone(392, 0.16, 'square', 0.045); this.tone(523, 0.3, 'square', 0.045, 0.14); }
+    else if (kind === 'kessel') { this.tone(85, 0.5, 'sine', 0.16, 0, 52); }
+    else if (kind === 'krone') { this.tone(660, 1.1, 'triangle', 0.07); this.tone(990, 1.1, 'triangle', 0.045, 0.03); }
+    else if (kind === 'verrat') { this.tone(220, 0.55, 'sawtooth', 0.035); this.tone(233, 0.55, 'sawtooth', 0.035); }
+    else if (kind === 'gong') { this.tone(110, 1.7, 'sine', 0.15, 0, 62); this.tone(164, 1.4, 'sine', 0.05, 0.02); }
+  },
+};
+// Browser-Autoplay: AudioContext braucht eine Nutzer-Geste zum Entsperren
+window.addEventListener('pointerdown', () => SFX.ensure(), { once: true });
+
+function screenShake(strong) {
+  const el = document.body;
+  el.classList.remove('shake', 'shake2');
+  void el.offsetWidth;
+  el.classList.add(strong ? 'shake2' : 'shake');
+}
+
+/* Drama-Regie: zieht Momente aus der Sim-Queue und inszeniert sie.
+   Spieler-zentriert — KI-Geplänkel fern des Spielers bleibt im Log. */
+function dramaTick() {
+  if (!game) return;
+  if (game.over && !UI._gongDone) { UI._gongDone = true; SFX.play('gong'); }
+  if (!game._drama || !game._drama.length) return;
+  if (game._replayCmds || game.spawnPhase) { game._drama.length = 0; return; }
+  const now = performance.now();
+  if (now - (UI._dramaT || 0) < 2200) return;   // Banner-Abstand
+  const ev = game._drama.shift();
+  if (!ev) return;
+  const me = game.player;
+  const N = id => game.nationName(id);
+  let shown = true;
+  if (ev.type === 'krone') {
+    const mine = ev.by === me, lost = ev.loser === me;
+    showAktBanner({
+      ey: ev.name || 'Hauptstadt',
+      title: mine ? 'Krone erobert!' : lost ? 'Deine Krone fällt!' : 'Krone gefallen',
+      sub: `${N(ev.loser || '')} → ${N(ev.by)}`,
+    }, mine ? 'gold' : 'rot');
+    SFX.play('krone');
+    if (mine || lost) screenShake(true);
+  } else if (ev.type === 'kessel') {
+    const mine = ev.owner === me;
+    if (!mine && ev.count < 2) { shown = false; }
+    else {
+      showAktBanner({
+        ey: 'Einkesselung',
+        title: mine ? 'Kessel!' : 'Kessel geschlossen',
+        sub: mine ? `${ev.count} deiner Divisionen eingeschlossen — raus da!`
+          : `${ev.count} Divisionen von ${N(ev.owner)} sitzen fest`,
+      }, mine ? 'rot' : undefined);
+      SFX.play('kessel');
+      if (mine) screenShake(false);
+    }
+  } else if (ev.type === 'durchbruch') {
+    if (ev.by !== me) shown = false;
+    else { showAktBanner({ ey: 'Die Front rollt', title: 'Durchbruch!', sub: '4 Felder heute — nachstoßen!' }, 'gold'); SFX.play('durchbruch'); }
+  } else if (ev.type === 'einbruch') {
+    if (ev.loser !== me) shown = false;
+    else { showAktBanner({ ey: 'Alarm', title: 'Die Front bricht!', sub: '4 Felder heute verloren — stopf die Lücke' }, 'rot'); SFX.play('kessel'); screenShake(false); }
+  } else if (ev.type === 'verrat') {
+    showAktBanner({
+      ey: 'Dolchstoß',
+      title: 'Verrat!',
+      sub: `${N(ev.traitor)} fällt ${ev.victim === me ? 'DIR' : N(ev.victim)} in den Rücken`,
+    }, 'rot');
+    SFX.play('verrat');
+    if (ev.victim === me) screenShake(true);
+  } else {
+    shown = false;
+  }
+  if (shown) UI._dramaT = now;
 }
 
 /* ---------- Der Flüsterer: ein Satz zur richtigen Zeit, je einmal ----------

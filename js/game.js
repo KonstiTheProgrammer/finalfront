@@ -214,6 +214,7 @@ class Game {
     this.day = 0;
     this.dayFloat = 0;
     this.akt = 1;              // Akt-Uhr: 1 Landnahme · 2 Der Krieg · 3 Der Ring (Endphase)
+    this._drama = [];          // große Momente für die UI (Banner/Sound) — nicht serialisiert
     this.speed = 1;
     this.paused = false;
     this.player = playerNationId;
@@ -433,6 +434,7 @@ class Game {
     if (this.isTraitor(attacker)) return;
     this.nations[attacker].traitorUntil = this.day + BAL.traitor.duration;
     delete this._exAllies[attacker + '>' + victim];
+    this._dramaPush('verrat', { traitor: attacker, victim });
     this.addLog(`🐍 ${this.nationName(attacker)} ⚔ ${this.nationName(victim)}`, true);
   }
 
@@ -506,6 +508,7 @@ class Game {
       doctrine: null,     // Doktrin (ab Akt II): blitz | festung | wirtschaft | masse
       kesselKills: 0,     // Sieg-Leiste: im Kessel vernichtete Feind-Divisionen
       ringCaptures: 0,    // Sieg-Leiste: aktive Eroberungen in Akt III (zählen doppelt)
+      _caps24: 0, _loss24: 0,   // Drama: Eroberungen/Verluste heute (Durchbruch-Banner)
       incomePerDay: 0, leutePerDay: 0, eisenPerDay: 0, pferdePerDay: 0,
       _lastAttacker: null, _lastAttackedDay: -99, _atkToastDay: -99,
     };
@@ -2164,6 +2167,13 @@ class Game {
     // Sieg-Leiste: aktive Eroberung im Ring (Akt III) zählt doppelt —
     // wer erobert, überholt den, der nur besitzt (Anti-Turtle per Formel)
     if (this.akt === 3 && this.nations[div.nation]) this.nations[div.nation].ringCaptures++;
+    // Drama: Kronenfall + Durchbruch-/Einbruch-Zähler (Reset im Tageswechsel)
+    if (h.capital || h.vp)
+      this._dramaPush('krone', { by: div.nation, loser, name: h.cityName || '' });
+    const natW = this.nations[div.nation];
+    if (natW && ++natW._caps24 === 4) this._dramaPush('durchbruch', { by: div.nation });
+    if (loser && this.nations[loser] && ++this.nations[loser]._loss24 === 4)
+      this._dramaPush('einbruch', { loser });
     this.setResist(h);
     h.resist = h.resistMax * 0.35;
     this._damagedHexes.add(h);
@@ -2455,6 +2465,7 @@ class Game {
     // Neu entstandene Kessel melden
     for (const p of pockets) {
       if (this._pocketKeys.has(p.key)) continue;
+      if (p.divCount > 0) this._dramaPush('kessel', { owner: p.owner, count: p.divCount });
       if (p.owner === this.player && p.divCount > 0)
         this.addLog(`❗🔒 ${p.divCount}🪖`, true);
       else if (p.divCount >= 2)
@@ -2561,6 +2572,14 @@ class Game {
       + (n.vp || 0) * this.totalLand * BAL.score.krone
       + (n.kesselKills || 0) * BAL.score.kessel
       + (n.ringCaptures || 0) * BAL.score.ring;
+  }
+
+  /* Drama-Queue: Die Sim meldet große Momente, die UI inszeniert sie
+     (Banner, Sound, Shake). Rein kosmetisch, nicht serialisiert — im MP
+     leitet jeder Client dieselben Events deterministisch aus seiner Sim ab. */
+  _dramaPush(type, data) {
+    this._drama.push(Object.assign({ type }, data));
+    if (this._drama.length > 12) this._drama.splice(0, this._drama.length - 12);
   }
 
   /* Doktrin-Multiplikator: 1, solange keine Doktrin gewählt ist oder sie den
@@ -3010,6 +3029,8 @@ class Game {
         this.akt = nowAkt;
         this.addLog(nowAkt === 2 ? '⚔️Ⅱ' : '🔥Ⅲ', true);
       }
+      // Drama: Durchbruch-/Einbruch-Zähler täglich zurücksetzen
+      for (const nat of Object.values(this.nations)) { nat._caps24 = 0; nat._loss24 = 0; }
       // Doktrinen (ab Akt II): KI wählt lagebasiert; Menschen haben ein
       // Wahlfenster, danach Default Massenheer — deterministisch für alle.
       if (this.akt >= 2) {

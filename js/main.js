@@ -26,6 +26,7 @@ function loop(now) {
       aktTick();         // Akt-Uhr: Banner bei Ⅰ→Ⅱ→Ⅲ (rein kosmetisch)
       whisperTick();     // Der Flüsterer: ein Lern-Satz zur richtigen Zeit
       doctrineTick();    // Doktrin-Wahl ab Akt II (SP pausiert, MP läuft weiter)
+      dramaTick();       // Juice: Kessel/Krone/Durchbruch/Verrat mit Banner+Sound
       if (now - (UI._lastRankT || 0) > 2000) {
         UI._lastRankT = now;
         renderRanking();

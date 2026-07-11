@@ -641,6 +641,32 @@ button.peace:hover { background: #26512e; }
 @media (prefers-reduced-motion: reduce) {
   #akt-banner.show { animation: none; opacity: 0; }
 }
+/* Drama-Töne: rot = Gefahr, gold = Triumph */
+#akt-banner.rot { border-color: rgba(215,80,59,0.5); }
+#akt-banner.rot .ab-ey { color: #ff8a76; }
+#akt-banner.rot .ab-title { color: #ffb3a6; }
+#akt-banner.gold { border-color: rgba(230,184,78,0.65); }
+#akt-banner.gold .ab-title { color: #ffe9ad; }
+
+/* Screenshake: kurz und trocken — Wumms ohne Seekrankheit */
+body.shake { animation: bodyShake 0.28s ease; }
+body.shake2 { animation: bodyShake2 0.4s ease; }
+@keyframes bodyShake {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-3px, 2px); }
+  50% { transform: translate(3px, -2px); }
+  75% { transform: translate(-2px, -1px); }
+}
+@keyframes bodyShake2 {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 3px); }
+  40% { transform: translate(5px, -4px); }
+  60% { transform: translate(-4px, 2px); }
+  80% { transform: translate(3px, -2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.shake, body.shake2 { animation: none; }
+}
 
 /* ---------- Der Flüsterer: ein Satz zur richtigen Zeit ---------- */
 #whisper {

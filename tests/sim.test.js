@@ -383,6 +383,33 @@ const out = vm.runInContext(`
       && Math.abs((vorher - nA.leute) - BAL.divTypes.inf.mp * BAL.doctrines.masse.mp) < 0.11,
       'kosten=' + (vorher - nA.leute).toFixed(1));
 
+    // Drama-Queue: Sim meldet große Momente für die UI-Regie
+    {
+      const gJ = new Game('A', 66); gJ.endSpawnPhase();
+      gJ._drama.length = 0;
+      const dJ = gJ.divisionsOf('A')[0];
+      const fremd = gJ.hexAt(...gJ.nations['B'].capital);
+      for (const d of gJ.divisionsAt(fremd.c, fremd.r)) d.dead = true;
+      gJ._hasDead = true;
+      gJ.captureHex(fremd, dJ);
+      ok('Drama: Kronenfall gemeldet', gJ._drama.some(e => e.type === 'krone' && e.by === 'A' && e.loser === 'B'));
+      gJ._drama.length = 0;
+      gJ.nations['A']._caps24 = 3;
+      let frei = null;
+      for (const row of gJ.hexes) for (const h of row)
+        if (!frei && !h.owner && h.terrain !== 'water' && h.terrain !== 'mountain') frei = h;
+      gJ.captureHex(frei, dJ);
+      ok('Drama: Durchbruch ab 4 Eroberungen/Tag', gJ._drama.some(e => e.type === 'durchbruch' && e.by === 'A'));
+      gJ._checkBetrayal && (gJ._exAllies['A>B'] = gJ.day, gJ._checkBetrayal('A', 'B'));
+      ok('Drama: Verrat gemeldet', gJ._drama.some(e => e.type === 'verrat' && e.traitor === 'A'));
+      for (let i = 0; i < 30; i++) gJ._dramaPush('krone', { by: 'A' });
+      ok('Drama-Queue ist gedeckelt', gJ._drama.length <= 12);
+      // Tages-Reset der Zähler
+      gJ.nations['A']._caps24 = 9;
+      gJ.runTick(); gJ.runTick(); gJ.runTick(); gJ.runTick(); gJ.runTick();
+      ok('Drama: Tageszähler wird zurückgesetzt', gJ.nations['A']._caps24 < 9);
+    }
+
     // KI wählt lagebasiert, der Mensch bekommt nach der Frist das Massenheer
     const gK = new Game('A', 34); gK.endSpawnPhase();
     gK.day = Math.floor(BAL.round.days * BAL.round.akt2) - 1; gK.dayFloat = gK.day;
