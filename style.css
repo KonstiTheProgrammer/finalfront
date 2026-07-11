@@ -641,6 +641,9 @@ button.peace:hover { background: #26512e; }
 @media (prefers-reduced-motion: reduce) {
   #akt-banner.show { animation: none; opacity: 0; }
 }
+/* Operations-Knopf: gesperrt (läuft/Cooldown) gedimmt */
+#btn-op.locked { opacity: 0.45; }
+
 /* Drama-Töne: rot = Gefahr, gold = Triumph */
 #akt-banner.rot { border-color: rgba(215,80,59,0.5); }
 #akt-banner.rot .ab-ey { color: #ff8a76; }

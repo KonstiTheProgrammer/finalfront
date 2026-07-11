@@ -177,6 +177,15 @@ const BAL = {
     masse:      { name: 'Massenheer',      mp: 0.7, popCap: 1.3, atk: 0.92 },
   },
   doctrineGraceDays: 8,   // Wahlfenster ab Akt II — danach Default Massenheer (kein Grübelzwang)
+  // Operationen: „Zieh den Pfeil, gib dem Sturm einen Namen." Ein benannter
+  // Schwerpunkt-Schlag mit Anlauf: 2 Tage Sammeln (öffentlich sichtbar!),
+  // dann 2 Tage Sturm — Angriffe im Zielgebiet brechen ×1,3 schneller durch.
+  operation: {
+    sammelTage: 2, sturmTage: 2, bonus: 1.3, radius: 4,
+    cooldown: 20, cooldownRing: 12,   // im Ring (Akt III) schneller wieder bereit
+    namen: ['NORDWIND', 'EISHAMMER', 'MORGENRÖTE', 'ZITADELLE', 'HERBSTSTURM',
+      'DONNERKEIL', 'WINTERWACHT', 'ROTER PFEIL', 'STAHLGEWITTER', 'FELSBRUCH'],
+  },
 };
 
 /* Fester Simulationstakt: alle Maschinen rechnen identische Schritte —
@@ -215,6 +224,7 @@ class Game {
     this.dayFloat = 0;
     this.akt = 1;              // Akt-Uhr: 1 Landnahme · 2 Der Krieg · 3 Der Ring (Endphase)
     this._drama = [];          // große Momente für die UI (Banner/Sound) — nicht serialisiert
+    this._opSeq = 0;           // Operations-Namen: deterministisch aus dem Pool rotieren
     this.speed = 1;
     this.paused = false;
     this.player = playerNationId;
@@ -509,6 +519,8 @@ class Game {
       kesselKills: 0,     // Sieg-Leiste: im Kessel vernichtete Feind-Divisionen
       ringCaptures: 0,    // Sieg-Leiste: aktive Eroberungen in Akt III (zählen doppelt)
       _caps24: 0, _loss24: 0,   // Drama: Eroberungen/Verluste heute (Durchbruch-Banner)
+      op: null,                 // laufende Operation { name, phase, bis, ziel, startHex }
+      opCooldownUntil: 0,       // frühester Tag für die nächste Operation
       incomePerDay: 0, leutePerDay: 0, eisenPerDay: 0, pferdePerDay: 0,
       _lastAttacker: null, _lastAttackedDay: -99, _atkToastDay: -99,
     };
@@ -1853,8 +1865,10 @@ class Game {
     // durch — die Bubble-% zählen jetzt, nicht nur die 50-%-Grenze. Basis hoch
     // gehalten, damit klare Übermacht weiter entschlossen durchschlägt.
     // Doktrin: Blitzkrieg bricht schneller durch, Festung hält länger.
+    // Operation: Im Sturm-Fenster schlagen Angriffe im Zielgebiet härter zu.
     const push = (0.62 + 0.38 * ((odds - floor) / (1 - floor)))
-      * this.dMult(eAtk[0].nation, 'push');
+      * this.dMult(eAtk[0].nation, 'push')
+      * this.opPush(eAtk[0].nation, hex);
 
     const terr = TERRAIN[hex.terrain];
     const bunker = (hex.building === 'turm' && hex.owner === def[0].nation)
@@ -2574,6 +2588,66 @@ class Game {
       + (n.ringCaptures || 0) * BAL.score.ring;
   }
 
+  /* ---------- Operationen: benannter Schwerpunkt-Schlag mit Anlauf ----------
+     Sammeln (öffentlich sichtbar) → Sturm (Bonus im Zielgebiet) → Cooldown.
+     Eine Operation je Nation; Abbruch kostet den halben Cooldown. */
+  startOperation(nation, c, r) {
+    const nat = this.nations[nation];
+    const h = this.hexAt(c, r);
+    if (!nat || !nat.alive) return '⚠';
+    if (nat.op) return '⚠⚡';                                    // läuft schon
+    if (this.day < nat.opCooldownUntil) return '⚠⏳ ' + Math.ceil(nat.opCooldownUntil - this.day);
+    if (!h || h.terrain === 'water' || h.owner === nation) return '⚠🎯';
+    const namen = BAL.operation.namen;
+    nat.op = {
+      name: namen[this._opSeq++ % namen.length],
+      phase: 'sammeln',
+      bis: this.dayFloat + BAL.operation.sammelTage,
+      ziel: [c, r],
+      startHex: 0,
+    };
+    this._dramaPush('operationPlan', { by: nation, name: nat.op.name, ziel: [c, r] });
+    this.addLog(`⚡ ${nat.op.name} · ${this.nationName(nation)}`, nation === this.player);
+    return true;
+  }
+
+  abortOperation(nation) {
+    const nat = this.nations[nation];
+    if (!nat || !nat.op) return '⚠';
+    nat.op = null;
+    nat.opCooldownUntil = this.day + Math.ceil(BAL.operation.cooldown / 2);   // Finte kostet halb
+    return true;
+  }
+
+  /* Täglicher Phasen-Fortschritt: Sammeln → Sturm → Ende (+Cooldown) */
+  operationsDaily() {
+    for (const [id, nat] of Object.entries(this.nations)) {
+      const op = nat.op;
+      if (!op || !nat.alive) { if (op && !nat.alive) nat.op = null; continue; }
+      if (op.phase === 'sammeln' && this.dayFloat >= op.bis) {
+        op.phase = 'sturm';
+        op.bis = this.dayFloat + BAL.operation.sturmTage;
+        op.startHex = nat.hexCount;
+        this._dramaPush('operation', { by: id, name: op.name, ziel: op.ziel });
+        this.addLog(`⚡⚔ ${op.name}`, id === this.player);
+      } else if (op.phase === 'sturm' && this.dayFloat >= op.bis) {
+        const gewinn = nat.hexCount - op.startHex;
+        this._dramaPush('operationEnde', { by: id, name: op.name, gewinn });
+        this.addLog(`⚡✔ ${op.name} ${gewinn >= 0 ? '+' : ''}${gewinn}⬡`, id === this.player);
+        nat.op = null;
+        nat.opCooldownUntil = this.day + (this.akt === 3 ? BAL.operation.cooldownRing : BAL.operation.cooldown);
+      }
+    }
+  }
+
+  /* Sturm-Bonus: Angriffe im Umkreis des Operationsziels brechen schneller durch */
+  opPush(nation, hex) {
+    const op = this.nations[nation] && this.nations[nation].op;
+    if (!op || op.phase !== 'sturm') return 1;
+    return hexDist(hex.c, hex.r, op.ziel[0], op.ziel[1]) <= BAL.operation.radius
+      ? BAL.operation.bonus : 1;
+  }
+
   /* Drama-Queue: Die Sim meldet große Momente, die UI inszeniert sie
      (Banner, Sound, Shake). Rein kosmetisch, nicht serialisiert — im MP
      leitet jeder Client dieselben Events deterministisch aus seiner Sim ab. */
@@ -2942,7 +3016,18 @@ class Game {
     // zur Endphase hin die Regel — die Eskalationskurve aus dem Konzept.
     if (victim && vRatio > 1.25 - 0.55 * lf && this.divisionsOf(id).length >= 4
       && this.rand() < aggression * 0.6 + 0.15 + 0.6 * lf + 0.08 * ((nat.vp || 1) - 1)) {
-      setTarget(victim, 'attack');
+      if (setTarget(victim, 'attack') && !nat.op && this.day >= nat.opCooldownUntil && nat.capital) {
+        // KI eröffnet den Feldzug als OPERATION: Schwerpunkt auf das nächste
+        // Feindgebiet — der Spieler sieht den Sammel-Ring und kann reagieren.
+        let best = null, bd = Infinity;
+        const [mc, mr] = nat.capital;
+        for (const row of this.hexes) for (const h of row) {
+          if (h.owner !== victim || h.terrain === 'water') continue;
+          const d = hexDist(h.c, h.r, mc, mr);
+          if (d < bd) { bd = d; best = h; }
+        }
+        if (best) this.startOperation(id, best.c, best.r);
+      }
       return;
     }
     // 3) Sonst: expandieren, solange es neutrales Land gibt
@@ -3052,6 +3137,7 @@ class Game {
       this.militiaDaily();
       this.influenceDaily();
       this.borderCreepDaily();
+      this.operationsDaily();
       this.aiDaily();
       this.vpDaily();
       this.pocketsDaily();
@@ -3079,6 +3165,7 @@ class Game {
       v: 5, mapId: this.mapId, slots: this._slots, day: this.day, dayFloat: this.dayFloat, player: this.player,
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
+      opSeq: this._opSeq,
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
       cmds: this._replayCapable ? this.cmdLog : undefined,
       warHeat: this.warHeat,
@@ -3092,6 +3179,7 @@ class Game {
         traitorUntil: n.traitorUntil,
         kesselKills: n.kesselKills || 0, ringCaptures: n.ringCaptures || 0,
         doctrine: n.doctrine || null,
+        op: n.op || null, opCooldownUntil: n.opCooldownUntil || 0,
         allies: [...n.allies], capital: n.capital, divNameSeq: n.divNameSeq,
         armies: n.armies.map(a => ({ id: a.id, name: a.name, target: a.target, mode: a.mode })),
       }])),
@@ -3114,6 +3202,7 @@ class Game {
     g.divisions = [];
     g.day = s.day; g.dayFloat = s.dayFloat;
     g.akt = g.aktOf(g.day);   // abgeleitet, nicht persistiert
+    g._opSeq = s.opSeq || 0;
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
     // Zufallsstrom & Kommando-Log exakt fortsetzen (Determinismus über Save/Load)
     if (s.rngState !== undefined) g._rngState = s.rngState;
@@ -3147,6 +3236,8 @@ class Game {
       n.kesselKills = ns.kesselKills || 0;
       n.ringCaptures = ns.ringCaptures || 0;
       n.doctrine = ns.doctrine && BAL.doctrines[ns.doctrine] ? ns.doctrine : null;
+      n.op = ns.op || null;
+      n.opCooldownUntil = ns.opCooldownUntil || 0;
       n.allies = new Set(ns.allies); n.capital = ns.capital; n.divNameSeq = ns.divNameSeq;
       n.armies = ns.armies.map(a => ({ ...a, nation: id, frontHexes: [] }));
     }
@@ -3287,6 +3378,14 @@ Game.prototype._commands = {
   trainAt(c, r, type) {
     const me = this._actor || this.player;
     return this.queueTraining(me, c, r, type);
+  },
+  operation(c, r) {
+    const me = this._actor || this.player;
+    return this.startOperation(me, c, r);
+  },
+  operationAbbruch() {
+    const me = this._actor || this.player;
+    return this.abortOperation(me);
   },
   doctrine(key) {
     // Doktrin wählen: einmalig, ab Akt II, nur gültige Archetypen —

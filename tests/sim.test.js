@@ -410,6 +410,41 @@ const out = vm.runInContext(`
       ok('Drama: Tageszähler wird zurückgesetzt', gJ.nations['A']._caps24 < 9);
     }
 
+    // Operationen: Sammeln → Sturm (Zonen-Bonus) → Ende (Cooldown)
+    {
+      const gO = new Game('A', 88); gO.endSpawnPhase();
+      const nO = gO.nations['A'];
+      let ziel = null;
+      for (const row of gO.hexes) for (const h of row)
+        if (!ziel && h.terrain !== 'water' && h.owner !== 'A') ziel = h;
+      ok('Operation startet mit Namen', gO.issue('operation', ziel.c, ziel.r) === true
+        && !!nO.op && BAL.operation.namen.includes(nO.op.name) && nO.op.phase === 'sammeln');
+      ok('Keine zweite Operation parallel', gO.issue('operation', ziel.c, ziel.r) !== true);
+      ok('Sammeln: noch kein Bonus', gO.opPush('A', ziel) === 1);
+      for (let i = 0; i < BAL.operation.sammelTage * 4 + 6 && nO.op && nO.op.phase === 'sammeln'; i++) gO.runTick();
+      ok('Sammeln → Sturm', !!nO.op && nO.op.phase === 'sturm', nO.op ? nO.op.phase : 'weg');
+      ok('Sturm-Bonus im Zielgebiet', gO.opPush('A', ziel) === BAL.operation.bonus);
+      let fern = null;
+      for (const row of gO.hexes) for (const h of row)
+        if (!fern && h.terrain !== 'water' && hexDist(h.c, h.r, ziel.c, ziel.r) > BAL.operation.radius + 2) fern = h;
+      ok('Kein Bonus fern des Ziels', gO.opPush('A', fern) === 1);
+      // Serialize mitten im Sturm
+      const gO2 = Game.deserialize(gO.serialize());
+      ok('Operation überlebt Save/Load', !!gO2.nations['A'].op && gO2.nations['A'].op.phase === 'sturm');
+      for (let i = 0; i < BAL.operation.sturmTage * 4 + 6 && nO.op; i++) gO.runTick();
+      ok('Sturm endet mit Cooldown', !nO.op && gO.nations['A'].opCooldownUntil > gO.day);
+      ok('Cooldown blockiert Neustart', gO.issue('operation', ziel.c, ziel.r) !== true);
+      // Abbruch = halber Cooldown
+      const gA2 = new Game('A', 89); gA2.endSpawnPhase();
+      let z2 = null;
+      for (const row of gA2.hexes) for (const h of row)
+        if (!z2 && h.terrain !== 'water' && h.owner !== 'A') z2 = h;
+      gA2.issue('operation', z2.c, z2.r);
+      ok('Abbruch kostet halben Cooldown', gA2.issue('operationAbbruch') === true
+        && !gA2.nations['A'].op
+        && gA2.nations['A'].opCooldownUntil === gA2.day + Math.ceil(BAL.operation.cooldown / 2));
+    }
+
     // KI wählt lagebasiert, der Mensch bekommt nach der Frist das Massenheer
     const gK = new Game('A', 34); gK.endSpawnPhase();
     gK.day = Math.floor(BAL.round.days * BAL.round.akt2) - 1; gK.dayFloat = gK.day;

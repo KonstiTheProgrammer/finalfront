@@ -1448,6 +1448,43 @@ function render() {
       ctx.restore();
     }
   }
+  // OPERATIONEN: Ziel-Ringe für ALLE laufenden Unternehmen — Sammeln ist
+  // öffentliche Information (gestrichelt), der Sturm pulsiert schnell.
+  for (const [nid, natO] of Object.entries(game.nations)) {
+    const op = natO.op;
+    if (!op || !natO.alive) continue;
+    const p = hexToPixel(op.ziel[0], op.ziel[1]);
+    const own = nid === game.player;
+    const col = own ? '255,215,94' : game.hostile(game.player, nid) ? '255,105,85' : '175,185,205';
+    const pulse = 0.4 + 0.3 * Math.sin(now / (op.phase === 'sturm' ? 170 : 380));
+    ctx.save();
+    ctx.setLineDash(op.phase === 'sammeln' ? [5, 5] : []);
+    ctx.strokeStyle = `rgba(${col},${pulse.toFixed(3)})`;
+    ctx.lineWidth = op.phase === 'sturm' ? 2.6 : 1.7;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, HEX_SIZE * 5.2 + Math.sin(now / 380) * 2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (zoom >= 0.7) {
+      ctx.font = `bold ${9 / Math.min(zoom, 1.6) + 2}px ui-monospace, Menlo, monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(${col},0.95)`;
+      ctx.fillText(op.name, p.x, p.y - HEX_SIZE * 5.2 - 5);
+    }
+    ctx.restore();
+  }
+  // Operations-Zielwahl: Vorschau-Ring unterm Cursor
+  if (UI.opTargeting && UI.hoverHex) {
+    const p = hexToPixel(UI.hoverHex.c, UI.hoverHex.r);
+    ctx.save();
+    ctx.setLineDash([4, 5]);
+    ctx.strokeStyle = 'rgba(255,215,94,0.75)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, HEX_SIZE * 5.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
   // Schild-Schimmer: steht eine eigene Division auf gedecktem Land (Stadt-/
   // Dorf-Schutzzone), zeigt ein pulsierendes Schild: hier musst du EROBERN
   if (zoom >= 0.9 && !game.spawnPhase) {
@@ -1793,6 +1830,18 @@ function bindInput() {
       return;
     }
     if (e.button !== 0) return;
+    if (UI.opTargeting) {
+      // Operations-Ziel wählen: ein Klick, dann normale Steuerung
+      const w = screenToWorld(e.clientX, e.clientY);
+      const hx = pixelToHex(w.x, w.y);
+      UI.opTargeting = false;
+      updateOpButton();
+      if (hx) {
+        const res = game.issue('operation', hx.c, hx.r);
+        if (res !== true && typeof res === 'string') pushToast(res);
+      }
+      return;
+    }
     if (UI.frontDraw) {
       // B-Modus: Linie aufnehmen
       const w = screenToWorld(e.clientX, e.clientY);
@@ -1903,6 +1952,7 @@ function bindInput() {
     UI.keys.add(e.code);
     if (e.code === 'Space') { e.preventDefault(); if (!game._net) { game.paused = !game.paused; updateTopbar(); } }
     if (e.key >= '1' && e.key <= '4' && !game._net) { game.speed = +e.key; game.paused = false; }
+    if (e.key === 'o' || e.key === 'O') toggleOpTargeting();
     if (e.key === '+' || e.key === '=') zoomStep(1.25);
     if (e.key === '-') zoomStep(1 / 1.25);
     if (e.code === 'Home') centerOn(...game.nations[game.player].capital, Math.max(UI.cam.zoom, 1.5));
@@ -2337,6 +2387,8 @@ function bindPanels() {
     const b = document.getElementById(id);
     if (b) b.addEventListener('click', () => { UI.hud[k] = !UI.hud[k]; applyHud(); });
   }
+  const opBtn = document.getElementById('btn-op');
+  if (opBtn) opBtn.addEventListener('click', () => toggleOpTargeting());
   const sndBtn = document.getElementById('btn-sound');
   if (sndBtn) {
     sndBtn.classList.toggle('active', UI.sound);
@@ -2415,6 +2467,7 @@ function updateTopbar() {
   document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${game.vpNeed || BAL.round.vpToWin}`;
   document.getElementById('tb-day').innerHTML = `${ic('calendar')} ${game.day}`;
   document.getElementById('tb-round').innerHTML = `${ic('hourglass')}${Math.max(0, BAL.round.days - game.day)}`;
+  updateOpButton();
   // Akt-Uhr-Chip: Ⅰ Landnahme (grün) · Ⅱ Der Krieg (bernstein) · Ⅲ Der Ring (rot)
   const aktEl = document.getElementById('tb-akt');
   if (aktEl && aktEl._akt !== game.akt) {
@@ -2984,6 +3037,37 @@ function screenShake(strong) {
   el.classList.add(strong ? 'shake2' : 'shake');
 }
 
+/* ---------- Operationen: Ziel-Wahl (Button oder Taste O) ---------- */
+function toggleOpTargeting() {
+  if (!game || game.over || game.spawnPhase || !game.nations[game.player].alive) return;
+  const nat = game.nations[game.player];
+  if (nat.op) {
+    pushToast(`⚡ ${nat.op.name} läuft (${nat.op.phase === 'sammeln' ? 'sammelt' : 'stürmt'})`);
+    return;
+  }
+  if (game.day < nat.opCooldownUntil) {
+    pushToast(`⚡⏳ ${Math.ceil(nat.opCooldownUntil - game.day)}📅`);
+    return;
+  }
+  UI.opTargeting = !UI.opTargeting;
+  if (UI.opTargeting) { UI.buildMode = null; UI.frontDraw = null; }
+  updateOpButton();
+}
+
+function updateOpButton() {
+  const b = document.getElementById('btn-op');
+  if (!b || !game) return;
+  const nat = game.nations[game.player];
+  const cd = nat && game.day < nat.opCooldownUntil;
+  b.classList.toggle('active', !!UI.opTargeting);
+  b.classList.toggle('locked', !!(nat && (nat.op || cd)));
+  b.title = !nat ? '' : nat.op
+    ? `Unternehmen ${nat.op.name} — ${nat.op.phase === 'sammeln' ? 'sammelt' : 'STURM'}`
+    : cd ? `Operation bereit in ${Math.ceil(nat.opCooldownUntil - game.day)} Tagen`
+      : 'Operation (O): Ziel wählen — Sammeln, dann Sturm mit Durchbruch-Bonus';
+  document.getElementById('map').style.cursor = UI.opTargeting ? 'crosshair' : '';
+}
+
 /* Drama-Regie: zieht Momente aus der Sim-Queue und inszeniert sie.
    Spieler-zentriert — KI-Geplänkel fern des Spielers bleibt im Log. */
 function dramaTick() {
@@ -3034,6 +3118,40 @@ function dramaTick() {
     }, 'rot');
     SFX.play('verrat');
     if (ev.victim === me) screenShake(true);
+  } else if (ev.type === 'operationPlan') {
+    const zielH = game.hexAt(ev.ziel[0], ev.ziel[1]);
+    const aufMich = zielH && zielH.owner === me;
+    if (ev.by !== me && !aufMich) shown = false;   // fremde Pläne fern von mir: nur Ring auf der Karte
+    else {
+      showAktBanner({
+        ey: ev.by === me ? 'Operation angesetzt' : 'Feindlicher Aufmarsch!',
+        title: `Unternehmen ${ev.name}`,
+        sub: ev.by === me ? `Sturm in ${BAL.operation.sammelTage} Tagen — der Gegner sieht dich sammeln`
+          : `${N(ev.by)} sammelt gegen DEIN Gebiet — Sturm in ${BAL.operation.sammelTage} Tagen`,
+      }, ev.by === me ? 'gold' : 'rot');
+      if (aufMich) SFX.play('verrat');
+    }
+  } else if (ev.type === 'operation') {
+    const zielH = game.hexAt(ev.ziel[0], ev.ziel[1]);
+    const aufMich = zielH && zielH.owner === me;
+    if (ev.by !== me && !aufMich) shown = false;
+    else {
+      showAktBanner({
+        ey: 'Der Sturm beginnt',
+        title: ev.name + '!',
+        sub: ev.by === me ? 'Durchbruch ×1,3 im Zielgebiet — 2 Tage. Vorwärts!'
+          : `${N(ev.by)} stürmt DEIN Gebiet!`,
+      }, ev.by === me ? 'gold' : 'rot');
+      SFX.play('durchbruch');
+      if (aufMich) screenShake(false);
+    }
+  } else if (ev.type === 'operationEnde') {
+    if (ev.by !== me) shown = false;
+    else showAktBanner({
+      ey: 'Operation beendet',
+      title: `${ev.name}: ${ev.gewinn >= 0 ? '+' : ''}${ev.gewinn} Felder`,
+      sub: ev.gewinn >= 3 ? 'Die Chronik wird sich erinnern.' : 'Sammeln, neu ansetzen — der Cooldown läuft.',
+    }, ev.gewinn >= 3 ? 'gold' : undefined);
   } else {
     shown = false;
   }
@@ -3068,6 +3186,8 @@ const WHISPERS = [
   { key: 'wirtschaft', when: g => !g.spawnPhase && g.day >= 20
       && g.nations[g.player].gold > 180 && g.builtCount(g.player, 'dorf') < 1,
     text: 'Volle Kasse: Bau Dörfer und Forstereien — Akt Ⅱ gewinnt, wer jetzt wirtschaftet.' },
+  { key: 'operation', when: g => !g.spawnPhase && g.akt >= 2 && !g.nations[g.player].op,
+    text: 'Neu: Drück O und wähle ein Ziel — deine Operation sammelt, dann stürmt sie mit Bonus.' },
 ];
 
 function whisperSeen() {
