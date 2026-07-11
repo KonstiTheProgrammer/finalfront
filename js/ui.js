@@ -3068,6 +3068,74 @@ function updateOpButton() {
   document.getElementById('map').style.cursor = UI.opTargeting ? 'crosshair' : '';
 }
 
+/* ---------- Barks: die Nationen bekommen ein Gesicht ----------
+   Ein Satz Charakter zum großen Moment — als Zitat-Toast mit Nation-Chip.
+   Nur KI-Nationen sprechen; höchstens ein Bark alle 20 Sekunden. */
+const BARKS = {
+  A: { tag: 'der Ehrenhafte',
+    verrat: ['Es schmerzt, dass es so kommen musste.'],
+    krone: ['Für die Ordnung.'],
+    kroneVerlust: ['Wir werden zurückkehren.'],
+    aufmarsch: ['Wir marschieren mit offenem Visier.'],
+    kessel: ['Haltet aus — wir holen euch heim.'],
+    untergang: ['Mit Anstand. Bis zuletzt.'] },
+  B: { tag: 'der Choleriker',
+    verrat: ['Bündnisse sind Papier. Papier BRENNT.', 'Überrascht? Gut. Wut wirkt am besten frisch.'],
+    krone: ['DEINE Stadt? MEINE Stadt.', 'Wer klopft, dem wird eingetreten.'],
+    kroneVerlust: ['Das … das wagt ihr NICHT!'],
+    aufmarsch: ['Deine Grenze ist ein Vorschlag. Ich lehne ab.', 'Ich zähle bis eins.'],
+    kessel: ['Lasst mich RAUS!'],
+    untergang: ['Ich komme wieder. Ich komme IMMER wieder.'] },
+  C: { tag: 'die kühle Rechnerin',
+    verrat: ['Nichts Persönliches. Die Zahlen sprachen gegen dich.'],
+    krone: ['Eine solide Investition.', 'Abgebucht.'],
+    kroneVerlust: ['Einkalkuliert. Ärgerlich, aber einkalkuliert.'],
+    aufmarsch: ['Deine Provinzen rechnen sich besser als deine Freundschaft.'],
+    kessel: ['Verlustabschreibung eingeleitet.'],
+    untergang: ['Die Bilanz ist … unerfreulich.'] },
+  D: { tag: 'der Opportunist',
+    verrat: ['Bündnis? Galt bis auf Weiteres. Weiteres ist jetzt.'],
+    krone: ['Ich nehme nur, was herumliegt.', 'Fund ist Fund.'],
+    kroneVerlust: ['Halb so wild — die war eh nur geliehen.'],
+    aufmarsch: ['Nichts gegen dich. Alles für mich.'],
+    kessel: ['Ich zahle Lösegeld! In Raten!'],
+    untergang: ['Kann man das … noch verhandeln?'] },
+  E: { tag: 'die Paranoikerin',
+    verrat: ['Ich wusste, dass ihr euch verbündet. Ich habe nur zuerst geschossen.'],
+    krone: ['Eine Verschwörung weniger.'],
+    kroneVerlust: ['Sie waren also doch ALLE beteiligt.'],
+    aufmarsch: ['Ihr habt es zuerst geplant. Ich habe Beweise.'],
+    kessel: ['Eine Falle! Ich WUSSTE es!'],
+    untergang: ['Am Ende … hatten wirklich alle gegen mich gearbeitet.'] },
+};
+
+function pushBark(nid, line) {
+  const box = document.getElementById('toasts');
+  if (!box) return;
+  const el = document.createElement('div');
+  el.className = 'toast bark';
+  const chip = document.createElement('span');
+  chip.className = 'chip';
+  chip.style.background = game.nationColor(nid);
+  el.appendChild(chip);
+  el.appendChild(document.createTextNode(` „${line}"`));
+  box.appendChild(el);
+  while (box.children.length > 4) box.removeChild(box.firstChild);
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 500); }, 5200);
+}
+
+function bark(nid, key) {
+  if (!game || !nid || nid === game.player) return;
+  const nat = game.nations[nid];
+  if (!nat || !nat.ai) return;                       // nur die KI hat Sprechrollen
+  const now = performance.now();
+  if (now - (UI._barkT || -1e9) < 20000) return;     // Anti-Spam (erster Bark immer erlaubt)
+  const set = BARKS[nid] && BARKS[nid][key];
+  if (!set || !set.length) return;
+  UI._barkT = now;
+  pushBark(nid, set[game.day % set.length]);
+}
+
 /* Drama-Regie: zieht Momente aus der Sim-Queue und inszeniert sie.
    Spieler-zentriert — KI-Geplänkel fern des Spielers bleibt im Log. */
 function dramaTick() {
@@ -3091,6 +3159,7 @@ function dramaTick() {
     }, mine ? 'gold' : 'rot');
     SFX.play('krone');
     if (mine || lost) screenShake(true);
+    if (mine) bark(ev.loser, 'kroneVerlust'); else bark(ev.by, 'krone');
   } else if (ev.type === 'kessel') {
     const mine = ev.owner === me;
     if (!mine && ev.count < 2) { shown = false; }
@@ -3103,6 +3172,7 @@ function dramaTick() {
       }, mine ? 'rot' : undefined);
       SFX.play('kessel');
       if (mine) screenShake(false);
+      if (!mine) bark(ev.owner, 'kessel');
     }
   } else if (ev.type === 'durchbruch') {
     if (ev.by !== me) shown = false;
@@ -3118,6 +3188,7 @@ function dramaTick() {
     }, 'rot');
     SFX.play('verrat');
     if (ev.victim === me) screenShake(true);
+    bark(ev.traitor, 'verrat');
   } else if (ev.type === 'operationPlan') {
     const zielH = game.hexAt(ev.ziel[0], ev.ziel[1]);
     const aufMich = zielH && zielH.owner === me;
@@ -3130,6 +3201,7 @@ function dramaTick() {
           : `${N(ev.by)} sammelt gegen DEIN Gebiet — Sturm in ${BAL.operation.sammelTage} Tagen`,
       }, ev.by === me ? 'gold' : 'rot');
       if (aufMich) SFX.play('verrat');
+      if (ev.by !== me) bark(ev.by, 'aufmarsch');
     }
   } else if (ev.type === 'operation') {
     const zielH = game.hexAt(ev.ziel[0], ev.ziel[1]);
@@ -3152,6 +3224,14 @@ function dramaTick() {
       title: `${ev.name}: ${ev.gewinn >= 0 ? '+' : ''}${ev.gewinn} Felder`,
       sub: ev.gewinn >= 3 ? 'Die Chronik wird sich erinnern.' : 'Sammeln, neu ansetzen — der Cooldown läuft.',
     }, ev.gewinn >= 3 ? 'gold' : undefined);
+  } else if (ev.type === 'untergang') {
+    showAktBanner({
+      ey: 'Ein Reich vergeht',
+      title: `${N(ev.loser)} ist gefallen`,
+      sub: ev.winner ? `Das Erbe fällt an ${N(ev.winner)}` : 'Niemand trauert lange.',
+    }, ev.winner === me ? 'gold' : 'rot');
+    SFX.play('kessel');
+    bark(ev.loser, 'untergang');   // letzte Worte
   } else {
     shown = false;
   }

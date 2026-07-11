@@ -644,6 +644,10 @@ button.peace:hover { background: #26512e; }
 /* Operations-Knopf: gesperrt (läuft/Cooldown) gedimmt */
 #btn-op.locked { opacity: 0.45; }
 
+/* Barks: Zitat-Toasts mit Nation-Chip — die Nationen sprechen */
+.toast.bark { font-style: italic; color: #dfe7f0; }
+.toast.bark .chip { width: 9px; height: 9px; display: inline-block; border-radius: 2px; margin-right: 5px; font-style: normal; }
+
 /* ---------- Kriegsbilanz im Endstand ---------- */
 .bilanz-head {
   margin: 16px 0 6px; padding-top: 12px;

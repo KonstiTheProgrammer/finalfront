@@ -2265,6 +2265,7 @@ class Game {
     if (!nat.alive) return;
     nat.alive = false;
     this._chron('untergang', { loser, winner });
+    this._dramaPush('untergang', { loser, winner });
     for (const a of [...nat.allies]) this.dissolveAlliance(loser, a);
     this.allianceOffers = this.allianceOffers.filter(o => o.from !== loser);
     this._offersChanged = true;
