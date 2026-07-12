@@ -644,6 +644,18 @@ button.peace:hover { background: #26512e; }
 /* Operations-Knopf: gesperrt (läuft/Cooldown) gedimmt */
 #btn-op.locked { opacity: 0.45; }
 
+/* Tempo-Preset: Rundenlänge im Startmenü */
+#preset-row { display: flex; gap: 8px; margin: 4px 0 10px; }
+.preset-btn {
+  flex: 1; display: flex; align-items: baseline; justify-content: center; gap: 8px;
+  padding: 9px 10px; border-radius: 8px;
+  background: rgba(20, 28, 42, 0.9); color: #dfe7f0;
+  border: 1px solid #2c3444; cursor: pointer; font-size: 14px;
+}
+.preset-btn:hover { border-color: #56637a; }
+.preset-btn.sel { border-color: #e6b84e; background: rgba(230, 184, 78, 0.12); }
+.preset-btn .small { color: #8b95a6; font-size: 11.5px; }
+
 /* Barks: Zitat-Toasts mit Nation-Chip — die Nationen sprechen */
 .toast.bark { font-style: italic; color: #dfe7f0; }
 .toast.bark .chip { width: 9px; height: 9px; display: inline-block; border-radius: 2px; margin-right: 5px; font-style: normal; }

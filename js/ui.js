@@ -2466,7 +2466,7 @@ function updateTopbar() {
   document.getElementById('tb-prov').textContent = `${nat.hexCount} (${share} %)`;
   document.getElementById('tb-vp').textContent = `${nat.vp || 0}/${game.vpNeed || BAL.round.vpToWin}`;
   document.getElementById('tb-day').innerHTML = `${ic('calendar')} ${game.day}`;
-  document.getElementById('tb-round').innerHTML = `${ic('hourglass')}${Math.max(0, BAL.round.days - game.day)}`;
+  document.getElementById('tb-round').innerHTML = `${ic('hourglass')}${Math.max(0, game.roundDays - game.day)}`;
   updateOpButton();
   // Akt-Uhr-Chip: Ⅰ Landnahme (grün) · Ⅱ Der Krieg (bernstein) · Ⅲ Der Ring (rot)
   const aktEl = document.getElementById('tb-akt');
@@ -3338,7 +3338,7 @@ function doctrineTick() {
     }
     return;
   }
-  const deadline = Math.floor(BAL.round.days * BAL.round.akt2) + BAL.doctrineGraceDays;
+  const deadline = Math.floor(game.roundDays * BAL.round.akt2) + BAL.doctrineGraceDays;
   const rest = Math.max(0, deadline - game.day);
   const t = document.getElementById('dd-timer');
   if (t) t.textContent = game._net
@@ -3511,6 +3511,29 @@ function showStartScreen() {
   };
   renderMaps();
 
+  // Tempo-Preset: Rundenlänge — Standard (~20 min) / Blitz (~10 min).
+  // Akte, Ring und Doktrin-Frist hängen an Prozent-Ankern und skalieren mit.
+  if (!UI.preset) {
+    try { UI.preset = localStorage.getItem('ff_preset') || 'standard'; }
+    catch (e) { UI.preset = 'standard'; }
+  }
+  const presetRow = document.getElementById('preset-row');
+  if (presetRow) {
+    const renderPreset = () => {
+      presetRow.innerHTML = [
+        ['standard', 'Standard', `≈20 min · ${BAL.round.days}📅`],
+        ['blitz', 'Blitz', `≈10 min · ${BAL.round.blitzDays}📅`],
+      ].map(([id, name, sub]) => `<button class="preset-btn ${UI.preset === id ? 'sel' : ''}" data-preset="${id}">
+        <b>${name}</b> <span class="small">${sub}</span></button>`).join('');
+      presetRow.querySelectorAll('.preset-btn').forEach(b => b.addEventListener('click', () => {
+        UI.preset = b.dataset.preset;
+        try { localStorage.setItem('ff_preset', UI.preset); } catch (e) { /* egal */ }
+        renderPreset();
+      }));
+    };
+    renderPreset();
+  }
+
   const grid = document.getElementById('nation-grid');
   grid.innerHTML = Object.entries(NATION_DEFS).map(([id]) =>
     `<button class="nation-card" data-nation="${id}">
@@ -3530,7 +3553,8 @@ function showStartScreen() {
 function startGame(nationId) {
   const slots = UI.selectedMap === 'duell' ? 2 : 5;
   if (slots === 2 && nationId !== 'A' && nationId !== 'B') nationId = 'A';
-  window.game = new Game(nationId, undefined, UI.selectedMap, undefined, slots);
+  const tage = UI.preset === 'blitz' ? BAL.round.blitzDays : BAL.round.days;
+  window.game = new Game(nationId, undefined, UI.selectedMap, undefined, slots, tage);
   rebuildLayers();
   lastLogLen = 0;
   UI.selectedHex = null; UI.selectedDivs.clear(); UI.selectedArmy = null;

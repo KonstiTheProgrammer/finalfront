@@ -465,6 +465,26 @@ const out = vm.runInContext(`
       ok('Chronik ist gedeckelt', gC2.chronicle.length <= 80);
     }
 
+    // Tempo-Preset: Rundenlänge pro Spiel — Akte skalieren mit (Prozent-Anker)
+    {
+      const gB = new Game('A', 44, 'europa', undefined, 5, BAL.round.blitzDays);
+      ok('Blitz-Preset setzt Rundenlänge', gB.roundDays === BAL.round.blitzDays);
+      ok('Akt II skaliert mit dem Preset',
+        gB.aktOf(BAL.round.blitzDays * BAL.round.akt2) === 2
+        && gB.aktOf(BAL.round.blitzDays * BAL.round.akt2 - 1) === 1);
+      ok('Akt III skaliert mit dem Preset', gB.aktOf(BAL.round.blitzDays * BAL.round.lateStart) === 3);
+      gB.endSpawnPhase();
+      const gB2 = Game.deserialize(gB.serialize());
+      ok('Rundenlänge überlebt Save/Load', gB2.roundDays === BAL.round.blitzDays);
+      ok('Replay trägt die Rundenlänge', (gB.getReplay() || {}).roundDays === BAL.round.blitzDays);
+      const gStd = new Game('A', 44);
+      ok('Ohne Preset gilt der Standard', gStd.roundDays === BAL.round.days);
+      // Abpfiff kommt am Blitz-Ende
+      gB.day = BAL.round.blitzDays; gB.dayFloat = gB.day;
+      gB.vpDaily();
+      ok('Blitz-Runde endet am Blitz-Tag', !!gB.over);
+    }
+
     // KI wählt lagebasiert, der Mensch bekommt nach der Frist das Massenheer
     const gK = new Game('A', 34); gK.endSpawnPhase();
     gK.day = Math.floor(BAL.round.days * BAL.round.akt2) - 1; gK.dayFloat = gK.day;

@@ -156,7 +156,8 @@ const BAL = {
   // 600 Tage passen zum echten Pacing der kleinen Karten — so greift die
   // Endphase wirklich, statt hinter dem Rundenende zu liegen.
   round: {
-    days: 600,                // Rundenlänge in Spieltagen (≈ 10–20 min je nach Tempo)
+    days: 600,                // Rundenlänge Standard (≈ 20 min bei Tempo 2)
+    blitzDays: 360,           // Tempo-Preset „Blitz" (≈ 10–12 min) — Akte skalieren mit
     vpToWin: 3,               // gehaltene Hauptstädte starten den Sieg-Countdown
     countdownDays: 50,        // Länge des Countdowns — Zeit für die Gegenkoalition
     akt2: 0.2,                // Akt-Uhr: ab 20 % der Runde beginnt Akt II (Der Krieg)
@@ -201,13 +202,16 @@ function dateStr(day) {
 
 /* ---------- Spielzustand ---------- */
 class Game {
-  constructor(playerNationId, seed, mapId, humans, slots) {
+  constructor(playerNationId, seed, mapId, humans, slots, roundDays) {
     // Karte festlegen (setzt MAP_W/H & Weltgröße), dann bauen
     this.mapId = selectMap(mapId !== undefined ? mapId : CURRENT_MAP_ID);
     // Multiplayer: Liste der menschlichen Nationen (alle Clients identisch!)
     this._humans = Array.isArray(humans) && humans.length ? humans : null;
     this._net = null;                  // gesetzt von der Netz-Schicht (js/net.js)
     this._slots = Math.max(2, Math.min(5, slots || 5));   // 1v1-Duell: 2
+    // Tempo-Preset: Rundenlänge pro Spiel (Standard 600 · Blitz 360). Akte,
+    // Ring und Doktrin-Frist hängen an Prozent-Ankern und skalieren mit.
+    this.roundDays = roundDays && roundDays >= 100 ? Math.round(roundDays) : BAL.round.days;
     // Geseedeter Zufall (mulberry32) mit serialisierbarem Zustand:
     // gleiche Saat + gleiche Kommandos = identischer Spielverlauf.
     this.seed = (seed === undefined ? (Date.now() & 0x7fffffff) : seed) >>> 0;
@@ -2574,14 +2578,14 @@ class Game {
   /* ---------- Rundenmodus: Sieg über Hauptstädte ---------- */
   /* 0 vor der Endphase, steigt bis 1 am Rundenende — steuert Endspiel-Druck */
   lateFactor() {
-    const start = BAL.round.days * BAL.round.lateStart;
-    return Math.max(0, Math.min(1, (this.day - start) / (BAL.round.days - start)));
+    const start = this.roundDays * BAL.round.lateStart;
+    return Math.max(0, Math.min(1, (this.day - start) / (this.roundDays - start)));
   }
 
   /* Akt-Uhr: Prozent-Anker statt Minuten — funktioniert in jedem Tempo-Preset.
      Akt III fällt exakt auf lateStart: die Endphasen-Mechanik bekommt Bühne. */
   aktOf(day) {
-    const p = day / BAL.round.days;
+    const p = day / this.roundDays;
     return p >= BAL.round.lateStart ? 3 : p >= BAL.round.akt2 ? 2 : 1;
   }
 
@@ -2748,7 +2752,7 @@ class Game {
 
     // Rundenende per Timer: DIE LEISTE ENTSCHEIDET — höchster Score gewinnt
     // (Land + Kronen + Kessel + Ring-Eroberungen; Sitzen gewinnt nicht)
-    if (this.day >= BAL.round.days) {
+    if (this.day >= this.roundDays) {
       const ranked = [...alive].sort((a, b) =>
         (this.score(b) - this.score(a))
         || (this.nations[b].vp - this.nations[a].vp)
@@ -3137,7 +3141,7 @@ class Game {
       // Doktrinen (ab Akt II): KI wählt lagebasiert; Menschen haben ein
       // Wahlfenster, danach Default Massenheer — deterministisch für alle.
       if (this.akt >= 2) {
-        const deadline = Math.floor(BAL.round.days * BAL.round.akt2) + BAL.doctrineGraceDays;
+        const deadline = Math.floor(this.roundDays * BAL.round.akt2) + BAL.doctrineGraceDays;
         for (const [nid, nat] of Object.entries(this.nations)) {
           if (!nat.alive || nat.doctrine) continue;
           if (nat.ai) this.aiPickDoctrine(nid);
@@ -3184,6 +3188,7 @@ class Game {
       divSeq: this._divSeq, armySeq: this._armySeq,
       vpLeader: this.vpLeader, vpDeadline: this.vpDeadline,
       opSeq: this._opSeq,
+      roundDays: this.roundDays,
       chronicle: this.chronicle,
       seed: this.seed, rngState: this._rngState, tickCount: this.tickCount,
       cmds: this._replayCapable ? this.cmdLog : undefined,
@@ -3220,7 +3225,8 @@ class Game {
     const g = new Game(s.player, s.seed !== undefined ? s.seed : 1, s.mapId || 'europa', undefined, s.slots || 5);
     g.divisions = [];
     g.day = s.day; g.dayFloat = s.dayFloat;
-    g.akt = g.aktOf(g.day);   // abgeleitet, nicht persistiert
+    g.roundDays = s.roundDays && s.roundDays >= 100 ? s.roundDays : BAL.round.days;
+    g.akt = g.aktOf(g.day);   // abgeleitet, nicht persistiert (nutzt roundDays!)
     g._opSeq = s.opSeq || 0;
     g.chronicle = Array.isArray(s.chronicle) ? s.chronicle : [];
     g._divSeq = s.divSeq; g._armySeq = s.armySeq;
@@ -3302,12 +3308,12 @@ class Game {
   /* ---------- Replay ---------- */
   getReplay() {
     if (!this._replayCapable) return null;
-    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, humans: this._humans || undefined, slots: this._slots, cmds: this.cmdLog };
+    return { v: 1, seed: this.seed, player: this.player, mapId: this.mapId, humans: this._humans || undefined, slots: this._slots, roundDays: this.roundDays, cmds: this.cmdLog };
   }
 
   static fromReplay(rep) {
     if (!rep || rep.seed === undefined || !NATION_DEFS[rep.player]) return null;
-    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa', rep.humans, rep.slots || 5);
+    const g = new Game(rep.player, rep.seed, rep.mapId || 'europa', rep.humans, rep.slots || 5, rep.roundDays);
     g._replayCmds = (rep.cmds || []).slice();
     g._replayIdx = 0;
     g.cmdLog = g._replayCmds;
